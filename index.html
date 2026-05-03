@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Федерация тенниса Смоленской области</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Arial,sans-serif;color:#222;background:#f5f7fa}
+.hdr{background:linear-gradient(135deg,#1a3a5c,#2ecc71);color:#fff;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.logo{display:flex;align-items:center;gap:12px}
+.li{width:44px;height:44px;background:#2ecc71;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#fff;border:2px solid #fff;flex-shrink:0}
+.lt{font-size:14px;line-height:1.3}
+.lt strong{font-size:16px;display:block}
+nav{display:flex;flex-wrap:wrap;gap:4px}
+nav a{color:#fff;text-decoration:none;padding:5px 10px;border-radius:4px;font-size:13px;transition:background .2s;white-space:nowrap}
+nav a:hover,nav a.act{background:rgba(255,255,255,.2)}
+.hero{background:linear-gradient(135deg,#1a6b3a,#2ecc71,#00bcd4);color:#fff;text-align:center;padding:60px 20px}
+.hero h1{font-size:2.2em;margin-bottom:10px;text-shadow:0 2px 8px rgba(0,0,0,.3)}
+.hero p{font-size:1.1em;opacity:.9;margin-bottom:24px}
+.hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.btn{padding:12px 28px;border-radius:25px;font-size:15px;cursor:pointer;border:2px solid #fff;font-weight:600;transition:.2s;text-decoration:none;display:inline-block}
+.btn-o{background:transparent;color:#fff}
+.btn-o:hover{background:#fff;color:#1a6b3a}
+.btn-s{background:#fff;color:#1a6b3a}
+.btn-s:hover{background:#e8f5e9}
+.sec{max-width:1100px;margin:40px auto;padding:0 16px}
+.sec h2{font-size:1.4em;color:#1a3a5c;border-left:5px solid #2ecc71;padding-left:12px;margin-bottom:20px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.card{border-radius:12px;padding:28px;color:#fff;text-align:center;cursor:pointer;transition:.2s;text-decoration:none;display:block}
+.card:hover{transform:translateY(-4px);box-shadow:0 8px 24px rgba(0,0,0,.15)}
+.card.j{background:linear-gradient(135deg,#43e97b,#38f9d7);color:#1a3a5c}
+.card.a{background:linear-gradient(135deg,#4facfe,#00f2fe);color:#1a3a5c}
+.card.v{background:linear-gradient(135deg,#f093fb,#f5576c)}
+.card h3{font-size:18px;font-weight:800;margin-bottom:8px}
+.card p{font-size:13px;opacity:.85}
+.trn{background:#fff;border-radius:12px;padding:20px;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.trn h4{color:#1a3a5c;margin-bottom:8px;font-size:15px}
+.trn p{font-size:13px;color:#555;margin-bottom:4px}
+.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;margin:3px}
+.badge.sb{background:#e3f2fd;color:#1976d2}
+.badge.sg{background:#e8f5e9;color:#388e3c}
+.badge.so{background:#fff3e0;color:#f57c00}
+.oinfo{background:#f5f5f5;border-radius:10px;padding:16px;margin-top:10px}
+.oinfo h3{color:#1a3a5c;font-size:15px;margin-bottom:6px}
+.oinfo p{font-size:13px;color:#555}
+.cinfo{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;text-align:center}
+.cstat{background:#e8f5e9;border-radius:10px;padding:16px}
+.cstat .num{font-size:2em;font-weight:800;color:#2ecc71}
+.cstat p{font-size:13px;color:#555;margin-top:4px}
+.main-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.main-card{background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,.06);text-decoration:none;color:#222;transition:.2s;display:flex;flex-direction:column;align-items:flex-start;border-bottom:4px solid #2ecc71}
+.main-card:hover{transform:translateY(-3px);box-shadow:0 6px 20px rgba(0,0,0,.1)}
+.main-card .ico{font-size:2em;margin-bottom:12px}
+.main-card h3{color:#1a3a5c;font-size:16px;margin-bottom:6px}
+.main-card p{font-size:13px;color:#666}
+footer{background:#1a3a5c;color:#fff;text-align:center;padding:24px;margin-top:40px;font-size:13px}
+footer a{color:#2ecc71;text-decoration:none}
+@media(max-width:700px){.grid,.main-grid,.cinfo{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header class="hdr">
+  <div class="logo">
+    <div class="li">Т</div>
+    <div class="lt"><strong>Федерация тенниса</strong>Смоленской области</div>
+  </div>
+  <nav>
+    <a href="#tournaments" class="act">Турниры</a>
+    <a href="#rating">Рейтинг</a>
+    <a href="#coaches">Тренеры</a>
+    <a href="#courts">Корты</a>
+    <a href="#clubs">Клубы</a>
+    <a href="#junior">Детский</a>
+    <a href="#amateur">Любительский</a>
+    <a href="#veteran">Ветеранский</a>
+    <a href="#news">Новости</a>
+    <a href="#contacts">Контакты</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <h1>Федерация тенниса Смоленской области</h1>
+  <p>Официальный ресурс ФТСО — турниры, рейтинги, тренеры, корты и клубы Смоленского региона</p>
+  <div class="hero-btns">
+    <a href="#tournaments" class="btn btn-s">Календарь турниров</a>
+    <a href="#contacts" class="btn btn-o">Связаться</a>
+  </div>
+</div>
+
+<section class="sec" id="stats">
+  <div class="cinfo">
+    <div class="cstat"><div class="num">12</div><p>Клубов и секций</p></div>
+    <div class="cstat"><div class="num">340+</div><p>Зарегистрированных игроков</p></div>
+    <div class="cstat"><div class="num">8</div><p>Турниров в год</p></div>
+  </div>
+</section>
+
+<section class="sec">
+  <h2>Разделы сайта</h2>
+  <div class="main-grid">
+    <a class="main-card" href="#tournaments"><div class="ico">🏆</div><h3>Турниры</h3><p>Календарь соревнований и архив</p></a>
+    <a class="main-card" href="#rating"><div class="ico">📊</div><h3>Рейтинг</h3><p>Официальные рейтинги спортсменов</p></a>
+    <a class="main-card" href="#coaches"><div class="ico">👨‍🏫</div><h3>Тренеры</h3><p>Каталог тренеров области</p></a>
+    <a class="main-card" href="#courts"><div class="ico">🎾</div><h3>Корты</h3><p>Теннисные корты Смоленской области</p></a>
+    <a class="main-card" href="#clubs"><div class="ico">🏛</div><h3>Клубы</h3><p>Теннисные клубы и секции</p></a>
+    <a class="main-card" href="#news"><div class="ico">📰</div><h3>Новости</h3><p>Последние события и анонсы</p></a>
+  </div>
+</section>
+
+<section class="sec" id="categories">
+  <h2>Направления тенниса</h2>
+  <div class="grid">
+    <a class="card j" href="#junior">
+      <h3>🎾 Детский теннис</h3>
+      <p>Секции для детей от 5 лет. Тренировки, соревнования, развитие юных чемпионов Смоленщины</p>
+    </a>
+    <a class="card a" href="#amateur">
+      <h3>🏅 Любительский теннис</h3>
+      <p>Турниры и лиги для любителей всех уровней. Играй в своё удовольствие!</p>
+    </a>
+    <a class="card v" href="#veteran">
+      <h3>🏆 Ветеранский теннис</h3>
+      <p>Соревнования для игроков 40+. Активное долголетие и дух спортивного соперничества</p>
+    </a>
+  </div>
+</section>
+
+<section class="sec" id="tournaments">
+  <h2>Турниры</h2>
+  <div class="trn"><h4>Ближайшие соревнования</h4>
+    <p>🗓 <strong>15 июля 2026</strong> — Открытое первенство ФТСО среди детей до 14 лет</p>
+    <p>🗓 <strong>20 июля 2026</strong> — Летний кубок любителей, ТЦ «Ац»</p>
+    <p>🗓 <strong>28 июля 2026</strong> — Кубок ветеранов Смоленской области (40+, 50+)</p>
+    <p>🗓 <strong>10 августа 2026</strong> — Кубок Смоленска (юноши/девушки до 18 лет)</p>
+    <p>🗓 <strong>5 сентября 2026</strong> — Осенняя серия ФТСО — этап 1</p>
+    <p>🗓 <strong>15 сентября 2026</strong> — Межрегиональный ветеранский турнир</p>
+  </div>
+</section>
+
+<section class="sec" id="junior">
+  <h2>Детский теннис</h2>
+  <div class="trn"><h4>Программы для детей</h4>
+    <p>Возрастные группы: до 10 лет (мини-теннис), 10–12, 12–14, 14–18 лет. Занятия проводятся по методике ТФР.</p>
+  </div>
+  <div class="trn"><h4>Турниры для детей</h4>
+    <p>🗓 15 июля 2026 — Открытое первенство ФТСО среди детей до 14 лет</p>
+    <p>🗓 10 августа 2026 — Кубок Смоленска (юноши/девушки до 18 лет)</p>
+  </div>
+</section>
+
+<section class="sec" id="amateur">
+  <h2>Любительский теннис</h2>
+  <div class="trn"><h4>Лига любителей ФТСО</h4>
+    <p>Круговые турниры по уровням: начинающие (NTRP 2.0–2.5), средний (2.5–3.5), продвинутый (3.5+). Регистрация открыта круглый год.</p>
+  </div>
+  <div class="trn"><h4>Турниры для любителей</h4>
+    <p>🗓 20 июля 2026 — Летний кубок любителей, Теннисный центр «Ац»</p>
+    <p>🗓 5 сентября 2026 — Осенняя серия ФТСО — этап 1</p>
+  </div>
+</section>
+
+<section class="sec" id="veteran">
+  <h2>Ветеранский теннис</h2>
+  <div class="trn"><h4>Возрастные категории</h4>
+    <p>Группы: 40+, 50+, 60+, 70+. Участие в региональных и федеральных ветеранских турнирах ТФР.</p>
+  </div>
+  <div class="trn"><h4>Турниры для ветеранов</h4>
+    <p>🗓 28 июля 2026 — Кубок ветеранов Смоленской области (40+, 50+)</p>
+    <p>🗓 15 сентября 2026 — Межрегиональный ветеранский турнир</p>
+  </div>
+</section>
+
+<section class="sec" id="clubs">
+  <h2>Клубы и секции</h2>
+  <div class="trn">
+    <div class="oinfo"><h3>🏛 Теннисный центр «Ац»</h3>
+      <span class="badge sg">Взрослые</span><span class="badge sb">Дети</span><span class="badge so">Любители</span>
+      <p>ул. Пржевальского, 3 &nbsp;|&nbsp; Год основания: 2010</p>
+    </div>
+    <div class="oinfo"><h3>🎾 СК «Юность»</h3>
+      <span class="badge sb">Дети</span><span class="badge sg">Юниоры</span>
+      <p>пр. Гагарина, 7 &nbsp;|&nbsp; Год основания: 1995</p>
+    </div>
+  </div>
+</section>
+
+<section class="sec" id="contacts">
+  <h2>Контакты</h2>
+  <div class="trn"><h4>Федерация тенниса Смоленской области</h4>
+    <p>📍 г. Смоленск</p>
+    <p>📧 info@ftso.ru</p>
+    <p>📞 +7 (4812) 00-00-00</p>
+  </div>
+</section>
+
+<footer>
+  <p>© 2026 Федерация тенниса Смоленской области | <a href="#contacts">Контакты</a> | Член <a href="https://tennis.ru" target="_blank">ТФР</a></p>
+</footer>
+</body>
+</html>
