@@ -1,0 +1,19 @@
+<%
+/* Своя страница ошибки. Наружу отдаётся ТОЛЬКО понятное сообщение:
+   стектрейс и детали пишутся в лог сервера и не утекают клиенту. */
+%>
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top">
+<section class="section-pad error-page">
+  <div class="container">
+    <div class="error-code"><%= status %></div>
+    <h1><%= status >= 500 ? 'Ошибка на сервере' : 'Запрос отклонён' %></h1>
+    <p class="lead"><%= message %></p>
+    <p class="table-foot"><a class="btn btn--primary" href="/">На главную</a></p>
+  </div>
+</section>
+</main>
+
+<%- include('../partials/footer') %>

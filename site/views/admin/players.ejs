@@ -1,0 +1,83 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Игроки</h1>
+  <%- include('_shell') %>
+
+  <div class="panel">
+    <h2>Добавить игрока</h2>
+    <form method="post" action="/admin/players" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="p-name">ФИО</label><input id="p-name" name="full_name" maxlength="120" required></div>
+      <div class="field"><label for="p-city">Город</label><input id="p-city" name="city" maxlength="80" required></div>
+      <div class="field"><label for="p-sex">Пол</label>
+        <select id="p-sex" name="sex" required>
+          <% sexes.forEach(function (s) { %><option value="<%= s %>"><%= s === 'M' ? 'муж.' : 'жен.' %></option><% }); %>
+        </select>
+      </div>
+      <div class="field"><label for="p-age">Возрастная группа</label>
+        <select id="p-age" name="age_group">
+          <option value="">не указана</option>
+          <% ageGroups.forEach(function (g) { %><option value="<%= g %>"><%= g %></option><% }); %>
+        </select>
+      </div>
+      <button class="btn btn--primary" type="submit">Добавить</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Список (<%= players.length %>)</h2>
+    <p class="muted">Поля редактируются прямо в строке — измените и нажмите «Сохранить».</p>
+    <%
+    /* Формы объявлены ВНЕ таблицы, а поля связаны с ними атрибутом form=
+       (вложенные <form> в HTML запрещены, а строка таблицы должна нести
+       и сохранение, и удаление). */
+    %>
+    <div class="table-scroll">
+      <table class="admin-table admin-table--edit">
+        <thead><tr><th>ID</th><th>ФИО</th><th>Город</th><th>Пол</th><th>Группа</th><th>Действия</th></tr></thead>
+        <tbody>
+          <% players.forEach(function (p) { %>
+            <tr>
+              <td><%= p.id %></td>
+              <td><input form="edit-player-<%= p.id %>" name="full_name" value="<%= p.full_name %>" maxlength="120" required></td>
+              <td><input form="edit-player-<%= p.id %>" name="city" value="<%= p.city %>" maxlength="80" required></td>
+              <td>
+                <select form="edit-player-<%= p.id %>" name="sex" required>
+                  <% sexes.forEach(function (s) { %>
+                    <option value="<%= s %>"<%= p.sex === s ? ' selected' : '' %>><%= s === 'M' ? 'муж.' : 'жен.' %></option>
+                  <% }); %>
+                </select>
+              </td>
+              <td>
+                <select form="edit-player-<%= p.id %>" name="age_group">
+                  <option value=""<%= p.age_group ? '' : ' selected' %>>не указана</option>
+                  <% ageGroups.forEach(function (g) { %>
+                    <option value="<%= g %>"<%= p.age_group === g ? ' selected' : '' %>><%= g %></option>
+                  <% }); %>
+                </select>
+              </td>
+              <td class="inline-form">
+                <button class="btn btn--secondary btn--small" type="submit" form="edit-player-<%= p.id %>">Сохранить</button>
+                <button class="btn btn--danger btn--small" type="submit" form="del-player-<%= p.id %>">Удалить</button>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+    <% players.forEach(function (p) { %>
+      <form id="edit-player-<%= p.id %>" method="post" action="/admin/players/<%= p.id %>/update" hidden>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      </form>
+      <form id="del-player-<%= p.id %>" method="post" action="/admin/players/<%= p.id %>/delete" hidden>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      </form>
+    <% }); %>
+  </div>
+</div>
+</main>
+
+<%- include('../partials/footer') %>

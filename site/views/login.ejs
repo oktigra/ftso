@@ -1,0 +1,35 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<main id="top">
+<section class="container auth-wrap">
+  <div class="panel auth-card">
+    <h1>Вход в админку</h1>
+    <% if (error) { %>
+      <p class="form-error"><%= error %></p>
+    <% } %>
+    <form method="post" action="/login" class="form-grid">
+      <%
+      /* CSRF обязателен И здесь: иначе login CSRF — жертву логинят под аккаунтом
+         атакующего. Анонимная сессия создана заранее, токену есть куда лечь. */
+      %>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="next" value="<%= next %>">
+      <div class="field">
+        <label for="username">Логин</label>
+        <input id="username" name="username" autocomplete="username" required maxlength="120" value="<%= username %>">
+      </div>
+      <div class="field">
+        <label for="password">Пароль</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="200">
+      </div>
+      <button class="btn btn--primary" type="submit">Войти</button>
+    </form>
+    <p class="table-foot">
+      <a class="link-more" href="/privacy">Политика конфиденциальности <span aria-hidden="true">→</span></a>
+    </p>
+  </div>
+</section>
+</main>
+
+<%- include('partials/footer') %>

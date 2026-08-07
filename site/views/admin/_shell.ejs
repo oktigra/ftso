@@ -1,0 +1,20 @@
+<%
+/* Админ-страницы — временная простая вёрстка на общих токенах.
+   Их дизайн — отдельным шагом. */
+%>
+<div class="admin-bar">
+  <a href="/admin"<%= currentPath === '/admin' ? ' aria-current="page"' : '' %>>Сводка</a>
+  <a href="/admin/players"<%= currentPath === '/admin/players' ? ' aria-current="page"' : '' %>>Игроки</a>
+  <a href="/admin/tournaments"<%= currentPath.indexOf('/admin/tournaments') === 0 ? ' aria-current="page"' : '' %>>Турниры</a>
+  <a href="/admin/account"<%= currentPath === '/admin/account' ? ' aria-current="page"' : '' %>>Мой аккаунт</a>
+  <% if (user && user.role === 'super-admin') { %>
+    <a href="/admin/users"<%= currentPath === '/admin/users' ? ' aria-current="page"' : '' %>>Пользователи</a>
+  <% } %>
+  <form method="post" action="/logout">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <button class="btn btn--secondary btn--small" type="submit">Выйти (<%= user.username %> · <%= user.role %>)</button>
+  </form>
+</div>
+<% if (typeof flash !== 'undefined' && flash) { %>
+  <div class="flash flash--<%= flash.kind %>"><%= flash.text %></div>
+<% } %>

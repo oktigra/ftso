@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title><%= title %></title>
+<meta name="description" content="Официальный сайт Федерации тенниса Смоленской области: календарь турниров, региональный рейтинг игроков, новости.">
+<%
+/* Анти-FOUC: data-theme ставится на <html> ДО первого рендера. Инлайн переживает
+   строгий CSP за счёт nonce — см. script-src в server/app.mjs. */
+%>
+<script nonce="<%= cspNonce %>">
+(function(){try{var t=localStorage.getItem('ftso-theme');if(t!=='light'&&t!=='dark'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();
+</script>
+<link rel="stylesheet" href="/static/css/fonts.css">
+<link rel="stylesheet" href="/static/css/site.css">
+</head>
+<body>
+<a class="skip-link" href="#top">Перейти к содержимому</a>

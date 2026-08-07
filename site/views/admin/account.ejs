@@ -1,0 +1,26 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Мой аккаунт</h1>
+  <%- include('_shell') %>
+
+  <div class="panel">
+    <h2>Смена пароля</h2>
+    <%
+    /* Смена СВОЕГО пароля требует ТЕКУЩИЙ пароль: иначе угон сессии
+       превращается в постоянный захват аккаунта. */
+    %>
+    <form method="post" action="/admin/account/password" class="form-grid">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="cur">Текущий пароль</label><input id="cur" name="current_password" type="password" autocomplete="current-password" required></div>
+      <div class="field"><label for="new">Новый пароль (от 10 символов)</label><input id="new" name="new_password" type="password" autocomplete="new-password" minlength="10" required></div>
+      <button class="btn btn--primary" type="submit">Сменить пароль</button>
+    </form>
+    <p class="muted">Вы вошли как <%= user.username %>, роль <%= user.role %>.</p>
+  </div>
+</div>
+</main>
+
+<%- include('../partials/footer') %>

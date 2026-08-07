@@ -1,0 +1,31 @@
+<%
+/* Динамическая карточка турнира — маршрут-заглушка: оживёт с модулем турниров.
+   Несуществующий id обрабатывается раньше и отдаёт 404 в стиле сайта. */
+%>
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Турнир</span>
+    <h1><%= tournament.name %></h1>
+    <div class="rating-meta">
+      <span class="badge badge--<%= tournament.category.toLowerCase() %>"><%= tournament.category %></span>
+      <span class="tag">дата завершения: <%= tournament.end_date %></span>
+    </div>
+  </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel">
+      <p class="lead">Страница турнира в разработке.</p>
+      <p class="muted">Сетка, состав участников и протоколы появятся с модулем турниров. Результаты этого турнира уже участвуют в расчёте рейтинга.</p>
+      <p class="table-foot"><a class="link-more" href="/rating">Рейтинг <span aria-hidden="true">→</span></a></p>
+    </div>
+  </div>
+</section>
+</main>
+
+<%- include('partials/footer') %>

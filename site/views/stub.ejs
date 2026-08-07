@@ -1,0 +1,31 @@
+<%
+/* Заглушка раздела: HTTP 200 (не 404) с корректным <title> — иначе поисковик
+   не проиндексирует URL. Страница ПУБЛИЧНАЯ, входа не требует. */
+%>
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Раздел сайта</span>
+    <h1><%= section.title %></h1>
+  </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel">
+      <p class="lead">Раздел в разработке.</p>
+      <p class="muted">
+        Адрес раздела — <code><%= section.path %></code>. Структура сайта поднята целиком,
+        содержимое этого раздела навешивается отдельным шагом.
+        <% if (section.note) { %><%= section.note %><% } %>
+      </p>
+      <p class="table-foot"><a class="link-more" href="/">На главную <span aria-hidden="true">→</span></a></p>
+    </div>
+  </div>
+</section>
+</main>
+
+<%- include('partials/footer') %>

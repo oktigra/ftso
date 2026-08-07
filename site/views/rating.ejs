@@ -1,0 +1,103 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Региональный рейтинг</span>
+    <h1>Рейтинг игроков</h1>
+    <% if (standings) { %>
+      <div class="rating-meta">
+        <span class="tag"><%= statusText %></span>
+        <span class="tag">актуальность: <%= standings.asOf %></span>
+        <span class="tag">пересчитан: <%= standings.computedAt %> UTC</span>
+      </div>
+    <% } %>
+  </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <% if (!standings) { %>
+      <%
+      /* Пустой rating_cache: ни разу не считали -> сообщение, а не 500. */
+      %>
+      <div class="panel empty-state">
+        <h2>Рейтинг ещё не рассчитан</h2>
+        <p class="muted">Таблица появится после первого пересчёта в админке Федерации.</p>
+      </div>
+    <% } else { %>
+      <form class="filters" method="get" action="/rating">
+        <div class="field field--wide">
+          <label for="f-q">Поиск по фамилии</label>
+          <input id="f-q" type="search" name="q" value="<%= filters.q %>" placeholder="например, Ковалёв" maxlength="120">
+        </div>
+        <div class="field">
+          <label for="f-age">Возрастная группа</label>
+          <select id="f-age" name="age">
+            <option value="">все</option>
+            <% ageGroups.forEach(function (g) { %>
+              <option value="<%= g %>"<%= filters.age === g ? ' selected' : '' %>><%= g %></option>
+            <% }); %>
+          </select>
+        </div>
+        <div class="field">
+          <label for="f-sex">Пол</label>
+          <select id="f-sex" name="sex">
+            <option value="">все</option>
+            <% sexes.forEach(function (s) { %>
+              <option value="<%= s %>"<%= filters.sex === s ? ' selected' : '' %>><%= sexRu[s] %></option>
+            <% }); %>
+          </select>
+        </div>
+        <button class="btn btn--primary" type="submit">Показать</button>
+        <a class="btn btn--secondary" href="/rating">Сбросить</a>
+      </form>
+
+      <p class="rating-summary muted">
+        Показано <%= players.length %> из <%= total %> игроков.
+        <a class="link-more" href="/rating.csv?<%= new URLSearchParams(filters).toString() %>">Выгрузить CSV <span aria-hidden="true">→</span></a>
+      </p>
+
+      <% if (players.length === 0) { %>
+        <div class="panel notice">По заданным фильтрам игроков не найдено.</div>
+      <% } else { %>
+        <div class="table-scroll">
+          <table class="rating-table">
+            <thead><tr><th>Место</th><th>Игрок</th><th>Город</th><th>Пол</th><th>Группа</th><th>Очки</th><th>Изменение</th></tr></thead>
+            <tbody>
+              <% players.forEach(function (p) { %>
+                <tr>
+                  <td class="rank"><%= p.rank %></td>
+                  <%
+                  /* ЭКРАНИРОВАНИЕ: вывод данных из БД — только экранирующим тегом,
+                     никогда «сырым». Игрок с именем <script>alert(1)</script>
+                     покажется ТЕКСТОМ, скрипт не выполнится. */
+                  %>
+                  <td class="player"><%= p.playerName %></td>
+                  <td><%= p.city %></td>
+                  <td><%= sexRu[p.sex] || p.sex %></td>
+                  <td><%= p.ageGroup || '—' %></td>
+                  <td class="pts"><%= p.ratingPoints %></td>
+                  <td class="chg chg--<%= p.change.kind %>"><%= p.change.label %></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+
+      <p class="rules-note">
+        Учитываются <%= rules.countBest %> лучших турниров за последние 52 недели (окно <%= rules.windowDays %> дней),
+        коэффициент категории A × <%= rules.categoryCoef.A %>, B × <%= rules.categoryCoef.B %>,
+        шкала очков по местам 100 · 70 · 45 · 25 · 10.
+        <% if (!standings.hasPrevious) { %>
+          Предыдущего снимка ещё нет, поэтому колонка «Изменение» пуста («—»).
+        <% } %>
+      </p>
+    <% } %>
+  </div>
+</section>
+</main>
+
+<%- include('partials/footer') %>
