@@ -1,0 +1,27 @@
+{
+  "name": "ftso-site",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Каркас сайта Федерации тенниса Смоленской области (ftso67.ru)",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.mjs",
+    "migrate": "node db/migrate.mjs",
+    "seed": "node db/seed.mjs",
+    "fonts": "node tools/fetch-fonts.mjs",
+    "accept": "node acceptance.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "ejs": "^3.1.10",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "helmet": "^8.1.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}

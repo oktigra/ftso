@@ -1,0 +1,53 @@
+<%
+/* Шапка — вид из утверждённого макета. Отличие одно и намеренное: в макете
+   пункты меню были ЯКОРЯМИ одной страницы, а сайт МНОГОСТРАНИЧНЫЙ, поэтому
+   здесь РЕАЛЬНЫЕ ссылки разделов из «Структуры сайта» (Приложение № 1, §3). */
+%>
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="/" aria-label="Федерация тенниса Смоленской области — на главную">
+      <%- include('brand') %>
+    </a>
+
+    <nav aria-label="Основное меню">
+      <ul class="nav-menu" id="primary-menu">
+        <% navPrimary.forEach(function (item) { %>
+          <li><a href="<%= item.path %>"<%= currentPath === item.path ? ' aria-current="page"' : '' %>><%= item.navTitle || item.title %></a></li>
+        <% }); %>
+        <%
+        /* Остальные разделы — под «Ещё». На узком экране всё меню уходит в бургер,
+           и эти пункты показываются плоским списком (см. медиазапрос в site.css). */
+        %>
+        <li class="nav-more<%= navMore.some(function (i) { return i.path === currentPath; }) ? ' is-current' : '' %>">
+          <button class="nav-more-btn" type="button" data-more aria-expanded="false" aria-controls="more-menu">
+            Ещё
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <ul class="nav-more-list" id="more-menu">
+            <% navMore.forEach(function (item) { %>
+              <li><a href="<%= item.path %>"<%= currentPath === item.path ? ' aria-current="page"' : '' %>><%= item.title %></a></li>
+            <% }); %>
+          </ul>
+        </li>
+      </ul>
+    </nav>
+
+    <div class="header-actions">
+      <button class="theme-toggle" type="button" data-theme-toggle aria-label="Переключить тему">
+        <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><line x1="12" y1="2.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21.5" y2="12"/><line x1="5.3" y1="5.3" x2="7" y2="7"/><line x1="17" y1="17" x2="18.7" y2="18.7"/><line x1="18.7" y1="5.3" x2="17" y2="7"/><line x1="7" y1="17" x2="5.3" y2="18.7"/></svg>
+        <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 6.5 6.5 0 1 0 20 14.5z"/></svg>
+      </button>
+      <%
+      /* ⚠ ПОРТАЛЬНАЯ КНОПКА — ТОЛЬКО ВИД. Личный кабинет, онлайн-заявки и оплата
+         ВНЕ ОБЪЁМА договора (§9): в макете href="#", так и оставлено. */
+      %>
+      <a class="btn btn--primary btn--register" href="#">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><line x1="18" y1="8" x2="18" y2="14"/><line x1="15" y1="11" x2="21" y2="11"/></svg>
+        <span class="btn-label">Регистрация</span>
+      </a>
+      <button class="burger" type="button" data-burger aria-label="Открыть меню" aria-controls="primary-menu" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+      </button>
+    </div>
+  </div>
+</header>

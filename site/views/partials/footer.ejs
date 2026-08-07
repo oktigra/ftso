@@ -1,0 +1,54 @@
+<footer class="site-footer" id="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-brand">
+        <a class="brand" href="/"><%- include('brand') %></a>
+        <p class="footer-about">Официальный портал региональной общественной спортивной организации. Развитие тенниса в Смоленской области.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Разделы</h4>
+        <ul>
+          <% footerSections.forEach(function (item) { %>
+            <li><a href="<%= item.path %>"><%= item.title %></a></li>
+          <% }); %>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Участникам</h4>
+        <%
+        /* ⚠ ТОЛЬКО ВИД: личный кабинет, заявка на турнир и приём документов —
+           ВНЕ ОБЪЁМА договора (§9). В макете это href="#", так и оставлено;
+           функционал НЕ строится (отдельный этап позже). */
+        %>
+        <ul>
+          <% footerParticipants.forEach(function (item) { %>
+            <li><a href="<%= item.href %>"><%= item.title %></a></li>
+          <% }); %>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h4>Контакты</h4>
+        <address>
+          РФСОО «Федерация тенниса Смоленской области»<br>
+          г. Смоленск<br>
+          <a href="mailto:info@ftso67.ru">info@ftso67.ru</a><br>
+          <a href="tel:+74812000000">+7 (4812) 00-00-00</a>
+        </address>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© <%= year %> РФСОО «Федерация тенниса Смоленской области»</span>
+      <%
+      /* 152-ФЗ: эти две ссылки В объёме и ведут на РЕАЛЬНЫЕ страницы, не на «#». */
+      %>
+      <div class="footer-legal">
+        <% footerLegal.forEach(function (item) { %>
+          <a href="<%= item.path %>"><%= item.title %></a>
+        <% }); %>
+      </div>
+    </div>
+  </div>
+</footer>
+<script src="/static/js/app.js" defer></script>
+</body>
+</html>

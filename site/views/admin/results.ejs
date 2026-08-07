@@ -1,0 +1,88 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1><%= tournament.name %></h1>
+  <%- include('_shell') %>
+  <p class="muted">Завершение <%= tournament.end_date %> · категория <%= tournament.category %> · потолок участников <%= maxParticipants %>.</p>
+
+  <div class="panel">
+    <h2>Добавить результат</h2>
+    <form method="post" action="/admin/tournaments/<%= tournament.id %>/results" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="r-player">Игрок</label>
+        <select id="r-player" name="player_id" required>
+          <% players.forEach(function (p) { %><option value="<%= p.id %>"><%= p.full_name %> (<%= p.city %>)</option><% }); %>
+        </select>
+      </div>
+      <div class="field"><label for="r-place">Место</label><input id="r-place" name="place" inputmode="numeric" required></div>
+      <button class="btn btn--primary" type="submit">Добавить</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Результаты (<%= results.length %>)</h2>
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>Место</th><th>Игрок</th><th>Город</th><th>Действия</th></tr></thead>
+        <tbody>
+          <% results.forEach(function (r) { %>
+            <tr>
+              <td class="rank"><%= r.place %></td>
+              <td class="player"><%= r.full_name %></td>
+              <td><%= r.city %></td>
+              <td>
+                <form method="post" action="/admin/results/<%= r.id %>/delete">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <button class="btn btn--danger btn--small" type="submit">Удалить</button>
+                </form>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Матчи (необязательно — для тай-брейка)</h2>
+    <form method="post" action="/admin/tournaments/<%= tournament.id %>/matches" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="m-win">Победитель</label>
+        <select id="m-win" name="winner_player_id" required>
+          <% players.forEach(function (p) { %><option value="<%= p.id %>"><%= p.full_name %></option><% }); %>
+        </select>
+      </div>
+      <div class="field"><label for="m-lose">Проигравший</label>
+        <select id="m-lose" name="loser_player_id" required>
+          <% players.forEach(function (p) { %><option value="<%= p.id %>"><%= p.full_name %></option><% }); %>
+        </select>
+      </div>
+      <button class="btn btn--primary" type="submit">Добавить матч</button>
+    </form>
+    <p class="muted">Обратный матч (тот же турнир, победитель и проигравший поменялись местами) — отдельная запись, это разрешено.</p>
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>Победитель</th><th>Проигравший</th><th>Действия</th></tr></thead>
+        <tbody>
+          <% matches.forEach(function (m) { %>
+            <tr>
+              <td class="player"><%= m.winner %></td>
+              <td><%= m.loser %></td>
+              <td>
+                <form method="post" action="/admin/matches/<%= m.id %>/delete">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <button class="btn btn--danger btn--small" type="submit">Удалить</button>
+                </form>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</main>
+
+<%- include('../partials/footer') %>

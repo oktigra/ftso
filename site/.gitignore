@@ -1,0 +1,13 @@
+# Секреты — в .env, в git НЕ кладём. В репозитории только .env.example.
+.env
+.env.*
+!.env.example
+
+# Файл БД SQLite (и хвосты WAL) — в git не попадает.
+# В репозитории — схема (db/schema.sql) и сид с выдуманными данными.
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+node_modules/
+npm-debug.log*

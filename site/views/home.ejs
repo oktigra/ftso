@@ -1,0 +1,187 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<main id="top" data-page="home">
+
+<section class="hero">
+  <svg class="court-watermark" data-parallax=".14" viewBox="0 0 300 400" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <rect x="10" y="10" width="280" height="380" rx="2"/>
+    <line x1="10" y1="200" x2="290" y2="200"/>
+    <rect x="45" y="70" width="210" height="260"/>
+    <line x1="150" y1="70" x2="150" y2="330"/>
+    <line x1="45" y1="200" x2="255" y2="200"/>
+  </svg>
+  <div class="container hero-grid">
+    <div class="hero-copy">
+      <span class="eyebrow">Официальный сайт Федерации тенниса Смоленской области</span>
+      <h1>Теннис Смоленской области — в единой рейтинговой системе</h1>
+      <p class="lead">Календарь турниров, региональный рейтинг игроков и онлайн-регистрация через личный кабинет. Один портал для спортсменов, организаторов и болельщиков.</p>
+      <div class="hero-cta">
+        <a class="btn btn--primary" href="#tournaments">Ближайшие турниры</a>
+        <a class="btn btn--secondary" href="#rating">Открыть рейтинг</a>
+      </div>
+      <div class="stats">
+        <% stats.forEach(function (s) { %>
+          <div class="stat fx-card"><%- include('partials/court-card') %><b><%= s.value %></b><span><%= s.label %></span></div>
+        <% }); %>
+      </div>
+    </div>
+    <div class="hero-panel" data-parallax=".05">
+      <%
+      /* Фото — ЛОКАЛЬНАЯ заглушка 4:3, без хотлинков. Реальное фото заказчик
+         подставит, когда придёт модуль контента. */
+      %>
+      <div class="photo">
+        <div class="ph-stripes"></div>
+        <div class="ph-label"><span>фото · теннисный корт / матч · 4:3 · ~1200×900</span></div>
+      </div>
+      <div class="info-card fx-card"><%- include('partials/court-card') %>
+        <div class="ic-item"><small>Ближайший турнир</small><b><%= nextEvent.date %></b></div>
+        <div class="ic-sep" aria-hidden="true"></div>
+        <div class="ic-item"><small>Статус</small><span class="status status--open"><%= nextEvent.status %></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<%
+/* Блок турниров — ПОКА статичное содержимое макета. Реальные данные подключим,
+   когда придёт модуль турниров; ссылка ведёт на свой раздел. */
+%>
+<section class="section-pad section-wm" id="tournaments">
+  <svg class="wm wm--tourn" data-parallax=".1" viewBox="0 0 300 400" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><rect x="10" y="10" width="280" height="380" rx="2"/><line x1="10" y1="200" x2="290" y2="200"/><rect x="45" y="70" width="210" height="260"/><line x1="150" y1="70" x2="150" y2="330"/><line x1="45" y1="200" x2="255" y2="200"/></svg>
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">Календарь сезона</span>
+      <h2>Турниры Федерации</h2>
+      <p class="lead">Соревнования сезона 2025/26 по регламенту ФТСО. Категории A и B определяют рейтинговый коэффициент.</p>
+    </div>
+    <div class="tourn-grid">
+      <div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Дата</th><th>Турнир</th><th>Категория</th><th>Статус</th></tr></thead>
+            <tbody>
+              <% tournaments.forEach(function (t) { %>
+                <tr>
+                  <td class="t-date"><%= t.date %></td>
+                  <td class="t-name"><a href="/tournaments"><%= t.name %></a></td>
+                  <td><span class="badge badge--<%= t.category.toLowerCase() %>"><%= t.category %></span></td>
+                  <td><span class="status status--<%= t.status %>"><%= t.statusLabel %></span></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+        <p class="table-foot"><a class="link-more" href="/tournaments">Все турниры <span aria-hidden="true">→</span></a></p>
+      </div>
+      <aside class="reg-card fx-card"><%- include('partials/court-card') %>
+        <h3>Регистрация онлайн</h3>
+        <p class="reg-card-lead">Личный кабинет игрока — заявка и оплата участия в несколько шагов.</p>
+        <ul>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>Личный кабинет игрока и история результатов</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>Заявка и оплата участия онлайн</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>Приём документов от секретарей турниров с модерацией перед публикацией</li>
+        </ul>
+        <a class="btn btn--primary" href="#">Создать личный кабинет</a>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<%
+/* ЖИВОЙ блок: ТОП-5 из последнего снимка rating_cache. «Изменение» считается
+   на уровне сайта (два последних снимка), как и на /rating. */
+%>
+<section class="section-pad" id="rating">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">Региональный рейтинг</span>
+      <h2>Лидеры рейтинга</h2>
+      <% if (standings) { %>
+        <div class="rating-meta">
+          <span class="tag"><%= statusText %></span>
+          <span class="tag">на <%= standings.asOf %></span>
+        </div>
+      <% } %>
+    </div>
+
+    <% if (!standings) { %>
+      <div class="panel notice notice--warn">
+        Рейтинг ещё не рассчитан. Таблица появится после первого пересчёта в админке.
+      </div>
+    <% } else if (top5.length === 0) { %>
+      <div class="panel notice">В последнем снимке рейтинга нет игроков.</div>
+    <% } else { %>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Место</th><th>Игрок</th><th>Город</th><th>Очки</th><th>Изменение</th></tr></thead>
+          <tbody>
+            <% top5.forEach(function (p) { %>
+              <tr>
+                <td class="rank"><%= p.rank %></td>
+                <td class="player"><%= p.playerName %></td>
+                <td><%= p.city %></td>
+                <td class="pts"><%= p.ratingPoints %></td>
+                <td class="chg chg--<%= p.change.kind %>"><%= p.change.label %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+
+    <p class="rules-note">Рейтинг рассчитывается по регламенту ФТСО: учитываются <%= rules.countBest %> лучших турниров за последние 52 недели, коэффициент категории A × <%= rules.categoryCoef.A %>, B × <%= rules.categoryCoef.B %>.</p>
+    <p class="table-foot"><a class="link-more" href="/rating">Полный рейтинг <span aria-hidden="true">→</span></a></p>
+  </div>
+</section>
+
+<%
+/* Новостной блок — ПОКА статичное содержимое макета (модуль новостей позже). */
+%>
+<section class="section-pad section-wm">
+  <svg class="wm wm--news" data-parallax=".12" viewBox="0 0 300 400" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><rect x="10" y="10" width="280" height="380" rx="2"/><line x1="10" y1="200" x2="290" y2="200"/><rect x="45" y="70" width="210" height="260"/><line x1="150" y1="70" x2="150" y2="330"/><line x1="45" y1="200" x2="255" y2="200"/></svg>
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">Новости</span>
+      <h2>Актуальное</h2>
+    </div>
+    <div class="news-grid">
+      <% news.forEach(function (n) { %>
+        <article class="news-card fx-card">
+          <%- include('partials/court-card') %>
+          <span class="news-date"><%= n.date %></span>
+          <h3><%= n.title %></h3>
+          <p><%= n.excerpt %></p>
+          <a class="link-more" href="/news">Читать <span aria-hidden="true">→</span></a>
+        </article>
+      <% }); %>
+    </div>
+  </div>
+</section>
+
+<%
+/* ⚠ ПОРТАЛЬНЫЕ КНОПКИ — ТОЛЬКО ВИД (§9): href="#", функционала за ними нет. */
+%>
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="cta-inner fx-card">
+      <svg class="court-watermark" data-parallax=".16" viewBox="0 0 300 400" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+        <rect x="10" y="10" width="280" height="380" rx="2"/>
+        <line x1="10" y1="200" x2="290" y2="200"/>
+        <rect x="45" y="70" width="210" height="260"/>
+        <line x1="150" y1="70" x2="150" y2="330"/>
+      </svg>
+      <h2>Играете в теннис — вставайте в рейтинг</h2>
+      <p>Заявляйтесь на турниры онлайн, отслеживайте результаты и своё место в региональном рейтинге ФТСО.</p>
+      <div class="cta-actions">
+        <a class="btn btn--white" href="#">Регистрация игрока</a>
+        <a class="btn btn--outline-white" href="#">Провести турнир</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<%- include('partials/footer') %>

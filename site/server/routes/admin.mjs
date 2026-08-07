@@ -1,0 +1,456 @@
+import { requireRole, ROLES, ACTIVE_ROLES } from '../middleware/auth.mjs';
+import { safeRefererPath } from '../lib/safe-path.mjs';
+import { hashPassword, verifyPassword } from '../lib/password.mjs';
+import { logAction, recentActions } from '../lib/action-log.mjs';
+import {
+  playerInput,
+  tournamentInput,
+  intAtLeast,
+  str,
+  oneOf,
+  AGE_GROUPS,
+  SEXES,
+  CATEGORIES,
+  ValidationError,
+} from '../lib/validate.mjs';
+import {
+  recompute,
+  currentStandings,
+  lastSnapshots,
+  lockState,
+  statusLabel,
+} from '../lib/rating-service.mjs';
+
+// Кто ведёт данные рейтинга: турниры, игроков, результаты, пересчёт.
+const DATA_ROLES = ['super-admin', 'tournament-admin'];
+// Управление пользователями — ТОЛЬКО super-admin (tournament-admin получит 403).
+const OWNER_ROLE = ['super-admin'];
+
+const flash = (req, res, kind, text, back) => {
+  req.session.flash = { kind, text };
+  req.session.save(() => res.redirect(back));
+};
+
+export default function mountAdmin(app, { db, config, limitWrites }) {
+  // Флеш-сообщение достаётся один раз.
+  app.use('/admin', (req, res, next) => {
+    res.locals.flash = req.session.flash || null;
+    if (req.session.flash) delete req.session.flash;
+    next();
+  });
+
+  // Ошибку валидации внутри админки показываем сообщением, сервер жив.
+  const guard = (handler) => (req, res, next) => {
+    try {
+      handler(req, res, next);
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        // Referer управляется клиентом — берём из него только НАШ локальный путь,
+        // иначе получился бы открытый редирект.
+        return flash(req, res, 'error', err.message, safeRefererPath(req, '/admin'));
+      }
+      return next(err);
+    }
+  };
+
+  // --- дашборд ------------------------------------------------------------
+  app.get('/admin', requireRole(...DATA_ROLES), (req, res) => {
+    const counts = {
+      players: db.prepare('SELECT COUNT(*) AS n FROM players').get().n,
+      tournaments: db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n,
+      results: db.prepare('SELECT COUNT(*) AS n FROM results').get().n,
+      matches: db.prepare('SELECT COUNT(*) AS n FROM matches').get().n,
+      snapshots: db.prepare('SELECT COUNT(*) AS n FROM rating_cache').get().n,
+    };
+    const standings = currentStandings(db);
+    res.render('admin/dashboard', {
+      title: 'Админка — ФТСО',
+      counts,
+      standings,
+      statusText: standings ? statusLabel(standings.status) : null,
+      lock: lockState(db),
+      snapshots: lastSnapshots(db, 5).map((s) => ({
+        id: s.id,
+        computedAt: s.computedAt,
+        status: s.status,
+        players: s.data.players.length,
+      })),
+    });
+  });
+
+  // --- игроки -------------------------------------------------------------
+  app.get('/admin/players', requireRole(...DATA_ROLES), (req, res) => {
+    res.render('admin/players', {
+      title: 'Игроки — админка ФТСО',
+      players: db.prepare('SELECT * FROM players ORDER BY full_name').all(),
+      ageGroups: AGE_GROUPS,
+      sexes: SEXES,
+    });
+  });
+
+  app.post(
+    '/admin/players',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const data = playerInput(req.body);
+      const info = db
+        .prepare('INSERT INTO players (full_name, city, sex, age_group) VALUES (?, ?, ?, ?)')
+        .run(data.full_name, data.city, data.sex, data.age_group);
+      logAction(db, req.session.user.id, 'player.create', info.lastInsertRowid, data);
+      flash(req, res, 'ok', `Игрок «${data.full_name}» добавлен.`, '/admin/players');
+    }),
+  );
+
+  app.post(
+    '/admin/players/:id/update',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const data = playerInput(req.body);
+      const info = db
+        .prepare('UPDATE players SET full_name = ?, city = ?, sex = ?, age_group = ? WHERE id = ?')
+        .run(data.full_name, data.city, data.sex, data.age_group, id);
+      if (!info.changes) throw new ValidationError('Игрок не найден');
+      logAction(db, req.session.user.id, 'player.update', id, data);
+      flash(req, res, 'ok', 'Игрок обновлён.', '/admin/players');
+    }),
+  );
+
+  app.post(
+    '/admin/players/:id/delete',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      db.prepare('DELETE FROM players WHERE id = ?').run(id);
+      logAction(db, req.session.user.id, 'player.delete', id, null);
+      flash(req, res, 'ok', 'Игрок удалён.', '/admin/players');
+    }),
+  );
+
+  // --- турниры ------------------------------------------------------------
+  app.get('/admin/tournaments', requireRole(...DATA_ROLES), (req, res) => {
+    res.render('admin/tournaments', {
+      title: 'Турниры — админка ФТСО',
+      tournaments: db
+        .prepare(
+          `SELECT t.*, (SELECT COUNT(*) FROM results r WHERE r.tournament_id = t.id) AS entries
+             FROM tournaments t ORDER BY t.end_date DESC`,
+        )
+        .all(),
+      categories: CATEGORIES,
+    });
+  });
+
+  app.post(
+    '/admin/tournaments',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const data = tournamentInput(req.body);
+      const info = db
+        .prepare('INSERT INTO tournaments (name, end_date, category) VALUES (?, ?, ?)')
+        .run(data.name, data.end_date, data.category);
+      logAction(db, req.session.user.id, 'tournament.create', info.lastInsertRowid, data);
+      flash(req, res, 'ok', `Турнир «${data.name}» добавлен.`, '/admin/tournaments');
+    }),
+  );
+
+  app.post(
+    '/admin/tournaments/:id/update',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const data = tournamentInput(req.body);
+      const info = db
+        .prepare('UPDATE tournaments SET name = ?, end_date = ?, category = ? WHERE id = ?')
+        .run(data.name, data.end_date, data.category, id);
+      if (!info.changes) throw new ValidationError('Турнир не найден');
+      logAction(db, req.session.user.id, 'tournament.update', id, data);
+      flash(req, res, 'ok', 'Турнир обновлён.', '/admin/tournaments');
+    }),
+  );
+
+  app.post(
+    '/admin/tournaments/:id/delete',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      db.prepare('DELETE FROM tournaments WHERE id = ?').run(id);
+      logAction(db, req.session.user.id, 'tournament.delete', id, null);
+      flash(req, res, 'ok', 'Турнир удалён.', '/admin/tournaments');
+    }),
+  );
+
+  // --- результаты и матчи турнира ----------------------------------------
+  app.get('/admin/tournaments/:id/results', requireRole(...DATA_ROLES), (req, res, next) => {
+    if (!/^\d+$/.test(req.params.id)) return next();
+    const id = Number(req.params.id);
+    const tournament = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(id);
+    if (!tournament) return next();
+    res.render('admin/results', {
+      title: `Результаты: ${tournament.name} — админка ФТСО`,
+      tournament,
+      players: db.prepare('SELECT id, full_name, city FROM players ORDER BY full_name').all(),
+      results: db
+        .prepare(
+          `SELECT r.id, r.place, p.full_name, p.city
+             FROM results r JOIN players p ON p.id = r.player_id
+            WHERE r.tournament_id = ? ORDER BY r.place`,
+        )
+        .all(id),
+      matches: db
+        .prepare(
+          `SELECT m.id, w.full_name AS winner, l.full_name AS loser
+             FROM matches m
+             JOIN players w ON w.id = m.winner_player_id
+             JOIN players l ON l.id = m.loser_player_id
+            WHERE m.tournament_id = ? ORDER BY m.id`,
+        )
+        .all(id),
+      maxParticipants: config.rating.maxParticipants,
+    });
+  });
+
+  app.post(
+    '/admin/tournaments/:id/results',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const tournamentId = intAtLeast(req.params.id, 'Турнир');
+      const playerId = intAtLeast(req.body.player_id, 'Игрок');
+      const place = intAtLeast(req.body.place, 'Место', 1);
+      const back = `/admin/tournaments/${tournamentId}/results`;
+
+      if (!db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(tournamentId)) {
+        throw new ValidationError('Турнир не найден');
+      }
+      if (!db.prepare('SELECT 1 FROM players WHERE id = ?').get(playerId)) {
+        throw new ValidationError('Игрок не найден');
+      }
+      // Лимит участников на турнир — разумный потолок, сверх отклоняем.
+      const entries = db
+        .prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?')
+        .get(tournamentId).n;
+      if (entries >= config.rating.maxParticipants) {
+        throw new ValidationError(
+          `Достигнут потолок участников турнира (${config.rating.maxParticipants})`,
+        );
+      }
+      try {
+        db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)').run(
+          tournamentId,
+          playerId,
+          place,
+        );
+      } catch (err) {
+        if (String(err.message).includes('UNIQUE')) {
+          throw new ValidationError('У этого игрока уже есть результат в этом турнире');
+        }
+        throw err;
+      }
+      logAction(db, req.session.user.id, 'result.create', tournamentId, { playerId, place });
+      flash(req, res, 'ok', 'Результат добавлен.', back);
+    }),
+  );
+
+  app.post(
+    '/admin/results/:id/delete',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const row = db.prepare('SELECT tournament_id FROM results WHERE id = ?').get(id);
+      db.prepare('DELETE FROM results WHERE id = ?').run(id);
+      logAction(db, req.session.user.id, 'result.delete', id, null);
+      flash(
+        req,
+        res,
+        'ok',
+        'Результат удалён.',
+        row ? `/admin/tournaments/${row.tournament_id}/results` : '/admin/tournaments',
+      );
+    }),
+  );
+
+  app.post(
+    '/admin/tournaments/:id/matches',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const tournamentId = intAtLeast(req.params.id, 'Турнир');
+      const winner = intAtLeast(req.body.winner_player_id, 'Победитель');
+      const loser = intAtLeast(req.body.loser_player_id, 'Проигравший');
+      const back = `/admin/tournaments/${tournamentId}/results`;
+      if (winner === loser) throw new ValidationError('Победитель и проигравший совпадают');
+      try {
+        db.prepare(
+          'INSERT INTO matches (tournament_id, winner_player_id, loser_player_id) VALUES (?, ?, ?)',
+        ).run(tournamentId, winner, loser);
+      } catch (err) {
+        if (String(err.message).includes('UNIQUE')) {
+          throw new ValidationError('Такой матч уже внесён (обратный матч вносится отдельно)');
+        }
+        if (String(err.message).includes('FOREIGN KEY')) {
+          throw new ValidationError('Турнир или игрок не найден');
+        }
+        throw err;
+      }
+      logAction(db, req.session.user.id, 'match.create', tournamentId, { winner, loser });
+      flash(req, res, 'ok', 'Матч добавлен.', back);
+    }),
+  );
+
+  app.post(
+    '/admin/matches/:id/delete',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const row = db.prepare('SELECT tournament_id FROM matches WHERE id = ?').get(id);
+      db.prepare('DELETE FROM matches WHERE id = ?').run(id);
+      logAction(db, req.session.user.id, 'match.delete', id, null);
+      flash(
+        req,
+        res,
+        'ok',
+        'Матч удалён.',
+        row ? `/admin/tournaments/${row.tournament_id}/results` : '/admin/tournaments',
+      );
+    }),
+  );
+
+  // --- пересчёт рейтинга --------------------------------------------------
+  // Пересчёт ПО КНОПКЕ, не cron. Лок от двойного нажатия/параллельных вызовов.
+  app.post(
+    '/admin/rating/recompute',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      let result;
+      try {
+        result = recompute(db, {
+          staleLockMinutes: config.rating.staleLockMinutes,
+          keepSnapshots: config.rating.keepSnapshots,
+          minIntervalSeconds: config.rating.minIntervalSeconds,
+        });
+      } catch (err) {
+        // Движок падает на битых данных, а не молчит — показываем сообщением,
+        // сервер жив, лок уже снят в finally.
+        logAction(db, req.session.user.id, 'rating.recompute.failed', null, { error: err.message });
+        throw new ValidationError(`Пересчёт не выполнен: ${err.message}`);
+      }
+      if (!result.ok) {
+        const text =
+          result.reason === 'too-soon'
+            ? `Рейтинг только что пересчитан. Повторный пересчёт возможен через ${result.retryAfter} с — так два почти одинаковых снимка не обнулят колонку «Изменение».`
+            : 'Пересчёт уже идёт — подождите.';
+        return flash(req, res, 'error', text, '/admin');
+      }
+      logAction(db, req.session.user.id, 'rating.recompute', result.snapshotId, {
+        players: result.players,
+      });
+      const warn = result.warnings.length ? ` Предупреждения: ${result.warnings.join('; ')}` : '';
+      flash(req, res, 'ok', `Рейтинг пересчитан: ${result.players} игроков.${warn}`, '/admin');
+    }),
+  );
+
+  // --- свой пароль --------------------------------------------------------
+  app.get('/admin/account', requireRole(...DATA_ROLES), (req, res) => {
+    res.render('admin/account', { title: 'Мой аккаунт — админка ФТСО' });
+  });
+
+  app.post(
+    '/admin/account/password',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      // Смена СВОЕГО пароля требует ТЕКУЩИЙ пароль — иначе угон сессии = постоянный
+      // захват аккаунта.
+      const current = String(req.body.current_password || '');
+      const next = str(req.body.new_password, 'Новый пароль', { min: 10, max: 200 });
+      const row = db
+        .prepare('SELECT password_hash FROM users WHERE id = ?')
+        .get(req.session.user.id);
+      if (!row || !verifyPassword(current, row.password_hash)) {
+        throw new ValidationError('Текущий пароль неверен');
+      }
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(
+        hashPassword(next),
+        req.session.user.id,
+      );
+      logAction(db, req.session.user.id, 'user.password.self', req.session.user.id, null);
+      flash(req, res, 'ok', 'Пароль изменён.', '/admin/account');
+    }),
+  );
+
+  // --- пользователи: ТОЛЬКО super-admin (tournament-admin -> 403) ----------
+  app.get('/admin/users', requireRole(...OWNER_ROLE), (req, res) => {
+    res.render('admin/users', {
+      title: 'Пользователи — админка ФТСО',
+      users: db.prepare('SELECT id, username, role, created_at FROM users ORDER BY id').all(),
+      roles: ROLES,
+      activeRoles: ACTIVE_ROLES,
+      log: recentActions(db, 30),
+    });
+  });
+
+  app.post(
+    '/admin/users',
+    requireRole(...OWNER_ROLE),
+    limitWrites,
+    guard((req, res) => {
+      // ПУБЛИЧНОЙ формы регистрации НЕТ: пользователей заводит super-admin отсюда.
+      const username = str(req.body.username, 'Логин', { min: 3, max: 60 });
+      const password = str(req.body.password, 'Пароль', { min: 10, max: 200 });
+      const role = oneOf(req.body.role, 'Роль', ROLES);
+      try {
+        const info = db
+          .prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
+          .run(username, hashPassword(password), role);
+        logAction(db, req.session.user.id, 'user.create', info.lastInsertRowid, { username, role });
+      } catch (err) {
+        if (String(err.message).includes('UNIQUE')) {
+          throw new ValidationError('Такой логин уже занят');
+        }
+        throw err;
+      }
+      flash(req, res, 'ok', `Пользователь «${username}» создан.`, '/admin/users');
+    }),
+  );
+
+  app.post(
+    '/admin/users/:id/password',
+    requireRole(...OWNER_ROLE),
+    limitWrites,
+    guard((req, res) => {
+      // super-admin сбрасывает пароль ДРУГОГО пользователя БЕЗ его текущего —
+      // это корректно для админ-сброса и прописано явно.
+      const id = intAtLeast(req.params.id, 'id');
+      const password = str(req.body.password, 'Новый пароль', { min: 10, max: 200 });
+      const info = db
+        .prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+        .run(hashPassword(password), id);
+      if (!info.changes) throw new ValidationError('Пользователь не найден');
+      logAction(db, req.session.user.id, 'user.password.reset', id, null);
+      flash(req, res, 'ok', 'Пароль пользователя сброшен.', '/admin/users');
+    }),
+  );
+
+  app.post(
+    '/admin/users/:id/delete',
+    requireRole(...OWNER_ROLE),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      if (id === req.session.user.id) throw new ValidationError('Нельзя удалить самого себя');
+      db.prepare('DELETE FROM users WHERE id = ?').run(id);
+      logAction(db, req.session.user.id, 'user.delete', id, null);
+      flash(req, res, 'ok', 'Пользователь удалён.', '/admin/users');
+    }),
+  );
+}

@@ -1,0 +1,55 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container">
+  <h1>Админка Федерации</h1>
+  <%- include('_shell') %>
+
+  <div class="admin-grid">
+    <div class="panel"><b><%= counts.players %></b><div class="muted">игроков</div></div>
+    <div class="panel"><b><%= counts.tournaments %></b><div class="muted">турниров</div></div>
+    <div class="panel"><b><%= counts.results %></b><div class="muted">результатов</div></div>
+    <div class="panel"><b><%= counts.matches %></b><div class="muted">матчей</div></div>
+    <div class="panel"><b><%= counts.snapshots %></b><div class="muted">снимков рейтинга</div></div>
+  </div>
+
+  <div class="panel">
+    <h2>Рейтинг</h2>
+    <% if (standings) { %>
+      <p class="muted">Последний снимок #<%= standings.snapshotId %> от <%= standings.computedAt %> UTC · статус: <%= statusText %> · игроков: <%= standings.players.length %>.
+      <% if (!standings.hasPrevious) { %>Предыдущего снимка нет — «Изменение» пока «—».<% } %></p>
+    <% } else { %>
+      <p class="muted">Рейтинг ещё ни разу не рассчитан.</p>
+    <% } %>
+    <%
+    /* Пересчёт ПО КНОПКЕ, не cron. Лок защищает от двойного нажатия;
+       протухший лок (пересчёт упал) сбрасывается автоматически. */
+    %>
+    <form method="post" action="/admin/rating/recompute" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="btn btn--primary" type="submit">Пересчитать рейтинг</button>
+      <% if (lock && lock.is_computing) { %>
+        <span class="muted">Идёт пересчёт с <%= lock.started_at %> UTC</span>
+      <% } %>
+    </form>
+
+    <% if (snapshots.length) { %>
+      <h3>Последние снимки</h3>
+      <ul class="log-list">
+        <% snapshots.forEach(function (s) { %>
+          <li>#<%= s.id %> · <%= s.computedAt %> UTC · <code><%= s.status %></code> · игроков: <%= s.players %></li>
+        <% }); %>
+      </ul>
+    <% } %>
+  </div>
+
+  <div class="panel">
+    <h2>Границы этого шага</h2>
+    <p class="muted">Живой раздел один — рейтинг. Загрузки файлов в каркасе нет. Личный кабинет,
+      онлайн-заявки и онлайн-оплата вне объёма договора (§9) и не строятся.</p>
+  </div>
+</div>
+</main>
+
+<%- include('../partials/footer') %>

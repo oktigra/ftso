@@ -1,0 +1,82 @@
+<%
+/* Страница закрыта ролью super-admin. tournament-admin сюда получает 403.
+   ПУБЛИЧНОЙ формы регистрации НЕТ — пользователей заводят только отсюда. */
+%>
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Пользователи</h1>
+  <%- include('_shell') %>
+
+  <div class="panel">
+    <h2>Создать пользователя</h2>
+    <form method="post" action="/admin/users" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="u-name">Логин</label><input id="u-name" name="username" minlength="3" maxlength="60" required></div>
+      <div class="field"><label for="u-pass">Пароль (от 10 символов)</label><input id="u-pass" name="password" type="password" minlength="10" required></div>
+      <div class="field"><label for="u-role">Роль</label>
+        <select id="u-role" name="role" required>
+          <% roles.forEach(function (r) { %>
+            <option value="<%= r %>"><%= r %><%= activeRoles.includes(r) ? '' : ' (заведена, разделы позже)' %></option>
+          <% }); %>
+        </select>
+      </div>
+      <button class="btn btn--primary" type="submit">Создать</button>
+    </form>
+    <p class="muted">В этом шаге рабочие роли — <code>super-admin</code> и <code>tournament-admin</code>.
+      <code>content-manager</code> и <code>news-editor</code> заведены, но не подключены: их матрица
+      доступа определится, когда придут их разделы.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Список (<%= users.length %>)</h2>
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>ID</th><th>Логин</th><th>Роль</th><th>Создан</th><th>Сброс пароля</th><th></th></tr></thead>
+        <tbody>
+          <% users.forEach(function (u) { %>
+            <tr>
+              <td><%= u.id %></td>
+              <td class="player"><%= u.username %></td>
+              <td><code><%= u.role %></code></td>
+              <td><%= u.created_at %></td>
+              <td>
+                <%
+                /* super-admin сбрасывает пароль ДРУГОГО пользователя БЕЗ его
+                   текущего — это корректно именно для админ-сброса. */
+                %>
+                <form method="post" action="/admin/users/<%= u.id %>/password" class="inline-form">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <input name="password" type="password" placeholder="новый пароль" minlength="10" required>
+                  <button class="btn btn--secondary btn--small" type="submit">Сбросить</button>
+                </form>
+              </td>
+              <td>
+                <% if (u.id !== user.id) { %>
+                  <form method="post" action="/admin/users/<%= u.id %>/delete">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button class="btn btn--danger btn--small" type="submit">Удалить</button>
+                  </form>
+                <% } %>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Журнал действий (последние <%= log.length %>)</h2>
+    <ul class="log-list">
+      <% log.forEach(function (row) { %>
+        <li><%= row.at %> UTC · <%= row.username || '—' %> · <code><%= row.parsed.type %></code><%= row.parsed.object_id ? ' #' + row.parsed.object_id : '' %></li>
+      <% }); %>
+    </ul>
+  </div>
+</div>
+</main>
+
+<%- include('../partials/footer') %>
