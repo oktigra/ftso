@@ -85,6 +85,12 @@ export function loadConfig({ requireSecrets = true } = {}) {
       keepSnapshots: Number(process.env.RATING_KEEP_SNAPSHOTS || 24),
       maxParticipants: Number(process.env.TOURNAMENT_MAX_PARTICIPANTS || 256),
     },
+    upload: {
+      // ВНЕ webroot: webroot — это site/public (отдаётся как /static).
+      // Каталог site/storage статикой не раздаётся, файл уходит только через
+      // наш маршрут, который ставит attachment и проверяет права.
+      dir: process.env.UPLOAD_DIR || resolve(ROOT, 'storage/uploads'),
+    },
     smtp: {
       host: process.env.SMTP_HOST || 'smtp.yandex.ru',
       port: Number(process.env.SMTP_PORT || 465),

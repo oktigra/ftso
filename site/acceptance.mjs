@@ -1505,7 +1505,108 @@ await check('пароль SMTP не утекает в лог и не лежит 
 });
 
 // ===========================================================================
-section('13. Браузер: тема, CSP, адаптив, шрифты, XSS');
+section('13. Единые требования к загрузке файлов');
+
+const up = await import('./server/lib/uploads.mjs');
+const UPLOAD_DIR = resolve(WORK, 'uploads');
+
+// Мини-файлы с настоящими сигнатурами: проверяем распознавание по СОДЕРЖИМОМУ.
+const fileOf = (head, tail = 'x'.repeat(64)) => Buffer.concat([Buffer.from(head, 'latin1'), Buffer.from(tail)]);
+const PDF = fileOf('%PDF-1.7\n');
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 7)]);
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 7)]);
+const EXE = Buffer.concat([Buffer.from('MZ', 'latin1'), Buffer.alloc(64, 0)]);
+const ELF = Buffer.concat([Buffer.from([0x7f, 0x45, 0x4c, 0x46]), Buffer.alloc(64, 0)]);
+const SHELL = fileOf('#!/bin/sh\nrm -rf /\n');
+/** ZIP с именем первой записи — так отличаем docx от голого архива. */
+function zipWithFirstEntry(name) {
+  const n = Buffer.from(name, 'latin1');
+  const head = Buffer.alloc(30);
+  head.writeUInt32LE(0x04034b50, 0);
+  head.writeUInt16LE(n.length, 26);
+  return Buffer.concat([head, n, Buffer.alloc(64, 0)]);
+}
+const DOCX = zipWithFirstEntry('[Content_Types].xml');
+const PLAIN_ZIP = zipWithFirstEntry('payload.sh');
+
+await check('тип определяется по magic bytes, а не по расширению и Content-Type', async () => {
+  // Файл НАЗВАН документом, но внутри — исполняемый.
+  let caught = null;
+  try {
+    up.validateUpload({ buffer: EXE, filename: 'polozhenie.pdf', profile: 'tournament-doc' });
+  } catch (err) { caught = err; }
+  assert(caught, 'exe под именем .pdf прошёл проверку');
+  assert(/Исполняемые/.test(caught.message), `ожидался отказ по исполняемому файлу, получено: ${caught.message}`);
+
+  for (const [buf, label] of [[ELF, 'ELF'], [SHELL, 'скрипт с shebang']]) {
+    let err = null;
+    try { up.validateUpload({ buffer: buf, filename: 'setka.pdf', profile: 'tournament-doc' }); } catch (e) { err = e; }
+    assert(err && /Исполняемые/.test(err.message), `${label} под именем .pdf не отбит`);
+  }
+
+  // И наоборот: настоящий PDF с «неправильным» именем распознаётся верно.
+  const ok = up.validateUpload({ buffer: PDF, filename: 'файл.txt', profile: 'tournament-doc' });
+  eq(ok.mime, 'application/pdf', 'настоящий PDF не распознан по содержимому');
+  return 'exe/elf/shebang под видом .pdf отбиты; настоящий PDF распознан вопреки расширению';
+});
+
+await check('голый ZIP не проходит как документ Office', async () => {
+  const docx = up.validateUpload({ buffer: DOCX, filename: 'polozhenie.docx', profile: 'tournament-doc' });
+  eq(docx.kind, 'document', 'настоящий docx не распознан');
+  eq(docx.ext, 'docx', 'расширение docx не сохранено');
+  let err = null;
+  try { up.validateUpload({ buffer: PLAIN_ZIP, filename: 'polozhenie.docx', profile: 'tournament-doc' }); } catch (e) { err = e; }
+  assert(err, 'голый zip прошёл под видом docx');
+  assert(/не распознан/.test(err.message), `ожидался отказ по формату, получено: ${err.message}`);
+  return 'docx (первая запись [Content_Types].xml) принят, архив с payload.sh — отклонён';
+});
+
+await check('лимит размера и профиль назначения соблюдаются', async () => {
+  const big = Buffer.concat([PNG, Buffer.alloc(9 * 1024 * 1024, 1)]);
+  let err = null;
+  try { up.validateUpload({ buffer: big, filename: 'foto.png', profile: 'gallery' }); } catch (e) { err = e; }
+  assert(err && /больше/.test(err.message), 'превышение лимита размера не поймано');
+
+  // Профиль решает, что можно: в галерею PDF нельзя, в документы — нельзя картинку.
+  let g = null;
+  try { up.validateUpload({ buffer: PDF, filename: 'a.pdf', profile: 'gallery' }); } catch (e) { g = e; }
+  assert(g && /тип файла/.test(g.message), 'PDF пролез в галерею');
+  let d = null;
+  try { up.validateUpload({ buffer: JPEG, filename: 'a.jpg', profile: 'documents' }); } catch (e) { d = e; }
+  assert(d, 'картинка пролезла в раздел документов');
+  eq(up.validateUpload({ buffer: JPEG, filename: 'a.jpg', profile: 'gallery' }).kind, 'image', 'JPEG в галерею должен проходить');
+  let empty = null;
+  try { up.validateUpload({ buffer: Buffer.alloc(0), filename: 'a.pdf', profile: 'documents' }); } catch (e) { empty = e; }
+  assert(empty && /пустой/.test(empty.message), 'пустой файл принят');
+  return 'лимит размера, пустой файл и чужой профиль отклоняются; свой тип проходит';
+});
+
+await check('файл лежит ВНЕ webroot под случайным именем', async () => {
+  const row = up.storeUpload(db, {
+    buffer: PDF, filename: '../../evil name".pdf', profile: 'tournament-doc', dir: UPLOAD_DIR,
+  });
+  assert(row.stored_name !== '../../evil name".pdf', 'имя с диска взято из присланного');
+  assert(/^[0-9a-f]{32}\.pdf$/.test(row.stored_name), `имя на диске должно быть случайным, получено ${row.stored_name}`);
+  const onDisk = resolve(UPLOAD_DIR, row.stored_name);
+  assert(existsSync(onDisk), 'файл не записан на диск');
+  // Каталог хранения НЕ внутри public: иначе nginx/express отдали бы файл
+  // напрямую, мимо проверки прав и мимо attachment.
+  const webroot = resolve(HERE, 'public');
+  assert(!resolve(UPLOAD_DIR).startsWith(webroot), 'каталог загрузок оказался внутри webroot');
+  // И через статику он не достаётся.
+  const viaStatic = await http(`/static/uploads/${row.stored_name}`);
+  assert(viaStatic.status === 404, `файл достаётся как статика (HTTP ${viaStatic.status})`);
+  // Опасное имя вычищено, расширение подставлено по содержимому.
+  assert(!row.original_name.includes('/'), 'в имени для отдачи остались слэши');
+  assert(!row.original_name.includes('"'), 'в имени для отдачи остались кавычки');
+  assert(row.original_name.endsWith('.pdf'), 'расширение по содержимому не подставлено');
+  up.deleteUpload(db, row.id, UPLOAD_DIR);
+  assert(!existsSync(onDisk), 'файл остался на диске после удаления записи');
+  return `имя на диске случайное (${row.stored_name}), хранение вне webroot, статикой не отдаётся, удаление уносит файл`;
+});
+
+// ===========================================================================
+section('14. Браузер: тема, CSP, адаптив, шрифты, XSS');
 
 let browserNote = '';
 try {

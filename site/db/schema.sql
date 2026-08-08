@@ -137,6 +137,64 @@ CREATE INDEX IF NOT EXISTS idx_consents_player_kind ON consents (player_id, kind
 -- Автоочистка ходит по дате.
 CREATE INDEX IF NOT EXISTS idx_consents_at ON consents (at);
 
+-- ЗАГРУЖЕННЫЕ ФАЙЛЫ — общая таблица на все аплоады (документы турниров,
+-- галерея, /documents). Сам файл лежит ВНЕ webroot под случайным именем;
+-- присланное имя хранится здесь и используется только при отдаче.
+--
+-- profile — назначение загрузки (см. UPLOAD_PROFILES): от него зависят
+-- разрешённые типы и лимит размера. mime и kind проставляются ПО СОДЕРЖИМОМУ,
+-- а не по тому, что сказал клиент.
+CREATE TABLE IF NOT EXISTS uploads (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  stored_name   TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  mime          TEXT NOT NULL,
+  kind          TEXT NOT NULL,
+  profile       TEXT NOT NULL,
+  size_bytes    INTEGER NOT NULL,
+  sha256        TEXT NOT NULL,
+  uploaded_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  meta          TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_uploads_profile ON uploads (profile, id DESC);
+
+-- ЗАЯВКИ «ПРОВЕСТИ ТУРНИР». Как и регистрация игрока: публичная форма кладёт
+-- сюда, в tournaments турнир попадает ТОЛЬКО после модерации.
+-- Результаты для рейтинга вводятся структурно через готовый CRUD админки —
+-- файлами рейтинг не кормится.
+CREATE TABLE IF NOT EXISTS tournament_requests (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  name          TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 160),
+  city          TEXT NOT NULL CHECK (length(trim(city)) BETWEEN 1 AND 80),
+  end_date      TEXT NOT NULL
+    CHECK (end_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
+    CHECK (end_date IS strftime('%Y-%m-%d', end_date)),
+  category      TEXT NOT NULL CHECK (category IN ('A','B')),
+  organizer     TEXT NOT NULL CHECK (length(trim(organizer)) BETWEEN 1 AND 160),
+  email         TEXT NOT NULL CHECK (length(trim(email)) BETWEEN 5 AND 160),
+  phone         TEXT,
+  comment       TEXT,
+  status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  status_token  TEXT NOT NULL UNIQUE,
+  tournament_id INTEGER REFERENCES tournaments(id) ON DELETE SET NULL,
+  decided_by    INTEGER REFERENCES users(id)       ON DELETE SET NULL,
+  decided_at    TEXT,
+  reject_reason TEXT,
+  ip            TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tournament_requests_status ON tournament_requests (status, id DESC);
+
+-- Файлы, приложенные к заявке (положение, сетка). Отдельной таблицей, потому
+-- что файлов несколько, а удаление заявки обязано унести их с собой.
+CREATE TABLE IF NOT EXISTS tournament_request_files (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id INTEGER NOT NULL REFERENCES tournament_requests(id) ON DELETE CASCADE,
+  upload_id  INTEGER NOT NULL REFERENCES uploads(id)             ON DELETE CASCADE,
+  UNIQUE (request_id, upload_id)
+);
+
 -- ИСХОДЯЩАЯ ПОЧТА. Письмо сперва ЛОЖИТСЯ В ОЧЕРЕДЬ и только потом отправляется:
 -- иначе сбой SMTP означал бы «заявка принята, но человеку никто не сообщил», и
 -- узнать об этом было бы неоткуда. Непосланное видно в админке — это и есть
