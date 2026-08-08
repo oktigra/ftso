@@ -1,0 +1,61 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Новости</h1>
+  <%- include('_shell') %>
+
+  <div class="panel form-panel">
+    <h2>Добавить новость</h2>
+    <form method="post" action="/admin/news" class="stacked-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="n-title">Заголовок</label><input id="n-title" name="title" maxlength="200" required></div>
+      <div class="field"><label for="n-summary">Короткое описание</label><input id="n-summary" name="summary" maxlength="500"></div>
+      <div class="field"><label for="n-body">Текст</label><textarea id="n-body" name="body" rows="6" maxlength="20000" required></textarea></div>
+      <div class="field"><label for="n-date">Дата публикации</label><input id="n-date" name="published_at" placeholder="ГГГГ-ММ-ДД"></div>
+      <div class="field"><label for="n-pub">Публикация</label>
+        <select id="n-pub" name="is_published">
+          <option value="0" selected>черновик</option>
+          <option value="1">опубликовать</option>
+        </select>
+      </div>
+      <button class="btn btn--primary" type="submit">Добавить</button>
+    </form>
+    <p class="muted">Черновик по прямой ссылке наружу не отдаётся — /news/:id вернёт 404.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Список (<%= news.length %>)</h2>
+    <% if (!news.length) { %><p class="muted">Новостей пока нет.</p><% } %>
+    <% news.forEach(function (n) { %>
+      <div class="reg-item">
+        <form method="post" action="/admin/news/<%= n.id %>/update" class="stacked-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="field"><label for="t-<%= n.id %>">Заголовок</label>
+            <input id="t-<%= n.id %>" name="title" maxlength="200" required value="<%= n.title %>"></div>
+          <div class="field"><label for="s-<%= n.id %>">Короткое описание</label>
+            <input id="s-<%= n.id %>" name="summary" maxlength="500" value="<%= n.summary || '' %>"></div>
+          <div class="field"><label for="b-<%= n.id %>">Текст</label>
+            <textarea id="b-<%= n.id %>" name="body" rows="4" maxlength="20000" required><%= n.body %></textarea></div>
+          <div class="field"><label for="d-<%= n.id %>">Дата публикации</label>
+            <input id="d-<%= n.id %>" name="published_at" placeholder="ГГГГ-ММ-ДД" value="<%= n.published_at || '' %>"></div>
+          <div class="field"><label for="p-<%= n.id %>">Публикация</label>
+            <select id="p-<%= n.id %>" name="is_published">
+              <option value="0"<%= n.is_published ? '' : ' selected' %>>черновик</option>
+              <option value="1"<%= n.is_published ? ' selected' : '' %>>опубликована</option>
+            </select>
+          </div>
+          <div class="inline-form">
+            <button class="btn btn--secondary btn--small" type="submit">Сохранить</button>
+          </div>
+        </form>
+        <form method="post" action="/admin/news/<%= n.id %>/delete" class="inline-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button class="btn btn--danger btn--small" type="submit">Удалить</button>
+        </form>
+      </div>
+    <% }); %>
+  </div>
+</div>
+</main>
+<%- include('../partials/footer') %>

@@ -9,6 +9,15 @@ export function csrfToken(req) {
   return req.session.csrfToken;
 }
 
+/**
+ * Сверка присланного токена с сессионным. Вынесена наружу, потому что для
+ * multipart-форм тело разбирается ПОЗЖЕ общего middleware, и проверку делает
+ * парсер формы (lib/multipart.mjs) — но по этой же функции, а не по своей.
+ */
+export function csrfMatches(req, sent) {
+  return Boolean(req.session) && sameToken(sent, req.session.csrfToken);
+}
+
 function sameToken(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const ba = Buffer.from(a);
@@ -25,6 +34,11 @@ export function csrfMiddleware() {
   return (req, res, next) => {
     res.locals.csrfToken = csrfToken(req);
     if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+
+    // MULTIPART: тела здесь ещё нет — express.urlencoded такие запросы не
+    // разбирает. Проверку делает parseMultipart сразу после разбора полей;
+    // без неё поля формы получить нечем, поэтому пропустить её невозможно.
+    if (/^multipart\/form-data/i.test(req.headers['content-type'] || '')) return next();
 
     const sent = (req.body && req.body._csrf) || req.get('x-csrf-token');
     if (!sameToken(sent, req.session.csrfToken)) {

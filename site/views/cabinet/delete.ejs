@@ -1,0 +1,46 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Личный кабинет</span>
+    <h1>Удаление персональных данных</h1>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <% if (cabinetFlash) { %>
+      <div class="flash flash--<%= cabinetFlash.kind %>" role="alert"><%= cabinetFlash.text %></div>
+    <% } %>
+    <div class="panel form-panel">
+      <p class="lead">Это необратимо. Прочитайте, что произойдёт.</p>
+      <h2>Будет уничтожено</h2>
+      <ul>
+        <li>фамилия, имя, отчество, город и возрастная группа;</li>
+        <li>адрес электронной почты и пароль — вход в кабинет закроется;</li>
+        <li>фотография профиля;</li>
+        <li>записи ваших согласий и поданные заявки;</li>
+        <li>ваше имя в сохранённых снимках рейтинга и в служебных журналах.</li>
+      </ul>
+      <h2>Будет сохранено — и почему</h2>
+      <p>
+        Результаты сыгранных вами матчей. Они влияют на рейтинг ваших соперников:
+        удалить матч значит переписать место и очки человеку, который об этом не просил.
+        После удаления эти записи невозможно связать с вами — в таблицах на месте
+        фамилии стоит «Игрок удалён».
+      </p>
+      <h2>Подтверждение</h2>
+      <form method="post" action="/cabinet/delete" class="stacked-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="field">
+          <label for="d-confirm">Введите слово УДАЛИТЬ, чтобы подтвердить</label>
+          <input id="d-confirm" name="confirm" maxlength="20" required autocomplete="off">
+        </div>
+        <button class="btn btn--danger" type="submit">Удалить мои данные навсегда</button>
+      </form>
+      <p class="table-foot"><a class="link-more" href="/cabinet">Вернуться в кабинет <span aria-hidden="true">→</span></a></p>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

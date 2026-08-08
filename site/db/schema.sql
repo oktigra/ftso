@@ -20,7 +20,21 @@ CREATE TABLE IF NOT EXISTS players (
   sex       TEXT NOT NULL CHECK (sex IN ('M','F')),
   -- контролируемый список, набор задаёт Федерация -> жёсткий CHECK не ставим,
   -- проверяется валидацией в server/lib/validate.mjs
-  age_group TEXT
+  age_group TEXT,
+  -- ПУБЛИКУЕМОСТЬ. Дефолт 0 = НЕ публиковать: публикация ФИО в открытом рейтинге —
+  -- это распространение (ст. 10.1 152-ФЗ), для него нужно ОТДЕЛЬНОЕ согласие.
+  -- Флаг НЕ выставляется руками: он производный от журнала согласий, его
+  -- пересчитывает syncPlayerPublicFlag() по последнему событию kind='distribution'.
+  -- Отозвал согласие -> флаг снят -> игрок уходит под «Скрыто по заявлению»,
+  -- СОХРАНЯЯ место и очки (движок считает по реальным данным).
+  is_public INTEGER NOT NULL DEFAULT 0 CHECK (is_public IN (0,1)),
+  -- Фото профиля (личный кабинет). Файл живёт в uploads, вне webroot.
+  photo_upload_id INTEGER REFERENCES uploads(id) ON DELETE SET NULL,
+  -- ОБЕЗЛИЧЕНА ПО СТ. 21. Строка игрока остаётся, но личных данных в ней больше
+  -- нет: ФИО затёрто, город и группа очищены, аккаунт и фото удалены.
+  -- Строку нельзя было удалить целиком — на неё ссылаются матчи, а они влияют
+  -- на рейтинг СОПЕРНИКОВ. Игрок остаётся анонимной вершиной графа матчей.
+  anonymized_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS tournaments (
@@ -60,6 +74,265 @@ CREATE TABLE IF NOT EXISTS rating_cache (
   standings_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_rating_cache_id ON rating_cache (id DESC);
+
+-- ЗАЯВКИ НА РЕГИСТРАЦИЮ. Публичная форма кладёт сюда, в players игрок попадает
+-- ТОЛЬКО после модерации: иначе любой прохожий печатает себя в публичный рейтинг.
+--
+-- МИНИМИЗАЦИЯ (ч. 5 ст. 5 152-ФЗ): собираем ФИО, город, пол, e-mail —
+-- и всё. Возрастная группа необязательна, телефона и даты рождения нет вовсе.
+-- E-mail обязателен: это единственный канал сообщить решение модератора.
+--
+-- status_token — секрет ссылки на страницу статуса. Заявитель не заводит пароль
+-- (пароли будут в личном кабинете), а статус смотреть должен: длинный
+-- случайный токен в адресе — доступ по факту владения ссылкой, не по перебору id.
+CREATE TABLE IF NOT EXISTS registrations (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name     TEXT NOT NULL CHECK (length(trim(full_name)) BETWEEN 1 AND 120),
+  city          TEXT NOT NULL CHECK (length(trim(city))      BETWEEN 1 AND 80),
+  sex           TEXT NOT NULL CHECK (sex IN ('M','F')),
+  age_group     TEXT,
+  email         TEXT NOT NULL CHECK (length(trim(email)) BETWEEN 5 AND 160),
+  status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  status_token  TEXT NOT NULL UNIQUE,
+  -- заполняется при одобрении: новый игрок либо привязка к существующему
+  player_id     INTEGER REFERENCES players(id) ON DELETE CASCADE,
+  decided_by    INTEGER REFERENCES users(id)   ON DELETE SET NULL,
+  decided_at    TEXT,
+  reject_reason TEXT,
+  ip            TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_registrations_status ON registrations (status, id DESC);
+
+-- ЖУРНАЛ СОГЛАСИЙ (152-ФЗ). Доказательство того, ЧТО и КОГДА принял субъект.
+-- Согласий ДВА и они раздельные (ч. 6 ст. 10.1): 'processing' — обработка (ст. 9),
+-- 'distribution' — распространение, то есть публикация в открытом доступе.
+-- Пишется СОБЫТИЯМИ: 'granted' и 'revoked'. Отзыв — не удаление строки, а новая
+-- запись с датой, иначе нечем доказать, что согласие когда-то действовало.
+--
+-- Сама запись журнала — тоже ПДн, поэтому у неё есть retention: отозванные
+-- согласия чистятся через CONSENT_RETENTION_DAYS (см. lib/consent-journal.mjs).
+--
+-- player_id NULL — заявка подана, но игрок ещё не заведён (модерация впереди);
+-- subject_ref хранит, кем субъект представился, иначе запись недоказуема.
+-- ON DELETE CASCADE — право на забвение (ст. 21): снесли игрока, ушли и согласия.
+CREATE TABLE IF NOT EXISTS consents (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id     INTEGER REFERENCES players(id) ON DELETE CASCADE,
+  -- Согласие даётся В МОМЕНТ ПОДАЧИ заявки, когда игрока ещё нет. Пока заявка
+  -- на модерации, запись висит на ней; при одобрении к ней доливается player_id.
+  registration_id INTEGER REFERENCES registrations(id) ON DELETE CASCADE,
+  subject_ref   TEXT,
+  kind          TEXT NOT NULL CHECK (kind  IN ('processing','distribution')),
+  event         TEXT NOT NULL CHECK (event IN ('granted','revoked')),
+  -- РЕДАКЦИЯ принятого текста (server/lib/legal.mjs). Согласие без указания
+  -- редакции юридически пусто: через год не доказать, что именно приняли.
+  legal_version TEXT NOT NULL,
+  -- 'web' — отметка в форме на сайте, 'offline' — бумажное согласие, внесённое
+  -- секретарём. Для 'offline' ip осмысленно пуст.
+  source        TEXT NOT NULL DEFAULT 'web' CHECK (source IN ('web','offline')),
+  -- Для ОФЛАЙН-согласия, внесённого секретарём: чем именно подтверждено право
+  -- публиковать ФИО и какой датой подписана бумага. Для заводимых вручную
+  -- игроков «галочка в админке» основанием не является — им нужен документ.
+  basis         TEXT,
+  document_date TEXT,
+  ip            TEXT,
+  at            TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- Поиск последнего события по паре «игрок + вид согласия».
+CREATE INDEX IF NOT EXISTS idx_consents_player_kind ON consents (player_id, kind, id DESC);
+-- Автоочистка ходит по дате.
+CREATE INDEX IF NOT EXISTS idx_consents_at ON consents (at);
+
+-- ЗАГРУЖЕННЫЕ ФАЙЛЫ — общая таблица на все аплоады (документы турниров,
+-- галерея, /documents). Сам файл лежит ВНЕ webroot под случайным именем;
+-- присланное имя хранится здесь и используется только при отдаче.
+--
+-- profile — назначение загрузки (см. UPLOAD_PROFILES): от него зависят
+-- разрешённые типы и лимит размера. mime и kind проставляются ПО СОДЕРЖИМОМУ,
+-- а не по тому, что сказал клиент.
+CREATE TABLE IF NOT EXISTS uploads (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  stored_name   TEXT NOT NULL UNIQUE,
+  original_name TEXT NOT NULL,
+  mime          TEXT NOT NULL,
+  kind          TEXT NOT NULL,
+  profile       TEXT NOT NULL,
+  size_bytes    INTEGER NOT NULL,
+  sha256        TEXT NOT NULL,
+  uploaded_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  meta          TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_uploads_profile ON uploads (profile, id DESC);
+
+-- ЗАЯВКИ «ПРОВЕСТИ ТУРНИР». Как и регистрация игрока: публичная форма кладёт
+-- сюда, в tournaments турнир попадает ТОЛЬКО после модерации.
+-- Результаты для рейтинга вводятся структурно через готовый CRUD админки —
+-- файлами рейтинг не кормится.
+CREATE TABLE IF NOT EXISTS tournament_requests (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  name          TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 160),
+  city          TEXT NOT NULL CHECK (length(trim(city)) BETWEEN 1 AND 80),
+  end_date      TEXT NOT NULL
+    CHECK (end_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
+    CHECK (end_date IS strftime('%Y-%m-%d', end_date)),
+  category      TEXT NOT NULL CHECK (category IN ('A','B')),
+  organizer     TEXT NOT NULL CHECK (length(trim(organizer)) BETWEEN 1 AND 160),
+  email         TEXT NOT NULL CHECK (length(trim(email)) BETWEEN 5 AND 160),
+  phone         TEXT,
+  comment       TEXT,
+  status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  status_token  TEXT NOT NULL UNIQUE,
+  tournament_id INTEGER REFERENCES tournaments(id) ON DELETE SET NULL,
+  decided_by    INTEGER REFERENCES users(id)       ON DELETE SET NULL,
+  decided_at    TEXT,
+  reject_reason TEXT,
+  ip            TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_tournament_requests_status ON tournament_requests (status, id DESC);
+
+-- Файлы, приложенные к заявке (положение, сетка). Отдельной таблицей, потому
+-- что файлов несколько, а удаление заявки обязано унести их с собой.
+CREATE TABLE IF NOT EXISTS tournament_request_files (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id INTEGER NOT NULL REFERENCES tournament_requests(id) ON DELETE CASCADE,
+  upload_id  INTEGER NOT NULL REFERENCES uploads(id)             ON DELETE CASCADE,
+  UNIQUE (request_id, upload_id)
+);
+
+-- АККАУНТ ИГРОКА для личного кабинета. Отдельно от users: users — это
+-- сотрудники Федерации с ролями, у игрока роли нет, у него есть свой профиль.
+-- password_hash NULL — аккаунт создан при одобрении заявки, пароль игрок ещё
+-- не задал: он приходит по ссылке из письма.
+CREATE TABLE IF NOT EXISTS player_accounts (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id           INTEGER NOT NULL UNIQUE REFERENCES players(id) ON DELETE CASCADE,
+  email               TEXT NOT NULL UNIQUE,
+  password_hash       TEXT CHECK (password_hash IS NULL OR password_hash LIKE 'scrypt$%'),
+  -- Токен установки/сброса пароля: одноразовый, с истечением.
+  reset_token         TEXT,
+  reset_expires_at    TEXT,
+  password_changed_at TEXT,
+  created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_player_accounts_reset ON player_accounts (reset_token);
+
+-- ИСХОДЯЩАЯ ПОЧТА. Письмо сперва ЛОЖИТСЯ В ОЧЕРЕДЬ и только потом отправляется:
+-- иначе сбой SMTP означал бы «заявка принята, но человеку никто не сообщил», и
+-- узнать об этом было бы неоткуда. Непосланное видно в админке — это и есть
+-- fallback «не молча».
+CREATE TABLE IF NOT EXISTS mail_outbox (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  to_email   TEXT NOT NULL,
+  subject    TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  status     TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','sent','failed')),
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  sent_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mail_outbox_status ON mail_outbox (status, id);
+
+-- НОВОСТИ. Черновик и публикация разведены: is_published решает, видна ли
+-- запись публично. Удалять ради «спрятать» ничего не нужно.
+CREATE TABLE IF NOT EXISTS news (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  title          TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 200),
+  summary        TEXT,
+  body           TEXT NOT NULL CHECK (length(trim(body)) BETWEEN 1 AND 20000),
+  cover_upload_id INTEGER REFERENCES uploads(id) ON DELETE SET NULL,
+  is_published   INTEGER NOT NULL DEFAULT 0 CHECK (is_published IN (0,1)),
+  published_at   TEXT,
+  created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_news_published ON news (is_published, published_at DESC);
+
+-- ДОКУМЕНТЫ ТУРНИРА, привязанные к САМОМУ турниру (а не к заявке): заявка
+-- может быть вычищена по сроку хранения, а положение турнира в календаре
+-- остаётся. При согласовании заявки её файлы перевешиваются сюда.
+CREATE TABLE IF NOT EXISTS tournament_files (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  upload_id     INTEGER NOT NULL REFERENCES uploads(id)     ON DELETE CASCADE,
+  title         TEXT,
+  UNIQUE (tournament_id, upload_id)
+);
+
+-- СПРАВОЧНИКИ. Отдельные таблицы, а не статика в шаблоне: их ведёт секретарь
+-- через админку, как игроков.
+--
+-- ФИО тренера и судьи — ПЕРСОНАЛЬНЫЕ ДАННЫЕ, и их публикация на сайте это
+-- распространение (ст. 10.1). Поэтому у обеих таблиц есть ОБЯЗАТЕЛЬНОЕ
+-- основание публикации с датой документа — ровно как у игроков, заводимых
+-- секретарём вручную: галочка в админке основанием не является.
+CREATE TABLE IF NOT EXISTS coaches (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name     TEXT NOT NULL CHECK (length(trim(full_name)) BETWEEN 1 AND 120),
+  club          TEXT,
+  contact       TEXT,
+  note          TEXT,
+  basis         TEXT NOT NULL CHECK (length(trim(basis)) BETWEEN 1 AND 200),
+  document_date TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS referees (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name     TEXT NOT NULL CHECK (length(trim(full_name)) BETWEEN 1 AND 120),
+  category      TEXT,
+  city          TEXT,
+  note          TEXT,
+  basis         TEXT NOT NULL CHECK (length(trim(basis)) BETWEEN 1 AND 200),
+  document_date TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Корты и клубы — сведения об организациях и объектах, не о людях:
+-- основание публикации им не требуется.
+CREATE TABLE IF NOT EXISTS courts (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 160),
+  address    TEXT,
+  surface    TEXT,
+  map_url    TEXT,
+  note       TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS clubs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 160),
+  address    TEXT,
+  contact    TEXT,
+  site       TEXT,
+  note       TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ДОКУМЕНТЫ ФЕДЕРАЦИИ (/documents): файл + заголовок + категория.
+CREATE TABLE IF NOT EXISTS federation_documents (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  title      TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 200),
+  category   TEXT NOT NULL CHECK (length(trim(category)) BETWEEN 1 AND 80),
+  upload_id  INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_federation_documents_cat ON federation_documents (category, id DESC);
+
+-- ГАЛЕРЕЯ. Изображение проходит общий слой загрузки: ресайз и снятие EXIF
+-- (в снимке с телефона лежат координаты) делает lib/uploads.mjs.
+CREATE TABLE IF NOT EXISTS gallery_items (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  title      TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 200),
+  upload_id  INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 
 -- Журнал действий: кто, что, когда. action = JSON {type, object_id, diff}.
 CREATE TABLE IF NOT EXISTS action_log (

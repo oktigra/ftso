@@ -85,6 +85,59 @@ export function loadConfig({ requireSecrets = true } = {}) {
       keepSnapshots: Number(process.env.RATING_KEEP_SNAPSHOTS || 24),
       maxParticipants: Number(process.env.TOURNAMENT_MAX_PARTICIPANTS || 256),
     },
+    upload: {
+      // ВНЕ webroot: webroot — это site/public (отдаётся как /static).
+      // Каталог site/storage статикой не раздаётся, файл уходит только через
+      // наш маршрут, который ставит attachment и проверяет права.
+      dir: process.env.UPLOAD_DIR || resolve(ROOT, 'storage/uploads'),
+    },
+    smtp: {
+      host: process.env.SMTP_HOST || 'smtp.yandex.ru',
+      port: Number(process.env.SMTP_PORT || 465),
+      // 465 -> TLS сразу; для 587 (STARTTLS) поставить SMTP_SECURE=0.
+      secure: process.env.SMTP_SECURE !== '0',
+      user: process.env.SMTP_USER || '',
+      // ПАРОЛЬ ПРИЛОЖЕНИЯ, не пароль от почты. Живёт только в .env, в git его нет
+      // и в логи он не попадает: наружу печатается лишь хост и имя ящика.
+      pass: process.env.SMTP_PASS || '',
+      from: process.env.MAIL_FROM || '',
+      // Повтор застрявших писем. Не агрессивно: короткий сбой SMTP не должен
+      // сжечь все попытки за пять минут и пометить письмо безнадёжным.
+      retryMinutes: Number(process.env.MAIL_RETRY_MINUTES || 10),
+      failAfter: Number(process.env.MAIL_FAIL_AFTER || 8),
+    },
+    register: {
+      // Публичная форма без входа: 5 заявок с адреса в час. Живому человеку
+      // хватает с запасом, скрипту — нет.
+      maxPerWindow: Number(process.env.REGISTER_MAX_PER_WINDOW || 5),
+      windowMinutes: Number(process.env.REGISTER_WINDOW_MINUTES || 60),
+      // RETENTION заявок: отклонённые и брошенные на модерации чистятся через
+      // год. Одобренные живут вместе с игроком — они объясняют основание.
+      retentionDays: Number(process.env.REGISTRATION_RETENTION_DAYS || 365),
+    },
+    tournamentRequest: {
+      // Публичная форма с ФАЙЛАМИ: лимит строже, чем у регистрации, — каждая
+      // заявка пишет на диск. Счётчик отдельный от регистрации и от админки.
+      maxPerWindow: Number(process.env.TOURNAMENT_REQUEST_MAX_PER_WINDOW || 3),
+      windowMinutes: Number(process.env.TOURNAMENT_REQUEST_WINDOW_MINUTES || 60),
+      retentionDays: Number(process.env.TOURNAMENT_REQUEST_RETENTION_DAYS || 365),
+      maxFiles: Number(process.env.TOURNAMENT_REQUEST_MAX_FILES || 3),
+    },
+    cabinet: {
+      // СВОЙ счётчик у входа в кабинет: делить его с формой регистрации нельзя —
+      // поток заявок закрывал бы игрокам вход, а подбор пароля съедал бы приём
+      // заявок. Порог мягче: человек имеет право промахнуться паролем.
+      maxPerWindow: Number(process.env.CABINET_MAX_PER_WINDOW || 15),
+      windowMinutes: Number(process.env.CABINET_WINDOW_MINUTES || 15),
+    },
+    consent: {
+      // RETENTION журнала согласий. Считается ОТ ОТЗЫВА: действующее согласие
+      // не чистится никогда — оно и есть основание обработки. 1095 дней = 3 года,
+      // общий срок исковой давности: столько ещё можно спорить о правомерности
+      // обработки, и столько нужно доказательство. Действующие согласия и
+      // непривязанные заявки живут по тому же сроку.
+      retentionDays: Number(process.env.CONSENT_RETENTION_DAYS || 1095),
+    },
     bodyLimit: process.env.BODY_LIMIT || '100kb',
   };
 }

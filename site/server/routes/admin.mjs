@@ -4,8 +4,10 @@ import { hashPassword, verifyPassword } from '../lib/password.mjs';
 import { logAction, recentActions } from '../lib/action-log.mjs';
 import {
   playerInput,
+  publicFlag,
   tournamentInput,
   intAtLeast,
+  isoDate,
   str,
   oneOf,
   AGE_GROUPS,
@@ -20,11 +22,54 @@ import {
   lockState,
   statusLabel,
 } from '../lib/rating-service.mjs';
+import { setDistributionConsent, consentState, eraseConsents } from '../lib/consent-journal.mjs';
+import {
+  pendingRegistrations,
+  decidedRegistrations,
+  findNameMatches,
+  registrationAllowsPublication,
+  approveRegistration,
+  rejectRegistration,
+  byId as registrationById,
+} from '../lib/registrations.mjs';
+import {
+  pendingRequests,
+  decidedRequests,
+  requestFiles,
+  approveRequest,
+  rejectRequest,
+  byId as tournamentRequestById,
+} from '../lib/tournament-requests.mjs';
+import { sendUpload, uploadById } from '../lib/uploads.mjs';
+import { attachRequestFiles } from '../lib/content.mjs';
+import { createAccount, issueResetToken } from '../lib/player-accounts.mjs';
+import {
+  queueMail,
+  flushOutbox,
+  outboxSummary,
+  recentMail,
+  mailApproved,
+  mailRejected,
+  mailCabinetInvite,
+  mailTournamentApproved,
+  mailTournamentRejected,
+} from '../lib/mailer.mjs';
 
 // Кто ведёт данные рейтинга: турниры, игроков, результаты, пересчёт.
 const DATA_ROLES = ['super-admin', 'tournament-admin'];
 // Управление пользователями — ТОЛЬКО super-admin (tournament-admin получит 403).
 const OWNER_ROLE = ['super-admin'];
+
+/**
+ * ПРАВОВОЕ ОСНОВАНИЕ публикации для игроков, заводимых секретарём вручную.
+ * Галочка в админке основанием не является: человек, который сам ничего не
+ * отмечал на сайте, должен иметь документ — и документ должен быть НАЗВАН,
+ * иначе публикацию его ФИО нечем оправдать.
+ */
+const publicationBasis = (body) => ({
+  basis: str(body.consent_basis, 'Основание публикации', { max: 200 }),
+  documentDate: isoDate(body.consent_document_date, 'Дата согласия'),
+});
 
 const flash = (req, res, kind, text, back) => {
   req.session.flash = { kind, text };
@@ -36,6 +81,13 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
   app.use('/admin', (req, res, next) => {
     res.locals.flash = req.session.flash || null;
     if (req.session.flash) delete req.session.flash;
+    // Счётчик в меню: заявка, про которую забыли, — это человек без ответа.
+    res.locals.pendingCount = db
+      .prepare("SELECT COUNT(*) AS n FROM registrations WHERE status = 'pending'")
+      .get().n;
+    res.locals.pendingTournamentCount = db
+      .prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE status = 'pending'")
+      .get().n;
     next();
   });
 
@@ -80,9 +132,22 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
 
   // --- игроки -------------------------------------------------------------
   app.get('/admin/players', requireRole(...DATA_ROLES), (req, res) => {
+    const players = db.prepare('SELECT * FROM players ORDER BY full_name').all();
     res.render('admin/players', {
       title: 'Игроки — админка ФТСО',
-      players: db.prepare('SELECT * FROM players ORDER BY full_name').all(),
+      // Состояние согласий рядом с игроком: секретарь должен видеть, ПОЧЕМУ
+      // игрок не публикуется, а не гадать по флагу.
+      players: players.map((p) => ({
+        ...p,
+        consent: consentState(db, p.id),
+        // ОТМЕТКА В КАРТОЧКЕ: чем и от какой даты подтверждена публикация.
+        proof: db
+          .prepare(
+            "SELECT basis, document_date, at FROM consents " +
+              "WHERE player_id = ? AND kind = 'distribution' AND event = 'granted' ORDER BY id DESC LIMIT 1",
+          )
+          .get(p.id) || null,
+      })),
       ageGroups: AGE_GROUPS,
       sexes: SEXES,
     });
@@ -94,10 +159,20 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     limitWrites,
     guard((req, res) => {
       const data = playerInput(req.body);
+      const publish = publicFlag(req.body);
       const info = db
         .prepare('INSERT INTO players (full_name, city, sex, age_group) VALUES (?, ?, ?, ?)')
         .run(data.full_name, data.city, data.sex, data.age_group);
-      logAction(db, req.session.user.id, 'player.create', info.lastInsertRowid, data);
+      const id = Number(info.lastInsertRowid);
+      // Публикация включается ТОЛЬКО событием журнала: секретарь отмечает, что
+      // бумажное согласие на распространение получено. Прямой записи в is_public
+      // нет нигде, иначе витрина разъедется с согласием.
+      if (publish === true) {
+        const proof = publicationBasis(req.body);
+        setDistributionConsent(db, id, true, { source: 'offline', ...proof });
+        logAction(db, req.session.user.id, 'consent.distribution.granted', id, { source: 'offline', ...proof });
+      }
+      logAction(db, req.session.user.id, 'player.create', id, { ...data, is_public: publish === true ? 1 : 0 });
       flash(req, res, 'ok', `Игрок «${data.full_name}» добавлен.`, '/admin/players');
     }),
   );
@@ -109,10 +184,30 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     guard((req, res) => {
       const id = intAtLeast(req.params.id, 'id');
       const data = playerInput(req.body);
+      const publish = publicFlag(req.body);
+      const before = db.prepare('SELECT is_public FROM players WHERE id = ?').get(id);
+      if (!before) throw new ValidationError('Игрок не найден');
       const info = db
         .prepare('UPDATE players SET full_name = ?, city = ?, sex = ?, age_group = ? WHERE id = ?')
         .run(data.full_name, data.city, data.sex, data.age_group, id);
       if (!info.changes) throw new ValidationError('Игрок не найден');
+      // Смена публикации = событие журнала (выдача или ОТЗЫВ согласия на
+      // распространение), а не правка флага. Отзыв по ч. 12-13 ст. 10.1 обязан
+      // снять публикацию — здесь это происходит сразу, а не за 3 рабочих дня.
+      // publish === null («поле не пришло») согласие НЕ трогает.
+      if (publish !== null && Boolean(before.is_public) !== publish) {
+        // Основание требуется только при ВКЛЮЧЕНИИ публикации. Отзыв обоснования
+        // не требует: это воля субъекта, и задерживать её нечем.
+        const proof = publish ? publicationBasis(req.body) : {};
+        setDistributionConsent(db, id, publish, { source: 'offline', ...proof });
+        logAction(
+          db,
+          req.session.user.id,
+          publish ? 'consent.distribution.granted' : 'consent.distribution.revoked',
+          id,
+          { source: 'offline', ...proof },
+        );
+      }
       logAction(db, req.session.user.id, 'player.update', id, data);
       flash(req, res, 'ok', 'Игрок обновлён.', '/admin/players');
     }),
@@ -124,9 +219,217 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     limitWrites,
     guard((req, res) => {
       const id = intAtLeast(req.params.id, 'id');
+      // ПРАВО НА ЗАБВЕНИЕ (ст. 21): записи согласий стираются явно, не только
+      // каскадом — удаление игрока в личном кабинете будет ОБЕЗЛИЧИВАНИЕМ
+      // строки, а не DELETE, и каскад там не сработает.
+      const wiped = eraseConsents(db, id);
       db.prepare('DELETE FROM players WHERE id = ?').run(id);
-      logAction(db, req.session.user.id, 'player.delete', id, null);
+      logAction(db, req.session.user.id, 'player.delete', id, { consents_erased: wiped });
       flash(req, res, 'ok', 'Игрок удалён.', '/admin/players');
+    }),
+  );
+
+  // --- заявки на регистрацию ----------------------------------------------
+  const statusUrlFor = (req, token) => `${req.protocol}://${req.get('host')}/register/status/${token}`;
+
+  app.get('/admin/registrations', requireRole(...DATA_ROLES), (req, res) => {
+    res.render('admin/registrations', {
+      title: 'Заявки на регистрацию — админка ФТСО',
+      // ВОЗМОЖНОЕ СОВПАДЕНИЕ, а не автослияние: одинаковое ФИО показывается
+      // модератору подсказкой, решение о привязке принимает человек.
+      pending: pendingRegistrations(db).map((r) => {
+        const allowsPublication = registrationAllowsPublication(db, r.id);
+        const matches = findNameMatches(db, r.full_name);
+        return {
+          ...r,
+          matches,
+          allowsPublication,
+          // КОНФЛИКТ ВОЛИ: заявитель публикацию НЕ разрешил, а найденный тёзка
+          // сейчас публикуется. Само это не решается: если это тот же человек,
+          // публикацию надо снять; если однофамилец — трогать нельзя. Решает
+          // модератор, поэтому просто показываем.
+          publicationConflict: !allowsPublication && matches.some((m) => m.is_public),
+        };
+      }),
+      decided: decidedRegistrations(db),
+      mail: outboxSummary(db),
+      mailLog: recentMail(db, 10),
+      sexRu: { M: 'муж.', F: 'жен.' },
+    });
+  });
+
+  app.post(
+    '/admin/registrations/:id/approve',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      // link_player_id пуст -> заводим нового игрока; заполнен -> привязываем
+      // заявку к существующему (секретарь ввёл человека раньше).
+      const linkTo = String(req.body.link_player_id || '').trim();
+      const playerId = linkTo ? intAtLeast(linkTo, 'Игрок для привязки') : null;
+      let out;
+      try {
+        out = approveRegistration(db, id, { playerId, userId: req.session.user.id });
+      } catch (err) {
+        throw new ValidationError(err.message);
+      }
+      const reg = out.registration;
+      const letter = mailApproved({ fullName: reg.full_name, statusUrl: statusUrlFor(req, reg.status_token) });
+      queueMail(db, { to: reg.email, kind: 'registration.approved', ...letter });
+      // ЛИЧНЫЙ КАБИНЕТ открывается здесь же: аккаунт создаётся без пароля, а
+      // пароль игрок задаёт сам по одноразовой ссылке. Пароль за человека мы
+      // не придумываем и по почте не отправляем.
+      const account = createAccount(db, { playerId: out.playerId, email: reg.email });
+      if (!account.password_hash) {
+        const token = issueResetToken(db, account.id);
+        const setUrl = `${req.protocol}://${req.get('host')}/cabinet/reset/${token}`;
+        const invite = mailCabinetInvite({ fullName: reg.full_name, setUrl });
+        queueMail(db, { to: account.email, kind: 'cabinet.invite', ...invite });
+      }
+      flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
+      logAction(db, req.session.user.id, 'registration.approve', id, {
+        player_id: out.playerId,
+        created_player: out.created,
+      });
+      flash(
+        req,
+        res,
+        'ok',
+        out.created
+          ? `Заявка одобрена, игрок «${reg.full_name}» заведён.`
+          : `Заявка одобрена и привязана к существующему игроку #${out.playerId}.`,
+        '/admin/registrations',
+      );
+    }),
+  );
+
+  app.post(
+    '/admin/registrations/:id/reject',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const reason = str(req.body.reason, 'Причина', { max: 300, required: false });
+      let reg;
+      try {
+        reg = rejectRegistration(db, id, { reason, userId: req.session.user.id });
+      } catch (err) {
+        throw new ValidationError(err.message);
+      }
+      const letter = mailRejected({
+        fullName: reg.full_name,
+        reason,
+        statusUrl: statusUrlFor(req, reg.status_token),
+      });
+      queueMail(db, { to: reg.email, kind: 'registration.rejected', ...letter });
+      flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
+      logAction(db, req.session.user.id, 'registration.reject', id, { reason });
+      flash(req, res, 'ok', 'Заявка отклонена, уведомление поставлено в очередь.', '/admin/registrations');
+    }),
+  );
+
+  // Повторная отправка застрявших писем — ручная кнопка. Автоматической
+  // бесконечной ретрай-петли нет намеренно: чинить обычно надо SMTP, а не долбить.
+  app.post(
+    '/admin/registrations/mail/retry',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    (req, res, next) => {
+      db.prepare("UPDATE mail_outbox SET status = 'queued', attempts = 0 WHERE status = 'failed'").run();
+      flushOutbox(db)
+        .then((stat) => {
+          logAction(db, req.session.user.id, 'mail.retry', null, stat);
+          flash(req, res, 'ok', `Отправлено: ${stat.sent}, осталось в очереди: ${stat.pending}.`, '/admin/registrations');
+        })
+        .catch(next);
+    },
+  );
+
+  // --- заявки «провести турнир» -------------------------------------------
+  const requestStatusUrl = (req, token) =>
+    `${req.protocol}://${req.get('host')}/tournament-request/status/${token}`;
+
+  app.get('/admin/tournament-requests', requireRole(...DATA_ROLES), (req, res) => {
+    res.render('admin/tournament-requests', {
+      title: 'Заявки на турниры — админка ФТСО',
+      pending: pendingRequests(db).map((r) => ({ ...r, files: requestFiles(db, r.id) })),
+      decided: decidedRequests(db),
+    });
+  });
+
+  /**
+   * ОТДАЧА приложенного документа. Только за логином и только через наш
+   * маршрут: файлы лежат вне webroot, статикой не раздаются, и отдаются как
+   * attachment — см. lib/uploads.mjs.
+   */
+  app.get('/admin/files/:id', requireRole(...DATA_ROLES), (req, res, next) => {
+    const id = intAtLeast(req.params.id, 'id');
+    const row = uploadById(db, id);
+    if (!row) return next();
+    if (!sendUpload(res, row, config.upload.dir)) return next();
+  });
+
+  app.post(
+    '/admin/tournament-requests/:id/approve',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      let out;
+      try {
+        out = approveRequest(db, id, { userId: req.session.user.id });
+      } catch (err) {
+        throw new ValidationError(err.message);
+      }
+      const r = out.request;
+      // Документы переезжают с заявки на САМ турнир: заявку однажды вычистит
+      // срок хранения, а положение турнира в календаре должно остаться.
+      attachRequestFiles(db, id, out.tournamentId);
+      const letter = mailTournamentApproved({
+        organizer: r.organizer,
+        name: r.name,
+        statusUrl: requestStatusUrl(req, r.status_token),
+      });
+      queueMail(db, { to: r.email, kind: 'tournament.approved', ...letter });
+      flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
+      logAction(db, req.session.user.id, 'tournament_request.approve', id, {
+        tournament_id: out.tournamentId,
+      });
+      flash(
+        req,
+        res,
+        'ok',
+        `Турнир «${r.name}» согласован и добавлен в календарь (#${out.tournamentId}). ` +
+          'Результаты вносятся через раздел «Результаты».',
+        '/admin/tournament-requests',
+      );
+    }),
+  );
+
+  app.post(
+    '/admin/tournament-requests/:id/reject',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const reason = str(req.body.reason, 'Причина', { max: 300, required: false });
+      let r;
+      try {
+        r = rejectRequest(db, id, { reason, userId: req.session.user.id });
+      } catch (err) {
+        throw new ValidationError(err.message);
+      }
+      const letter = mailTournamentRejected({
+        organizer: r.organizer,
+        name: r.name,
+        reason,
+        statusUrl: requestStatusUrl(req, r.status_token),
+      });
+      queueMail(db, { to: r.email, kind: 'tournament.rejected', ...letter });
+      flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
+      logAction(db, req.session.user.id, 'tournament_request.reject', id, { reason });
+      flash(req, res, 'ok', 'Заявка отклонена, уведомление поставлено в очередь.', '/admin/tournament-requests');
     }),
   );
 

@@ -3,6 +3,12 @@
 import { loadConfig, ConfigError } from './lib/config.mjs';
 import { createApp } from './app.mjs';
 import { getDb, dbPath } from '../db/connect.mjs';
+import { scheduleDailyPurge } from './lib/retention.mjs';
+import { purgeExpired } from './lib/consent-journal.mjs';
+import { purgeRegistrations } from './lib/registrations.mjs';
+import { purgeRequests } from './lib/tournament-requests.mjs';
+import { setTransport, configureMailer, scheduleMailFlush } from './lib/mailer.mjs';
+import { createSmtpTransport, smtpConfigured } from './lib/smtp.mjs';
 
 let config;
 try {
@@ -26,6 +32,30 @@ if (!schemaReady) {
   );
   process.exit(1);
 }
+
+// ПОЧТА. Без реквизитов отправка просто выключена: это не ошибка старта, а
+// состояние — заявки принимаются, письма копятся в очереди и видны в админке.
+// В лог идут только хост и имя ящика; пароль приложения не печатается нигде.
+configureMailer({ failAfter: config.smtp.failAfter });
+if (smtpConfigured(config.smtp)) {
+  setTransport(createSmtpTransport(config.smtp));
+  console.log(`[почта] SMTP ${config.smtp.host}:${config.smtp.port}, ящик ${config.smtp.user}`);
+} else {
+  console.warn(
+    '[почта] SMTP не настроен (пусты SMTP_USER/SMTP_PASS) — письма будут копиться ' +
+      'в очереди, статус виден в /admin/registrations. Заявители НЕ уведомляются.',
+  );
+}
+scheduleMailFlush(db, { intervalMs: config.smtp.retryMinutes * 60 * 1000 });
+
+// СРОКИ ХРАНЕНИЯ: при старте и дальше раз в сутки.
+scheduleDailyPurge('журнал согласий', () => purgeExpired(db, config.consent.retentionDays));
+scheduleDailyPurge('заявки на регистрацию', () => purgeRegistrations(db, config.register.retentionDays));
+// Заявки на турниры чистятся ВМЕСТЕ С ФАЙЛАМИ: снести строку и оставить
+// документы на диске значит хранить чужие данные без основания и без срока.
+scheduleDailyPurge('заявки на турниры', () =>
+  purgeRequests(db, config.tournamentRequest.retentionDays, config.upload.dir),
+);
 
 const app = createApp(config);
 const server = app.listen(config.port, config.host, () => {

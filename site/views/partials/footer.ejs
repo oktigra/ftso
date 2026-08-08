@@ -28,11 +28,16 @@
       </div>
       <div class="footer-col">
         <h4>Контакты</h4>
+        <%
+        /* Реквизиты — из server/lib/legal.mjs, не вписаны сюда руками: телефон и
+           адрес в подвале обязаны совпадать с юр-страницами, иначе это выглядит
+           как недостоверные контакты оператора. */
+        %>
         <address>
-          РФСОО «Федерация тенниса Смоленской области»<br>
-          г. Смоленск<br>
-          <a href="mailto:info@ftso67.ru">info@ftso67.ru</a><br>
-          <a href="tel:+74812000000">+7 (4812) 00-00-00</a>
+          <%= operator.name %><br>
+          <%= operator.address %><br>
+          <a href="mailto:<%= operator.email %>"><%= operator.email %></a><br>
+          <a href="tel:<%= operator.phoneHref %>"><%= operator.phone %></a>
         </address>
       </div>
     </div>

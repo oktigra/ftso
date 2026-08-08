@@ -1,7 +1,8 @@
 // Структура сайта — из ДОГОВОРА (Приложение № 1 «Техническое задание», §3).
 // 12 разделов в меню + динамическая страница турнира /tournaments/:id.
-// Живой в этом шаге — рейтинг; остальные разделы отдают заглушку
-// «раздел в разработке» с ВЕРНЫМ URL и HTTP 200 (иначе поисковик не проиндексирует).
+// ВСЕ 12 разделов живые: у каждого свой маршрут и своё содержимое.
+// Механизм заглушек (STUB_SECTIONS + views/stub.ejs) оставлен намеренно —
+// он понадобится следующему разделу, который заведут раньше наполнения.
 
 // title    — полное название раздела (заголовок страницы и <title>).
 // navTitle — короткая подпись только для меню шапки.
@@ -14,17 +15,17 @@
 // а остальные шесть — в выпадающем «Ещё». Все 12 адресов доступны из шапки.
 export const SECTIONS = [
   { path: '/', title: 'Главная', live: true, primary: true },
-  { path: '/federation', title: 'О Федерации', navTitle: 'Федерация', live: false },
-  { path: '/news', title: 'Новости', live: false, primary: true },
-  { path: '/tournaments', title: 'Турниры', live: false, primary: true },
+  { path: '/federation', title: 'О Федерации', navTitle: 'Федерация', live: true },
+  { path: '/news', title: 'Новости', live: true, primary: true },
+  { path: '/tournaments', title: 'Турниры', live: true, primary: true },
   { path: '/rating', title: 'Рейтинг', live: true, primary: true },
-  { path: '/coaches', title: 'Тренеры', live: false },
-  { path: '/courts', title: 'Теннисные корты', navTitle: 'Корты', live: false },
-  { path: '/clubs', title: 'Теннисные клубы', navTitle: 'Клубы', live: false },
-  { path: '/referees', title: 'Судьи', live: false, note: 'Наполнение заказчик определит позже.' },
-  { path: '/gallery', title: 'Галерея', live: false },
-  { path: '/documents', title: 'Документы', live: false, primary: true },
-  { path: '/contacts', title: 'Контакты', live: false, primary: true },
+  { path: '/coaches', title: 'Тренеры', live: true },
+  { path: '/courts', title: 'Теннисные корты', navTitle: 'Корты', live: true },
+  { path: '/clubs', title: 'Теннисные клубы', navTitle: 'Клубы', live: true },
+  { path: '/referees', title: 'Судьи', live: true, note: 'Наполнение заказчик определит позже.' },
+  { path: '/gallery', title: 'Галерея', live: true },
+  { path: '/documents', title: 'Документы', live: true, primary: true },
+  { path: '/contacts', title: 'Контакты', live: true, primary: true },
 ];
 
 // Меню шапки: в дизайне пункты — ЯКОРЯ одной страницы, а сайт МНОГОСТРАНИЧНЫЙ.
@@ -39,12 +40,12 @@ export const FOOTER_SECTIONS = [
   { path: '/documents', title: 'Документы' },
 ];
 
-// ⚠ ПОРТАЛЬНЫЕ ССЫЛКИ — ТОЛЬКО ВИД. Личный кабинет, онлайн-заявки и онлайн-оплата
-// ВНЕ ОБЪЁМА договора (§9): в дизайне это href="#", так и оставлено.
-// Функционал не строится (отдельный этап позже).
+// Живые: регистрация игрока (/register) и личный кабинет (/cabinet).
+// «Заявка на турнир» и «Секретарям турниров» — участие в турнире и приём
+// документов от секретарей, это отдельные пункты бэклога, пока «#».
 export const FOOTER_PARTICIPANTS = [
-  { href: '#', title: 'Регистрация игрока' },
-  { href: '#', title: 'Личный кабинет' },
+  { href: '/register', title: 'Регистрация игрока' },
+  { href: '/cabinet', title: 'Личный кабинет' },
   { href: '#', title: 'Заявка на турнир' },
   { href: '#', title: 'Секретарям турниров' },
 ];

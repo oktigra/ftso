@@ -1,0 +1,34 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Личный кабинет</span>
+    <h1>Восстановление доступа</h1>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel form-panel">
+      <% if (done) { %>
+        <%
+        /* Ответ ОДИНАКОВЫЙ и когда адрес найден, и когда нет: иначе форма
+           становится способом проверить, зарегистрирован ли человек. */
+        %>
+        <p class="lead">Если такой адрес есть в системе, письмо со ссылкой уже отправлено.</p>
+        <p class="muted">Ссылка действует 24 часа и срабатывает один раз.</p>
+      <% } else { %>
+        <form method="post" action="/cabinet/forgot" class="stacked-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="field">
+            <label for="f-email">Электронная почта</label>
+            <input id="f-email" name="email" type="email" maxlength="160" required autocomplete="email">
+          </div>
+          <button class="btn btn--primary" type="submit">Прислать ссылку</button>
+        </form>
+      <% } %>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

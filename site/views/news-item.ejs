@@ -1,0 +1,30 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Новости</span>
+    <h1><%= item.title %></h1>
+    <p class="muted"><%= item.published_at || item.created_at.slice(0, 10) %></p>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel legal-body">
+      <% if (item.cover_upload_id) { %>
+        <p><a class="link-more" href="/files/<%= item.cover_upload_id %>">Скачать иллюстрацию <span aria-hidden="true">→</span></a></p>
+      <% } %>
+      <% if (item.summary) { %><p class="lead"><%= item.summary %></p><% } %>
+      <%
+      /* Текст выводится ЭКРАНИРОВАННО и с сохранением абзацев: редактор пишет
+         обычным текстом, HTML из админки в разметку не попадает. */
+      %>
+      <% item.body.split(/\n{2,}/).forEach(function (para) { %>
+        <p><%= para %></p>
+      <% }); %>
+      <p class="table-foot"><a class="link-more" href="/news">Все новости <span aria-hidden="true">→</span></a></p>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('partials/footer') %>

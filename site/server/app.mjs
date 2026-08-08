@@ -9,7 +9,7 @@ import { getDb } from '../db/connect.mjs';
 import { SqliteStore } from './lib/session-store.mjs';
 import { csrfMiddleware } from './lib/csrf.mjs';
 import { LoginAttempts } from './lib/login-attempts.mjs';
-import { writeLimiter } from './middleware/write-limit.mjs';
+import { writeLimiter, publicFormLimiter } from './middleware/write-limit.mjs';
 import { currentUser } from './middleware/auth.mjs';
 import {
   HEADER_PRIMARY,
@@ -18,12 +18,17 @@ import {
   FOOTER_PARTICIPANTS,
   FOOTER_LEGAL,
 } from './lib/nav.mjs';
+import { OPERATOR } from './lib/legal.mjs';
 import { ValidationError } from './lib/validate.mjs';
 
 import mountPublic from './routes/public.mjs';
+import mountRegister from './routes/register.mjs';
+import mountTournamentRequest from './routes/tournament-request.mjs';
+import mountCabinet from './routes/cabinet.mjs';
 import mountRating from './routes/rating.mjs';
 import mountAuth from './routes/auth.mjs';
 import mountAdmin from './routes/admin.mjs';
+import mountAdminContent from './routes/admin-content.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -96,6 +101,10 @@ export function createApp(config) {
     res.locals.footerSections = FOOTER_SECTIONS;
     res.locals.footerParticipants = FOOTER_PARTICIPANTS;
     res.locals.footerLegal = FOOTER_LEGAL;
+    // Реквизиты оператора — ОДИН источник на весь сайт (подвал, юр-страницы,
+    // «Контакты»): расхождение контактов оператора между страницами читается
+    // как недостоверные сведения об операторе.
+    res.locals.operator = OPERATOR;
     res.locals.currentPath = req.path;
     res.locals.year = new Date().getFullYear();
     res.locals.user = null;
@@ -135,11 +144,24 @@ export function createApp(config) {
     next();
   });
 
-  const ctx = { db, config, attempts, limitWrites, store };
+  const limitRegister = publicFormLimiter(db, config.register);
+  // Счётчик СВОЙ (ключ «t»): поток заявок на турниры не должен съедать лимит
+  // регистрации игроков и наоборот.
+  const limitTournamentRequest = publicFormLimiter(db, { ...config.tournamentRequest, key: 't' });
+  // И у кабинета свой (ключ «c»): подбор пароля не должен закрывать приём заявок.
+  const limitCabinet = publicFormLimiter(db, { ...config.cabinet, key: 'c' });
+
+  const ctx = {
+    db, config, attempts, limitWrites, limitRegister, limitTournamentRequest, limitCabinet, store,
+  };
 
   mountAuth(app, ctx);
   mountAdmin(app, ctx);
+  mountAdminContent(app, ctx);
   mountRating(app, ctx);
+  mountRegister(app, ctx);
+  mountTournamentRequest(app, ctx);
+  mountCabinet(app, ctx);
   mountPublic(app, ctx);
 
   /**

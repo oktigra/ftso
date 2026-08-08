@@ -1,0 +1,140 @@
+<%
+/* ЗАЯВКА «ПРОВЕСТИ ТУРНИР». Только POST и enctype multipart — иначе браузер
+   отправит одни имена файлов вместо содержимого.
+   Значения возвращаются из черновика в сессии; файлы браузер повторно не
+   отдаёт, поэтому про это сказано прямым текстом, а не подразумевается. */
+%>
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Организаторам</span>
+    <h1>Провести турнир</h1>
+    <p class="muted">Заявка на включение соревнования в календарь Федерации. Решение принимает секретарь.</p>
+  </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel form-panel">
+      <% if (errors.length) { %>
+        <div class="form-errors" role="alert">
+          <p><strong>Заявка не отправлена.</strong> Исправьте, пожалуйста:</p>
+          <ul>
+            <% errors.forEach(function (e) { %><li><%= e %></li><% }); %>
+          </ul>
+          <p class="muted">Текстовые поля сохранены. Файлы придётся выбрать заново — браузер не отдаёт их повторно.</p>
+        </div>
+      <% } %>
+
+      <form method="post" action="/tournament-request" class="stacked-form" enctype="multipart/form-data" novalidate>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+        <div class="field">
+          <label for="t-name">Название турнира <span class="req" aria-hidden="true">*</span></label>
+          <input id="t-name" name="name" maxlength="160" required value="<%= values.name || '' %>">
+        </div>
+
+        <div class="field">
+          <label for="t-city">Город проведения <span class="req" aria-hidden="true">*</span></label>
+          <input id="t-city" name="city" maxlength="80" required value="<%= values.city || '' %>">
+        </div>
+
+        <div class="field">
+          <label for="t-date">Дата завершения <span class="req" aria-hidden="true">*</span></label>
+          <input id="t-date" name="end_date" placeholder="ГГГГ-ММ-ДД" required
+                 aria-describedby="t-date-hint" value="<%= values.end_date || '' %>">
+          <p class="field-hint" id="t-date-hint">Дата последнего игрового дня — по ней турнир попадает в рейтинговое окно.</p>
+        </div>
+
+        <div class="field">
+          <label for="t-category">Категория <span class="req" aria-hidden="true">*</span></label>
+          <select id="t-category" name="category" required aria-describedby="t-cat-hint">
+            <option value="">— выберите —</option>
+            <% categories.forEach(function (c) { %>
+              <option value="<%= c %>"<%= values.category === c ? ' selected' : '' %>><%= c %></option>
+            <% }); %>
+          </select>
+          <p class="field-hint" id="t-cat-hint">Категория задаёт рейтинговый коэффициент. Итоговую категорию подтверждает Федерация.</p>
+        </div>
+
+        <div class="field">
+          <label for="t-organizer">Организатор — ФИО или организация <span class="req" aria-hidden="true">*</span></label>
+          <input id="t-organizer" name="organizer" maxlength="160" required value="<%= values.organizer || '' %>">
+        </div>
+
+        <div class="field">
+          <label for="t-email">Электронная почта <span class="req" aria-hidden="true">*</span></label>
+          <input id="t-email" name="email" type="email" maxlength="160" required
+                 aria-describedby="t-email-hint" value="<%= values.email || '' %>">
+          <p class="field-hint" id="t-email-hint">Для ответа по заявке. В открытом доступе не публикуется.</p>
+        </div>
+
+        <div class="field">
+          <label for="t-phone">Телефон</label>
+          <input id="t-phone" name="phone" maxlength="40" value="<%= values.phone || '' %>">
+          <p class="field-hint">Необязательно — только если удобнее по телефону.</p>
+        </div>
+
+        <div class="field">
+          <label for="t-comment">Комментарий</label>
+          <input id="t-comment" name="comment" maxlength="1000" value="<%= values.comment || '' %>">
+        </div>
+
+        <fieldset class="consent-box">
+          <legend>Документы</legend>
+          <div class="field">
+            <label for="t-doc1">Положение о турнире</label>
+            <input id="t-doc1" name="doc_polozhenie" type="file" aria-describedby="t-doc-hint">
+          </div>
+          <div class="field">
+            <label for="t-doc2">Сетка или регламент</label>
+            <input id="t-doc2" name="doc_setka" type="file">
+          </div>
+          <p class="field-hint" id="t-doc-hint">
+            До <%= maxFiles %> файлов, каждый не больше <%= maxFileMb %> МБ. Принимаются PDF, документы
+            Office и изображения. Тип проверяется по содержимому файла, а не по расширению.
+            <strong>Результаты матчей файлом не принимаются</strong> — их вносит секретарь Федерации,
+            иначе рейтинг не посчитается.
+          </p>
+        </fieldset>
+
+        <%
+        /* Приманка для ботов: человек её не видит и табом не достанет. */
+        %>
+        <div class="hp-field" aria-hidden="true">
+          <label for="t-website">Не заполняйте это поле</label>
+          <input id="t-website" name="website" type="text" tabindex="-1" autocomplete="off">
+        </div>
+
+        <fieldset class="consent-box">
+          <legend>Согласие</legend>
+          <div class="check">
+            <input type="checkbox" id="t-consent" name="consent_processing" value="1"
+                   <%= values.consent_processing ? 'checked' : '' %>>
+            <label for="t-consent">
+              Даю согласие на <a href="/consent#processing" target="_blank" rel="noopener">обработку
+              персональных данных</a> организатора (ФИО, почта, телефон) для рассмотрения заявки
+              и ознакомлен с <a href="/privacy" target="_blank" rel="noopener">Политикой</a>.
+              <span class="req" aria-hidden="true">*</span>
+            </label>
+          </div>
+          <p class="field-hint">
+            Контакты организатора на сайте не публикуются, поэтому отдельного согласия на
+            распространение здесь не требуется. Отозвать согласие можно письмом на
+            <a href="mailto:<%= op.email %>"><%= op.email %></a>.
+          </p>
+        </fieldset>
+
+        <p class="muted"><%= legalVersionLabel %></p>
+
+        <button class="btn btn--primary" type="submit">Отправить заявку</button>
+      </form>
+    </div>
+  </div>
+</section>
+</main>
+
+<%- include('partials/footer') %>

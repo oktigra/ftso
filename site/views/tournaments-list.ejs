@@ -1,0 +1,37 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Раздел сайта</span>
+    <h1>Турниры</h1>
+    <p class="muted">Календарь соревнований Федерации. Категория задаёт рейтинговый коэффициент.</p>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <% if (!tournaments.length) { %>
+      <div class="panel notice">Турниры пока не заведены.</div>
+    <% } else { %>
+      <div class="table-scroll">
+        <table>
+          <caption class="visually-hidden">Список турниров Федерации</caption>
+          <thead><tr><th scope="col">Дата завершения</th><th scope="col">Турнир</th><th scope="col">Категория</th><th scope="col">Участников</th></tr></thead>
+          <tbody>
+            <% tournaments.forEach(function (t) { %>
+              <tr>
+                <td class="t-date"><%= t.end_date %></td>
+                <td class="t-name"><a href="/tournaments/<%= t.id %>"><%= t.name %></a></td>
+                <td><span class="badge badge--<%= t.category.toLowerCase() %>"><%= t.category %></span></td>
+                <td><%= t.participants %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+    <p class="table-foot"><a class="link-more" href="/tournament-request">Провести свой турнир <span aria-hidden="true">→</span></a></p>
+  </div>
+</section>
+</main>
+<%- include('partials/footer') %>

@@ -23,6 +23,8 @@ process.env.LOGIN_MAX_ACCOUNT_FAILS = '5';
 process.env.LOGIN_MAX_IP_FAILS = '20';
 process.env.LOGIN_LOCK_MINUTES = '15';
 process.env.RATING_STALE_LOCK_MINUTES = '5';
+// Загрузки — в изолированный каталог прогона, а не в site/storage.
+process.env.UPLOAD_DIR = resolve(WORK, 'uploads');
 
 const CHROMIUM = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
@@ -79,13 +81,22 @@ class Jar {
 }
 
 function makeClient(base) {
-  return async function req(path, { method = 'GET', form, jar, headers = {}, redirect = 'manual' } = {}) {
+  return async function req(path, { method = 'GET', form, multipart, jar, headers = {}, redirect = 'manual' } = {}) {
     const h = { ...headers };
     if (jar) h.cookie = jar.header();
     let body;
     if (form) {
       h['content-type'] = 'application/x-www-form-urlencoded';
       body = new URLSearchParams(form).toString();
+    }
+    // multipart: content-type НЕ ставим руками — fetch сам подставит boundary.
+    if (multipart) {
+      const fd = new FormData();
+      for (const [k, v] of Object.entries(multipart.fields || {})) fd.append(k, String(v));
+      for (const f of multipart.files || []) {
+        fd.append(f.field, new Blob([f.buffer], { type: f.type || 'application/octet-stream' }), f.filename);
+      }
+      body = fd;
     }
     const res = await fetch(base + path, { method, headers: h, body, redirect });
     const setCookie = jar ? jar.absorb(res) : [];
@@ -179,18 +190,25 @@ await check('/rating отвечает', async () => {
   return 'HTTP 200';
 });
 
-await check('заглушки разделов: HTTP 200 и корректный <title>', async () => {
+await check('у каждого раздела свой осмысленный <title> и заголовок', async () => {
+  // Раньше здесь проверялось, что разделы — заглушки «в разработке». Разделы
+  // наполнены, и проверка стала о другом: у каждого свой title и свой h1, а не
+  // общий на всех — иначе поисковик увидит дюжину одинаковых страниц.
   const paths = ['/federation', '/news', '/tournaments', '/coaches', '/courts', '/clubs', '/referees', '/gallery', '/documents', '/contacts'];
-  const seen = [];
+  const titles = new Set();
   for (const p of paths) {
     const r = await http(p);
     eq(r.status, 200, `GET ${p}`);
     const t = /<title>([^<]+)<\/title>/.exec(r.text);
     assert(t && t[1].trim().length > 0, `${p}: пустой <title>`);
-    assert(r.text.includes('Раздел в разработке'), `${p}: нет пометки о разработке`);
-    seen.push(`${p} «${t[1]}»`);
+    assert(/ФТСО/.test(t[1]), `${p}: в <title> нет названия сайта`);
+    assert(!titles.has(t[1]), `${p}: <title> «${t[1]}» повторяет другой раздел`);
+    titles.add(t[1]);
+    const h1 = /<h1[^>]*>([^<]+)<\/h1>/.exec(r.text);
+    assert(h1 && h1[1].trim().length > 0, `${p}: нет заголовка h1`);
+    assert(!r.text.includes('Раздел в разработке'), `${p}: раздел всё ещё заглушка`);
   }
-  return `${paths.length} разделов, все 200 с title`;
+  return `${paths.length} разделов: у каждого свой title и h1, заглушек нет`;
 });
 
 await check('все 12 разделов договора есть в меню шапки и ведут на свои адреса', async () => {
@@ -652,18 +670,33 @@ await check('валидация админки: дата 2026-13-40 и кате�
   return '2026-13-40, 2026-02-30 и категория C отклонены';
 });
 
-await check('аплоада файлов в каркасе НЕТ', async () => {
+await check('загрузка файлов идёт ТОЛЬКО через общий слой', async () => {
+  // Раньше здесь проверялось, что аплоада нет вовсе. Аплоад появился — и теперь
+  // проверяется главное: он ОДИН. Второй разбор multipart или вторая запись
+  // файла на диск мимо lib/uploads.mjs означали бы вторую копию правил
+  // (magic bytes, лимит, вне webroot, attachment), которая разойдётся с первой.
+  const parsers = spawnSync('grep', ['-rlE', "from 'busboy'|require\\('busboy'\\)", 'server'], {
+    cwd: HERE, encoding: 'utf8',
+  }).stdout.split('\n').filter(Boolean);
+  eq(parsers.join(','), 'server/lib/multipart.mjs', `разбор multipart должен быть в одном месте, найдено: ${parsers}`);
+
+  const writers = spawnSync('grep', ['-rlE', 'writeFileSync', 'server'], { cwd: HERE, encoding: 'utf8' })
+    .stdout.split('\n').filter(Boolean);
+  eq(writers.join(','), 'server/lib/uploads.mjs', `запись файлов должна быть в одном месте, найдено: ${writers}`);
+
+  // Маршруты не проверяют файлы сами — они зовут слой. Ищем ПРИЗНАКИ КОДА
+  // (сигнатуры, вызовы распознавания), а не слово «magic» в комментарии.
+  const routeChecks = spawnSync('grep', ['-rlE', '%PDF|0x89|sniffType|looksExecutable', 'server/routes'], {
+    cwd: HERE, encoding: 'utf8',
+  }).stdout.trim();
+  assert(!routeChecks, `в маршрутах появились свои проверки типа файла: ${routeChecks}`);
+
   const pkg = JSON.parse(readFileSync(resolve(HERE, 'package.json'), 'utf8'));
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-  for (const bad of ['multer', 'formidable', 'busboy', 'express-fileupload']) {
-    assert(!deps[bad], `в зависимостях есть загрузчик файлов: ${bad}`);
+  for (const extra of ['multer', 'formidable', 'express-fileupload']) {
+    assert(!deps[extra], `второй загрузчик файлов в зависимостях: ${extra}`);
   }
-  const grep = spawnSync('grep', ['-rniE', 'multipart|multer|formidable|busboy|req\\.files', 'server', 'views', 'db'], {
-    cwd: HERE,
-    encoding: 'utf8',
-  });
-  assert(!grep.stdout.trim(), `найдены следы загрузки файлов:\n${grep.stdout}`);
-  return 'ни зависимостей, ни маршрутов загрузки';
+  return 'один разбор multipart, одна запись на диск, в маршрутах своих проверок типа нет';
 });
 
 await check('500 отдаёт свою страницу без стектрейса наружу', async () => {
@@ -1044,7 +1077,1314 @@ await check('лимит тела запроса включён', async () => {
 });
 
 // ===========================================================================
-section('11. Браузер: тема, CSP, адаптив, шрифты, XSS');
+section('11. Журнал согласий и публикуемость (152-ФЗ)');
+
+const journal = await import('./server/lib/consent-journal.mjs');
+const { LEGAL_VERSION } = await import('./server/lib/legal.mjs');
+// Имена игроков в таблице рейтинга, В ПОРЯДКЕ строк.
+const rowNames = (html) =>
+  [...html.matchAll(/<td class="player[^"]*">([^<]*)<\/td>/g)].map((m) => m[1]);
+
+await check('регистрация пишет ДВЕ раздельные записи с одной редакцией', async () => {
+  const id = Number(
+    db.prepare("INSERT INTO players (full_name, city, sex, age_group) VALUES ('Тест Согласиев','Смоленск','M','19-34')").run()
+      .lastInsertRowid,
+  );
+  journal.recordRegistrationConsents(db, { playerId: id, distribution: true, source: 'web', ip: '203.0.113.9' });
+  const rows = db.prepare('SELECT kind, event, legal_version FROM consents WHERE player_id = ? ORDER BY id').all(id);
+  eq(rows.length, 2, 'записей согласия');
+  eq(rows[0].kind, 'processing', 'первая запись — обработка');
+  eq(rows[1].kind, 'distribution', 'вторая запись — распространение');
+  assert(rows.every((r) => r.event === 'granted'), 'обе записи должны быть выдачей');
+  eq(rows[0].legal_version, rows[1].legal_version, 'редакция у обеих записей');
+  eq(rows[0].legal_version, LEGAL_VERSION, 'редакция = текущая константа');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(id).is_public, 1, 'флаг публикуемости');
+
+  // Отказ от публикации: обработка есть, распространения нет, игрок скрыт.
+  const id2 = Number(
+    db.prepare("INSERT INTO players (full_name, city, sex, age_group) VALUES ('Тест Скрытный','Вязьма','F','19-34')").run()
+      .lastInsertRowid,
+  );
+  journal.recordRegistrationConsents(db, { playerId: id2, distribution: false, source: 'web', ip: '203.0.113.9' });
+  eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(id2).n, 1, 'только обработка');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(id2).is_public, 0, 'без согласия — не публикуется');
+
+  db.prepare('DELETE FROM players WHERE id IN (?, ?)').run(id, id2);
+  return `две записи, редакция ${LEGAL_VERSION} у обеих; отказ от публикации оставляет только обработку`;
+});
+
+await check('отзыв распространения скрывает игрока, СОХРАНЯЯ место', async () => {
+  const before = rowNames((await http('/rating')).text);
+  const target = before.find((n) => n === 'Сергей Новиков');
+  assert(target, 'в таблице нет ожидаемого игрока');
+  const idx = before.indexOf(target);
+  const player = db.prepare('SELECT id FROM players WHERE full_name = ?').get(target);
+
+  journal.setDistributionConsent(db, player.id, false, { source: 'web', ip: '203.0.113.9' });
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(player.id).is_public, 0, 'флаг снят отзывом');
+
+  const after = rowNames((await http('/rating')).text);
+  eq(after.length, before.length, 'число строк не изменилось');
+  eq(after[idx], 'Скрыто по заявлению', 'строка обезличена на своём месте');
+  for (let i = 0; i < before.length; i++) {
+    if (i !== idx) eq(after[i], before[i], `строка ${i + 1} не должна была измениться`);
+  }
+
+  // Через поиск и через CSV настоящая фамилия тоже не достаётся.
+  // Сверяем СТРОКИ ТАБЛИЦЫ, а не весь HTML: страница честно возвращает запрос
+  // в поле поиска, и «Новиков» в разметке — это эхо ввода, а не данные игрока.
+  const search = await http(`/rating?q=${encodeURIComponent('Новиков')}`);
+  eq(rowNames(search.text).length, 0, 'скрытый игрок находится поиском по фамилии');
+  const csv = await http('/rating.csv');
+  assert(!csv.text.includes('Новиков'), 'скрытый игрок утекает в CSV');
+  assert(csv.text.includes('Скрыто по заявлению'), 'в CSV нет обезличенной строки');
+
+  // Движок продолжает считать по РЕАЛЬНЫМ данным — обезличивание только на выдаче.
+  const direct = computeStandings(collectEngineInput(db));
+  assert(
+    direct.players.some((p) => p.playerName === target),
+    'движок не должен видеть обезличивание',
+  );
+
+  journal.setDistributionConsent(db, player.id, true, { source: 'offline' });
+  const restored = rowNames((await http('/rating')).text);
+  eq(restored[idx], target, 'после возврата согласия имя вернулось на своё место');
+  return `${target}: отзыв -> «Скрыто по заявлению» на месте ${idx + 1}, места соперников не поехали; движок видит реальные данные`;
+});
+
+await check('удалённый игрок в старом снимке -> «Игрок удалён»', async () => {
+  const id = Number(
+    db.prepare("INSERT INTO players (full_name, city, sex, age_group) VALUES ('Тест Удалённый','Ярцево','M','19-34')").run()
+      .lastInsertRowid,
+  );
+  journal.recordRegistrationConsents(db, { playerId: id, distribution: true, source: 'offline' });
+  const t = Number(
+    db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Тестовый турнир', date('now','-10 days'), 'B')").run()
+      .lastInsertRowid,
+  );
+  db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, 1)').run(t, id);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  assert(rowNames((await http('/rating')).text).includes('Тест Удалённый'), 'игрок не попал в снимок');
+
+  // Снос игрока БЕЗ пересчёта: снимок ещё помнит его имя.
+  const wiped = journal.eraseConsents(db, id);
+  db.prepare('DELETE FROM players WHERE id = ?').run(id);
+  eq(wiped, 2, 'записи согласий стёрты при удалении');
+  const after = rowNames((await http('/rating')).text);
+  assert(!after.includes('Тест Удалённый'), 'имя удалённого игрока осталось на витрине');
+  assert(after.includes('Игрок удалён'), 'нет строки «Игрок удалён»');
+
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  return `удалённый игрок показан как «Игрок удалён»; ${wiped} записи согласий стёрты (ст. 21)`;
+});
+
+await check('автоочистка чистит отозванные, действующие не трогает', async () => {
+  const id = Number(
+    db.prepare("INSERT INTO players (full_name, city, sex, age_group) VALUES ('Тест Ретеншен','Сафоново','M','19-34')").run()
+      .lastInsertRowid,
+  );
+  journal.recordRegistrationConsents(db, { playerId: id, distribution: true, source: 'offline' });
+  journal.setDistributionConsent(db, id, false, { source: 'web', ip: '203.0.113.9' });
+  eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(id).n, 3, 'записей до очистки');
+
+  eq(journal.purgeExpired(db, 1095), 0, 'свежий отзыв чистить рано');
+  db.prepare("UPDATE consents SET at = datetime('now','-1200 days') WHERE player_id = ?").run(id);
+  const removed = journal.purgeExpired(db, 1095);
+  eq(removed, 2, 'удаляется пара «выдано + отозвано» по распространению');
+  const left = db.prepare('SELECT kind, event FROM consents WHERE player_id = ?').all(id);
+  eq(left.length, 1, 'осталась одна запись');
+  eq(left[0].kind, 'processing', 'действующее согласие на обработку не тронуто');
+
+  db.prepare('DELETE FROM players WHERE id = ?').run(id);
+  return 'отозванное старше срока удалено (2 записи), действующее согласие на обработку осталось';
+});
+
+await check('публикация из админки идёт ЧЕРЕЗ журнал, а не мимо', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/players', { jar });
+  const _csrf = tokenFrom(page.text);
+  // ОСНОВАНИЕ ОБЯЗАТЕЛЬНО: публикация ФИО человека, заведённого секретарём,
+  // не может держаться на одной галочке в админке.
+  const noBasis = await http('/admin/players', {
+    method: 'POST',
+    form: { _csrf, full_name: 'Тест Безоснований', city: 'Смоленск', sex: 'M', is_public: '1' },
+    jar,
+  });
+  eq(noBasis.status, 302, 'ответ на попытку опубликовать без основания');
+  const orphan = db.prepare('SELECT is_public FROM players WHERE full_name = ?').get('Тест Безоснований');
+  assert(!orphan || orphan.is_public === 0, 'игрок опубликован без правового основания');
+  db.prepare('DELETE FROM players WHERE full_name = ?').run('Тест Безоснований');
+
+  const r = await http('/admin/players', {
+    method: 'POST',
+    form: {
+      _csrf, full_name: 'Тест Секретарёв', city: 'Смоленск', sex: 'M', age_group: '19-34', is_public: '1',
+      consent_basis: 'бумажное согласие', consent_document_date: '2026-07-01',
+    },
+    jar,
+  });
+  eq(r.status, 302, 'создание игрока');
+  const created = db.prepare('SELECT id, is_public FROM players WHERE full_name = ?').get('Тест Секретарёв');
+  eq(created.is_public, 1, 'флаг публикуемости выставлен');
+  const rows = db.prepare('SELECT kind, event, source, ip, basis, document_date FROM consents WHERE player_id = ?').all(created.id);
+  eq(rows.length, 1, 'ровно одна запись — о распространении');
+  eq(rows[0].kind, 'distribution', 'вид записи');
+  eq(rows[0].event, 'granted', 'событие');
+  eq(rows[0].source, 'offline', 'источник — бумажное согласие');
+  eq(rows[0].ip, null, 'для офлайн-согласия IP не пишется');
+  eq(rows[0].basis, 'бумажное согласие', 'основание публикации не сохранено');
+  eq(rows[0].document_date, '2026-07-01', 'дата бумажного согласия не сохранена');
+
+  // Снятие отметки = ОТЗЫВ, тоже событием.
+  const upd = await http(`/admin/players/${created.id}/update`, {
+    method: 'POST',
+    form: { _csrf, full_name: 'Тест Секретарёв', city: 'Смоленск', sex: 'M', age_group: '19-34', is_public: '0' },
+    jar,
+  });
+  // Отзыв основания не требует — это воля субъекта, задерживать её нечем.
+  eq(upd.status, 302, 'обновление игрока');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(created.id).is_public, 0, 'флаг снят');
+  const last = db.prepare('SELECT event FROM consents WHERE player_id = ? ORDER BY id DESC LIMIT 1').get(created.id);
+  eq(last.event, 'revoked', 'снятие отметки записано отзывом');
+
+  journal.eraseConsents(db, created.id);
+  db.prepare('DELETE FROM players WHERE id = ?').run(created.id);
+  return 'без основания публикация не включается; отметка пишется событием (source=offline, основание + дата документа, без IP); снятие = отзыв';
+});
+
+// ===========================================================================
+section('12. Публичная регистрация и модерация');
+
+const regs = await import('./server/lib/registrations.mjs');
+
+/** Подать заявку формой: GET за токеном -> POST. Возвращает ответ и банку. */
+async function submitRegistration(form, jar = new Jar()) {
+  const page = await http('/register', { jar });
+  const _csrf = tokenFrom(page.text);
+  const res = await http('/register', { method: 'POST', form: { _csrf, ...form }, jar });
+  return { res, jar, _csrf };
+}
+
+await check('форма только POST, GET с ПДн в адресе не принимается', async () => {
+  const viaGet = await http('/register?full_name=Иван&email=ivan@example.com');
+  // GET отдаёт ФОРМУ, а не создаёт заявку: данные из строки запроса игнорируются.
+  eq(viaGet.status, 200, 'GET /register должен отдавать форму');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM registrations WHERE email = 'ivan@example.com'").get().n, 0,
+    'GET создал заявку — ПДн ушли бы в логи и историю браузера');
+  assert(viaGet.text.includes('method="post"'), 'форма должна отправляться методом POST');
+  return 'GET отдаёт форму и ничего не пишет; отправка только POST';
+});
+
+await check('без согласия на обработку заявка не принимается, ввод не теряется', async () => {
+  const { res } = await submitRegistration({
+    full_name: 'Пётр Отказов', city: 'Смоленск', sex: 'M', email: 'otkaz@example.com',
+  });
+  eq(res.status, 400, 'заявка без согласия должна отклоняться');
+  assert(res.text.includes('Без согласия на обработку'), 'нет объяснения причины');
+  assert(res.text.includes('value="Пётр Отказов"'), 'черновик потерян — ввод должен вернуться в форму');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM registrations WHERE email = 'otkaz@example.com'").get().n, 0,
+    'заявка без согласия попала в БД');
+  return 'HTTP 400, причина названа, поля вернулись заполненными, в БД пусто';
+});
+
+await check('honeypot отсекает бота молча', async () => {
+  const { res } = await submitRegistration({
+    full_name: 'Бот Ботов', city: 'Смоленск', sex: 'M', email: 'bot@example.com',
+    consent_processing: '1', website: 'http://spam.example',
+  });
+  eq(res.status, 302, 'бот должен получить обычный редирект, а не отказ');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM registrations WHERE email = 'bot@example.com'").get().n, 0,
+    'заявка бота записана');
+  return 'заполненная приманка -> редирект как при успехе, в БД ничего';
+});
+
+await check('заявка пишет ДВА раздельных согласия и письмо в очередь', async () => {
+  const { res } = await submitRegistration({
+    full_name: 'Новый Заявитель', city: 'Ярцево', sex: 'M', age_group: '19-34',
+    email: 'zayavitel@example.com', consent_processing: '1', consent_distribution: '1',
+  });
+  eq(res.status, 302, 'подача заявки');
+  const reg = db.prepare("SELECT * FROM registrations WHERE email = 'zayavitel@example.com'").get();
+  eq(reg.status, 'pending', 'заявка должна ждать модерации');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM players WHERE full_name = ?').get('Новый Заявитель').n, 0,
+    'форма НЕ должна писать в players напрямую — только через модерацию');
+  const cons = db.prepare('SELECT kind, event, legal_version, source, ip FROM consents WHERE registration_id = ? ORDER BY id').all(reg.id);
+  eq(cons.length, 2, 'записей согласия');
+  eq(cons[0].kind, 'processing', 'первое — обработка');
+  eq(cons[1].kind, 'distribution', 'второе — распространение');
+  eq(cons[0].legal_version, cons[1].legal_version, 'редакция общая');
+  eq(cons[0].source, 'web', 'источник — форма сайта');
+  assert(cons[0].ip, 'IP согласия, данного через сайт, должен фиксироваться');
+  const mail = db.prepare("SELECT * FROM mail_outbox WHERE to_email = 'zayavitel@example.com'").get();
+  assert(mail, 'письмо о приёме заявки не поставлено в очередь');
+  // SMTP не настроен -> письмо НЕ пропадает молча, а висит с честной ошибкой.
+  assert(mail.status !== 'sent', 'без транспорта письмо не может считаться отправленным');
+  assert(String(mail.last_error || '').includes('транспорт'), 'причина неотправки не записана');
+  const status = await http(`/register/status/${reg.status_token}`);
+  eq(status.status, 200, 'страница статуса по токену');
+  assert(status.text.includes('на рассмотрении'), 'страница статуса не показывает статус');
+  return 'заявка -> pending, два согласия с общей редакцией и IP, письмо в очереди с причиной, статус по токену открыт';
+});
+
+await check('чужой и подобранный токен статуса не открывается', async () => {
+  const r = await http('/register/status/подобранныйтокен123');
+  eq(r.status, 404, 'неизвестный токен должен давать 404');
+  return 'неизвестный токен -> 404, перебором заявку не нащупать';
+});
+
+await check('совпадение ФИО помечается модератору, а не сливается само', async () => {
+  const existing = db.prepare('SELECT full_name FROM players WHERE full_name = ?').get('Артём Ковалёв');
+  assert(existing, 'в сиде нет игрока для проверки совпадения');
+  // Тот же человек, написанный иначе: другой регистр и лишние пробелы.
+  const matches = regs.findNameMatches(db, '  артём   ковалёв ');
+  eq(matches.length, 1, 'нормализация ФИО не поймала того же человека');
+  // «Ёлкин» и «Елкин» — тоже один человек.
+  eq(regs.normalizeName('Ёлкин Пётр'), regs.normalizeName('Елкин Петр'), 'ё/е должны сходиться');
+
+  const { res } = await submitRegistration({
+    full_name: 'Артём Ковалёв', city: 'Смоленск', sex: 'M',
+    email: 'dubl@example.com', consent_processing: '1',
+  });
+  eq(res.status, 302, 'подача заявки-дубликата');
+  const reg = db.prepare("SELECT * FROM registrations WHERE email = 'dubl@example.com'").get();
+  eq(db.prepare('SELECT COUNT(*) AS n FROM players WHERE full_name = ?').get('Артём Ковалёв').n, 1,
+    'дубликат игрока создан автоматически — этого делать нельзя');
+
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/registrations', { jar });
+  assert(page.text.includes('Возможное совпадение'), 'модератору не показано возможное совпадение');
+  assert(page.text.includes('Расхождение по публикации'), 'не показано расхождение по согласию на публикацию');
+
+  // Одобряем ПРИВЯЗКОЙ к существующему — второй карточки не появляется.
+  const _csrf = tokenFrom(page.text);
+  const player = db.prepare('SELECT id FROM players WHERE full_name = ?').get('Артём Ковалёв');
+  const appr = await http(`/admin/registrations/${reg.id}/approve`, {
+    method: 'POST', form: { _csrf, link_player_id: String(player.id) }, jar,
+  });
+  eq(appr.status, 302, 'одобрение с привязкой');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM players WHERE full_name = ?').get('Артём Ковалёв').n, 1,
+    'привязка к существующему создала второго игрока');
+  const after = db.prepare('SELECT status, player_id FROM registrations WHERE id = ?').get(reg.id);
+  eq(after.status, 'approved', 'статус заявки');
+  eq(after.player_id, player.id, 'заявка привязана не к тому игроку');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE registration_id = ? AND player_id = ?').get(reg.id, player.id).n, 1,
+    'согласие заявки не привязано к игроку');
+  return 'тёзка помечен подсказкой, ё/е и регистр нормализованы, привязка не плодит второго игрока';
+});
+
+await check('одобрение заводит игрока и уведомляет, отказ объясняется', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const reg = db.prepare("SELECT * FROM registrations WHERE email = 'zayavitel@example.com'").get();
+  const page = await http('/admin/registrations', { jar });
+  const _csrf = tokenFrom(page.text);
+  const appr = await http(`/admin/registrations/${reg.id}/approve`, { method: 'POST', form: { _csrf }, jar });
+  eq(appr.status, 302, 'одобрение новой заявки');
+  const created = db.prepare('SELECT id, is_public FROM players WHERE full_name = ?').get('Новый Заявитель');
+  assert(created, 'игрок не заведён при одобрении');
+  eq(created.is_public, 1, 'согласие на публикацию было дано — игрок должен публиковаться');
+  const mails = db.prepare("SELECT kind FROM mail_outbox WHERE to_email = 'zayavitel@example.com' ORDER BY id").all();
+  assert(mails.some((m) => m.kind === 'registration.approved'), 'письмо об одобрении не поставлено в очередь');
+
+  // Отказ: причина сохраняется и видна заявителю на его странице статуса.
+  const { res } = await submitRegistration({
+    full_name: 'Отклонённый Заявитель', city: 'Вязьма', sex: 'F',
+    email: 'otkloneno@example.com', consent_processing: '1',
+  });
+  eq(res.status, 302, 'подача заявки для отказа');
+  const bad = db.prepare("SELECT * FROM registrations WHERE email = 'otkloneno@example.com'").get();
+  const rej = await http(`/admin/registrations/${bad.id}/reject`, {
+    method: 'POST', form: { _csrf, reason: 'Нет подтверждения участия в соревнованиях' }, jar,
+  });
+  eq(rej.status, 302, 'отклонение заявки');
+  const status = await http(`/register/status/${bad.status_token}`);
+  assert(status.text.includes('отклонена'), 'заявителю не показан статус отказа');
+  assert(status.text.includes('Нет подтверждения участия'), 'заявителю не показана причина отказа');
+  assert(
+    db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE to_email = 'otkloneno@example.com' AND kind = 'registration.rejected'").get().n === 1,
+    'письмо об отказе не поставлено в очередь',
+  );
+  return 'одобрение заводит игрока и публикует по согласию; отказ с причиной виден заявителю, оба уведомления в очереди';
+});
+
+await check('rate-limit на /register срабатывает', async () => {
+  const jar = new Jar();
+  const page = await http('/register', { jar });
+  const _csrf = tokenFrom(page.text);
+  let limited = 0;
+  let ok = 0;
+  // Счётчик обнуляем ПЕРЕД замером: иначе он уже израсходован прошлыми
+  // проверками и «всё отбито» прошло бы даже у лимитера, который режет всегда.
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  // Лимит 5 в час на адрес; шлём заведомо больше.
+  for (let i = 0; i < 8; i++) {
+    const r = await http('/register', {
+      method: 'POST',
+      form: {
+        _csrf, full_name: `Поток Заявкин ${i}`, city: 'Смоленск', sex: 'M',
+        email: `flood${i}@example.com`, consent_processing: '1',
+      },
+      jar,
+    });
+    if (r.status === 429) limited += 1;
+    else if (r.status === 302) ok += 1;
+  }
+  assert(ok > 0, `лимитер режет всё подряд: принято ${ok} — живой человек не подаст заявку`);
+  assert(limited > 0, `лимит не сработал: принято ${ok}, отказов 429 — ${limited}`);
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  db.prepare("DELETE FROM registrations WHERE email LIKE 'flood%@example.com'").run();
+  return `принято ${ok}, отбито лимитом ${limited}`;
+});
+
+await check('retention заявок: отклонённые чистятся, одобренные живут', async () => {
+  const before = db.prepare("SELECT COUNT(*) AS n FROM registrations WHERE status = 'approved'").get().n;
+  db.prepare("UPDATE registrations SET decided_at = datetime('now','-400 days') WHERE status = 'rejected'").run();
+  const removed = regs.purgeRegistrations(db, 365);
+  assert(removed > 0, 'старые отклонённые заявки не вычищены');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM registrations WHERE status = 'approved'").get().n, before,
+    'одобренные заявки не должны чиститься — они объясняют основание');
+  return `удалено просроченных отклонённых: ${removed}; одобренные (${before}) на месте`;
+});
+
+await check('письмо доходит до транспорта и помечается отправленным', async () => {
+  const mailer = await import('./server/lib/mailer.mjs');
+  const sent = [];
+  mailer.setTransport(async (msg) => { sent.push(msg); });
+  try {
+    const { res } = await submitRegistration({
+      // Город НАРОЧНО отличается от города оператора: в подписи письма стоит
+      // адрес Федерации (это её контакты, так и надо), и на «Смоленск» проверка
+      // города заявителя срабатывала бы ложно.
+      full_name: 'Почтовый Заявитель', city: 'Десногорск', sex: 'M',
+      email: 'pochta@example.com', consent_processing: '1',
+    });
+    eq(res.status, 302, 'подача заявки');
+    // Отправка асинхронная и не блокирует ответ — дожидаемся разбора очереди.
+    await mailer.flushOutbox(db);
+    const row = db.prepare("SELECT * FROM mail_outbox WHERE to_email = 'pochta@example.com'").get();
+    eq(row.status, 'sent', 'письмо должно быть отправлено');
+    assert(row.sent_at, 'не проставлено время отправки');
+    eq(row.last_error, null, 'у отправленного письма не должно остаться ошибки');
+    const msg = sent.find((m) => m.to === 'pochta@example.com');
+    assert(msg, 'транспорт не получил письмо');
+    assert(msg.subject.includes('принята'), 'не тот шаблон письма');
+    assert(msg.body.includes('Почтовый Заявитель'), 'в письме нет имени заявителя');
+    assert(/\/register\/status\//.test(msg.body), 'в письме нет ссылки на статус заявки');
+    // МИНИМИЗАЦИЯ: почта идёт открытым каналом, лишних ПДн в теле быть не должно.
+    assert(!msg.body.includes('Десногорск'), 'в письмо утёк город заявителя');
+    return `письмо ушло в транспорт (${sent.length} шт.), статус sent, ссылка на статус внутри, лишних данных нет`;
+  } finally {
+    mailer.setTransport(null);
+  }
+});
+
+await check('сбой SMTP не теряет заявку: письмо ждёт и объясняет причину', async () => {
+  const mailer = await import('./server/lib/mailer.mjs');
+  mailer.setTransport(async () => { throw new Error('соединение с smtp.yandex.ru отклонено'); });
+  try {
+    const { res } = await submitRegistration({
+      full_name: 'Сбойный Заявитель', city: 'Вязьма', sex: 'F',
+      email: 'sboy@example.com', consent_processing: '1',
+    });
+    eq(res.status, 302, 'заявка должна приниматься даже при мёртвом SMTP');
+    await mailer.flushOutbox(db);
+    const reg = db.prepare("SELECT * FROM registrations WHERE email = 'sboy@example.com'").get();
+    assert(reg, 'заявка потеряна из-за сбоя почты');
+    eq(reg.status, 'pending', 'заявка должна ждать модерации');
+    let row = db.prepare("SELECT * FROM mail_outbox WHERE to_email = 'sboy@example.com'").get();
+    eq(row.status, 'queued', 'письмо должно остаться в очереди, а не пропасть');
+    assert(row.attempts > 0, 'попытка не засчитана');
+    assert(row.last_error.includes('smtp.yandex.ru'), 'причина сбоя не записана');
+
+    // После исчерпания попыток письмо помечается неотправленным — очередь не
+    // крутит битый адрес вечно, но и не забывает про него.
+    for (let i = 0; i < 10; i++) await mailer.flushOutbox(db);
+    row = db.prepare("SELECT * FROM mail_outbox WHERE to_email = 'sboy@example.com'").get();
+    eq(row.status, 'failed', 'после исчерпания попыток статус должен стать failed');
+    const summary = mailer.outboxSummary(db);
+    assert(summary.failed > 0, 'сводка для админки не видит неотправленных');
+
+    // Кнопка «попробовать снова» возвращает письмо в очередь и досылает.
+    const delivered = [];
+    mailer.setTransport(async (msg) => { delivered.push(msg); });
+    const { jar } = await login(ADMIN.user, ADMIN.pass);
+    const page = await http('/admin/registrations', { jar });
+    assert(page.text.includes('Письма не доставлены'), 'админке не показано, что письма не ушли');
+    const _csrf = tokenFrom(page.text);
+    const retry = await http('/admin/registrations/mail/retry', { method: 'POST', form: { _csrf }, jar });
+    eq(retry.status, 302, 'повтор отправки');
+    row = db.prepare("SELECT * FROM mail_outbox WHERE to_email = 'sboy@example.com'").get();
+    eq(row.status, 'sent', 'после повтора письмо должно уйти');
+    assert(delivered.length > 0, 'транспорт не получил письмо при повторе');
+    return 'заявка принята, письмо ждёт с причиной, после исчерпания попыток — failed и видно в админке, повтор досылает';
+  } finally {
+    mailer.setTransport(null);
+  }
+});
+
+await check('пароль SMTP не утекает в лог и не лежит в git', async () => {
+  const { createSmtpTransport, smtpConfigured } = await import('./server/lib/smtp.mjs');
+  eq(smtpConfigured({ host: 'smtp.yandex.ru', user: '', pass: '' }), false, 'пустые реквизиты — не настроено');
+  eq(smtpConfigured({ host: 'smtp.yandex.ru', user: 'a@b.ru', pass: 'x' }), true, 'заполненные реквизиты — настроено');
+  // Транспорт создаётся, но ничего не печатает: пароль виден только nodemailer.
+  const send = createSmtpTransport({ host: 'smtp.yandex.ru', port: 465, secure: true, user: 'a@b.ru', pass: 'секрет-пароль', from: '' });
+  eq(typeof send, 'function', 'транспорт должен быть функцией отправки');
+  const example = readFileSync(resolve(HERE, '.env.example'), 'utf8');
+  assert(example.includes('SMTP_USER') && example.includes('SMTP_PASS'), 'в .env.example нет заглушек SMTP');
+  assert(!example.includes('пароль-приложения-яндекса-настоящий'), 'в образец попал реальный пароль');
+  const gitTracked = spawnSync('git', ['ls-files', '.env'], { cwd: HERE, encoding: 'utf8' });
+  eq(gitTracked.stdout.trim(), '', 'файл .env не должен быть под контролем git');
+  return 'реквизиты только из окружения, .env вне git, в образце заглушки';
+});
+
+// ===========================================================================
+section('13. Единые требования к загрузке файлов');
+
+const up = await import('./server/lib/uploads.mjs');
+const UPLOAD_DIR = resolve(WORK, 'uploads');
+eq(UPLOAD_DIR, config.upload.dir, 'приёмка и приложение должны писать в один каталог загрузок');
+
+// Мини-файлы с настоящими сигнатурами: проверяем распознавание по СОДЕРЖИМОМУ.
+const fileOf = (head, tail = 'x'.repeat(64)) => Buffer.concat([Buffer.from(head, 'latin1'), Buffer.from(tail)]);
+const PDF = fileOf('%PDF-1.7\n');
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 7)]);
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64, 7)]);
+const EXE = Buffer.concat([Buffer.from('MZ', 'latin1'), Buffer.alloc(64, 0)]);
+const ELF = Buffer.concat([Buffer.from([0x7f, 0x45, 0x4c, 0x46]), Buffer.alloc(64, 0)]);
+const SHELL = fileOf('#!/bin/sh\nrm -rf /\n');
+/** ZIP с именем первой записи — так отличаем docx от голого архива. */
+function zipWithFirstEntry(name) {
+  const n = Buffer.from(name, 'latin1');
+  const head = Buffer.alloc(30);
+  head.writeUInt32LE(0x04034b50, 0);
+  head.writeUInt16LE(n.length, 26);
+  return Buffer.concat([head, n, Buffer.alloc(64, 0)]);
+}
+const DOCX = zipWithFirstEntry('[Content_Types].xml');
+const PLAIN_ZIP = zipWithFirstEntry('payload.sh');
+
+await check('тип определяется по magic bytes, а не по расширению и Content-Type', async () => {
+  // Файл НАЗВАН документом, но внутри — исполняемый.
+  let caught = null;
+  try {
+    up.validateUpload({ buffer: EXE, filename: 'polozhenie.pdf', profile: 'tournament-doc' });
+  } catch (err) { caught = err; }
+  assert(caught, 'exe под именем .pdf прошёл проверку');
+  assert(/Исполняемые/.test(caught.message), `ожидался отказ по исполняемому файлу, получено: ${caught.message}`);
+
+  for (const [buf, label] of [[ELF, 'ELF'], [SHELL, 'скрипт с shebang']]) {
+    let err = null;
+    try { up.validateUpload({ buffer: buf, filename: 'setka.pdf', profile: 'tournament-doc' }); } catch (e) { err = e; }
+    assert(err && /Исполняемые/.test(err.message), `${label} под именем .pdf не отбит`);
+  }
+
+  // И наоборот: настоящий PDF с «неправильным» именем распознаётся верно.
+  const ok = up.validateUpload({ buffer: PDF, filename: 'файл.txt', profile: 'tournament-doc' });
+  eq(ok.mime, 'application/pdf', 'настоящий PDF не распознан по содержимому');
+  return 'exe/elf/shebang под видом .pdf отбиты; настоящий PDF распознан вопреки расширению';
+});
+
+await check('голый ZIP не проходит как документ Office', async () => {
+  const docx = up.validateUpload({ buffer: DOCX, filename: 'polozhenie.docx', profile: 'tournament-doc' });
+  eq(docx.kind, 'document', 'настоящий docx не распознан');
+  eq(docx.ext, 'docx', 'расширение docx не сохранено');
+  let err = null;
+  try { up.validateUpload({ buffer: PLAIN_ZIP, filename: 'polozhenie.docx', profile: 'tournament-doc' }); } catch (e) { err = e; }
+  assert(err, 'голый zip прошёл под видом docx');
+  assert(/не распознан/.test(err.message), `ожидался отказ по формату, получено: ${err.message}`);
+  return 'docx (первая запись [Content_Types].xml) принят, архив с payload.sh — отклонён';
+});
+
+await check('лимит размера и профиль назначения соблюдаются', async () => {
+  const big = Buffer.concat([PNG, Buffer.alloc(9 * 1024 * 1024, 1)]);
+  let err = null;
+  try { up.validateUpload({ buffer: big, filename: 'foto.png', profile: 'gallery' }); } catch (e) { err = e; }
+  assert(err && /больше/.test(err.message), 'превышение лимита размера не поймано');
+
+  // Профиль решает, что можно: в галерею PDF нельзя, в документы — нельзя картинку.
+  let g = null;
+  try { up.validateUpload({ buffer: PDF, filename: 'a.pdf', profile: 'gallery' }); } catch (e) { g = e; }
+  assert(g && /тип файла/.test(g.message), 'PDF пролез в галерею');
+  let d = null;
+  try { up.validateUpload({ buffer: JPEG, filename: 'a.jpg', profile: 'documents' }); } catch (e) { d = e; }
+  assert(d, 'картинка пролезла в раздел документов');
+  eq(up.validateUpload({ buffer: JPEG, filename: 'a.jpg', profile: 'gallery' }).kind, 'image', 'JPEG в галерею должен проходить');
+  let empty = null;
+  try { up.validateUpload({ buffer: Buffer.alloc(0), filename: 'a.pdf', profile: 'documents' }); } catch (e) { empty = e; }
+  assert(empty && /пустой/.test(empty.message), 'пустой файл принят');
+  return 'лимит размера, пустой файл и чужой профиль отклоняются; свой тип проходит';
+});
+
+await check('файл лежит ВНЕ webroot под случайным именем', async () => {
+  const row = await up.storeUpload(db, {
+    buffer: PDF, filename: '../../evil name".pdf', profile: 'tournament-doc', dir: UPLOAD_DIR,
+  });
+  assert(row.stored_name !== '../../evil name".pdf', 'имя с диска взято из присланного');
+  assert(/^[0-9a-f]{32}\.pdf$/.test(row.stored_name), `имя на диске должно быть случайным, получено ${row.stored_name}`);
+  const onDisk = resolve(UPLOAD_DIR, row.stored_name);
+  assert(existsSync(onDisk), 'файл не записан на диск');
+  // Каталог хранения НЕ внутри public: иначе nginx/express отдали бы файл
+  // напрямую, мимо проверки прав и мимо attachment.
+  const webroot = resolve(HERE, 'public');
+  assert(!resolve(UPLOAD_DIR).startsWith(webroot), 'каталог загрузок оказался внутри webroot');
+  // И через статику он не достаётся.
+  const viaStatic = await http(`/static/uploads/${row.stored_name}`);
+  assert(viaStatic.status === 404, `файл достаётся как статика (HTTP ${viaStatic.status})`);
+  // Опасное имя вычищено, расширение подставлено по содержимому.
+  assert(!row.original_name.includes('/'), 'в имени для отдачи остались слэши');
+  assert(!row.original_name.includes('"'), 'в имени для отдачи остались кавычки');
+  assert(row.original_name.endsWith('.pdf'), 'расширение по содержимому не подставлено');
+  up.deleteUpload(db, row.id, UPLOAD_DIR);
+  assert(!existsSync(onDisk), 'файл остался на диске после удаления записи');
+  return `имя на диске случайное (${row.stored_name}), хранение вне webroot, статикой не отдаётся, удаление уносит файл`;
+});
+
+// ===========================================================================
+section('14. Заявка «провести турнир» с документами');
+
+const treq = await import('./server/lib/tournament-requests.mjs');
+const sharpLib = (await import('sharp')).default;
+
+async function submitTournament(fields, files = [], jar = new Jar()) {
+  // Счётчик лимитера обнуляем: иначе 429 замаскирует ПРИЧИНУ отказа, и проверка
+  // формата файла «позеленеет» на самом деле от лимита подач.
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 't:%'").run();
+  const page = await http('/tournament-request', { jar });
+  const _csrf = tokenFrom(page.text);
+  const res = await http('/tournament-request', {
+    method: 'POST',
+    multipart: { fields: { _csrf, ...fields }, files },
+    jar,
+  });
+  return { res, jar, _csrf };
+}
+
+const BASE_FIELDS = {
+  name: 'Кубок приёмки', city: 'Смоленск', end_date: '2026-09-01', category: 'A',
+  organizer: 'Иван Организаторов', email: 'org@example.com', consent_processing: '1',
+};
+
+await check('multipart без CSRF-токена отвергается', async () => {
+  const res = await http('/tournament-request', {
+    method: 'POST',
+    multipart: { fields: { ...BASE_FIELDS }, files: [] },
+  });
+  eq(res.status, 403, 'форма с файлами без токена должна давать 403');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE email = 'org@example.com'").get().n, 0,
+    'заявка без CSRF записана');
+  return 'multipart-форма без токена -> 403; общий middleware её пропускает, проверяет парсер';
+});
+
+await check('exe под именем .pdf отбит, файл на диске не остался', async () => {
+  const before = db.prepare('SELECT COUNT(*) AS n FROM uploads').get().n;
+  const { res } = await submitTournament(BASE_FIELDS, [
+    { field: 'doc_polozhenie', filename: 'polozhenie.pdf', type: 'application/pdf', buffer: EXE },
+  ]);
+  eq(res.status, 400, 'заявка с исполняемым файлом должна отклоняться');
+  assert(/Исполняемые файлы/.test(res.text), 'причина отказа не названа');
+  assert(res.text.includes('value="Кубок приёмки"'), 'черновик текстовых полей потерян');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM uploads').get().n, before,
+    'после отказа осталась запись загрузки — файл осиротел');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE name = 'Кубок приёмки'").get().n, 0,
+    'заявка с отклонённым файлом записана');
+  return 'HTTP 400 с причиной, текстовые поля сохранены, осиротевших файлов нет';
+});
+
+await check('заявка с документом уходит на модерацию, а не в календарь', async () => {
+  const tournamentsBefore = db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n;
+  const { res } = await submitTournament(
+    { ...BASE_FIELDS, name: 'Кубок Смоленска (приёмка)', phone: '8-900-000-00-00', comment: 'корты «Днепр»' },
+    [{ field: 'doc_polozhenie', filename: 'polozhenie.pdf', type: 'application/pdf', buffer: PDF }],
+  );
+  eq(res.status, 302, 'подача заявки');
+  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок Смоленска (приёмка)'").get();
+  eq(r.status, 'pending', 'заявка должна ждать модерации');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n, tournamentsBefore,
+    'форма НЕ должна создавать турнир до модерации');
+  const files = treq.requestFiles(db, r.id);
+  eq(files.length, 1, 'документ не привязан к заявке');
+  eq(files[0].profile, 'tournament-doc', 'профиль загрузки');
+  assert(existsSync(resolve(UPLOAD_DIR, files[0].stored_name)), 'файла нет на диске');
+  // Контакты организатора — ПДн, у обработки должно быть основание в журнале.
+  const consent = db
+    .prepare("SELECT kind, event, source FROM consents WHERE subject_ref LIKE '%заявка на турнир%' ORDER BY id DESC LIMIT 1")
+    .get();
+  eq(consent.kind, 'processing', 'согласие организатора не записано');
+  eq(consent.event, 'granted', 'событие согласия');
+  const mail = db.prepare("SELECT kind FROM mail_outbox WHERE to_email = 'org@example.com' ORDER BY id DESC LIMIT 1").get();
+  eq(mail.kind, 'tournament.submitted', 'письмо о приёме заявки не поставлено в очередь');
+  const status = await http(`/tournament-request/status/${r.status_token}`);
+  eq(status.status, 200, 'страница статуса по токену');
+  assert(status.text.includes('на рассмотрении'), 'статус не показан');
+  return 'заявка pending, документ привязан и лежит на диске, согласие организатора в журнале, письмо в очереди';
+});
+
+await check('изображение пересобирается: ресайз и снятый EXIF', async () => {
+  // Снимок «с телефона»: большой и с EXIF, где живут геолокация и модель камеры.
+  const photo = await sharpLib({ create: { width: 2400, height: 1400, channels: 3, background: '#0e7a52' } })
+    .jpeg()
+    .withExif({ IFD0: { Make: 'TestCam', Copyright: 'ФТСО' } })
+    .toBuffer();
+  const metaIn = await sharpLib(photo).metadata();
+  assert(metaIn.exif, 'исходный файл должен содержать EXIF, иначе проверка бессмысленна');
+
+  const { res } = await submitTournament(
+    { ...BASE_FIELDS, name: 'Кубок с фотографией', email: 'photo@example.com' },
+    [{ field: 'doc_setka', filename: 'setka.jpg', type: 'image/jpeg', buffer: photo }],
+  );
+  eq(res.status, 302, 'подача заявки с изображением');
+  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок с фотографией'").get();
+  const [file] = treq.requestFiles(db, r.id);
+  const stored = readFileSync(resolve(UPLOAD_DIR, file.stored_name));
+  const metaOut = await sharpLib(stored).metadata();
+  assert(!metaOut.exif, 'EXIF остался в сохранённом файле — утекли бы геолокация и модель камеры');
+  assert(metaOut.width <= 1600 && metaOut.height <= 1600, `изображение не уменьшено: ${metaOut.width}x${metaOut.height}`);
+  assert(stored.length < photo.length, 'сохранённый файл не должен быть больше исходного');
+  return `${metaIn.width}x${metaIn.height} с EXIF -> ${metaOut.width}x${metaOut.height} без EXIF`;
+});
+
+await check('число файлов ограничено', async () => {
+  const files = Array.from({ length: 5 }, (_, i) => ({
+    field: `doc_${i}`, filename: `doc${i}.pdf`, type: 'application/pdf', buffer: PDF,
+  }));
+  const { res } = await submitTournament({ ...BASE_FIELDS, name: 'Кубок с пачкой файлов' }, files);
+  eq(res.status, 400, `перебор файлов должен давать 400 (а не 429 от лимитера), получено ${res.status}`);
+  assert(/Слишком много файлов/.test(res.text), 'отказ не по числу файлов — проверка ловит не то');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE name = 'Кубок с пачкой файлов'").get().n, 0,
+    'заявка с перебором файлов записана');
+  return `5 файлов при лимите ${config.tournamentRequest.maxFiles} -> 400 «Слишком много файлов», заявки нет`;
+});
+
+await check('документ отдаётся только за логином и только как attachment', async () => {
+  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок Смоленска (приёмка)'").get();
+  const [file] = treq.requestFiles(db, r.id);
+
+  const anon = await http(`/admin/files/${file.id}`);
+  assert(anon.status === 302 || anon.status === 403, `аноним получил файл (HTTP ${anon.status})`);
+
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const got = await http(`/admin/files/${file.id}`, { jar });
+  eq(got.status, 200, 'модератор должен получать документ');
+  const disposition = got.headers.get('content-disposition') || '';
+  assert(/^attachment/.test(disposition), `отдача должна быть attachment, получено: ${disposition}`);
+  eq(got.headers.get('x-content-type-options'), 'nosniff', 'нет nosniff при отдаче файла');
+  // И тем же путём файл не достаётся как статика.
+  const viaStatic = await http(`/static/uploads/${file.stored_name}`);
+  eq(viaStatic.status, 404, 'файл достаётся как статика');
+  return `аноним ${anon.status}, модератор 200 + attachment + nosniff, статикой не отдаётся`;
+});
+
+await check('согласование создаёт турнир, отказ объясняется организатору', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/tournament-requests', { jar });
+  const _csrf = tokenFrom(page.text);
+  assert(page.text.includes('Кубок Смоленска (приёмка)'), 'заявки нет в списке модерации');
+  assert(page.text.includes('polozhenie.pdf'), 'документ не показан модератору');
+
+  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок Смоленска (приёмка)'").get();
+  const before = db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n;
+  const appr = await http(`/admin/tournament-requests/${r.id}/approve`, { method: 'POST', form: { _csrf }, jar });
+  eq(appr.status, 302, 'согласование заявки');
+  const after = db.prepare('SELECT status, tournament_id FROM tournament_requests WHERE id = ?').get(r.id);
+  eq(after.status, 'approved', 'статус заявки');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n, before + 1, 'турнир не создан');
+  const created = db.prepare('SELECT name, end_date, category FROM tournaments WHERE id = ?').get(after.tournament_id);
+  eq(created.name, r.name, 'название турнира');
+  eq(created.end_date, r.end_date, 'дата турнира');
+  eq(created.category, r.category, 'категория турнира');
+  // Результаты файлом не принимаются: матчей у нового турнира нет.
+  eq(db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(after.tournament_id).n, 0,
+    'из файла подтянулись результаты — рейтинг должен считаться только по структурным данным');
+  assert(
+    db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE to_email = ? AND kind = 'tournament.approved'").get(r.email).n === 1,
+    'письмо о согласовании не поставлено в очередь',
+  );
+
+  const bad = await submitTournament({ ...BASE_FIELDS, name: 'Кубок отказной', email: 'otkaz-org@example.com' });
+  eq(bad.res.status, 302, 'подача заявки для отказа');
+  const badRow = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок отказной'").get();
+  const rej = await http(`/admin/tournament-requests/${badRow.id}/reject`, {
+    method: 'POST', form: { _csrf, reason: 'Даты пересекаются с этапом первенства области' }, jar,
+  });
+  eq(rej.status, 302, 'отклонение заявки');
+  const statusPage = await http(`/tournament-request/status/${badRow.status_token}`);
+  assert(statusPage.text.includes('отклонена'), 'организатору не показан отказ');
+  assert(statusPage.text.includes('Даты пересекаются'), 'организатору не показана причина');
+  return 'согласование добавляет турнир в календарь без результатов; отказ с причиной виден организатору, письма в очереди';
+});
+
+await check('rate-limit формы турнира срабатывает и не путается с регистрацией', async () => {
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 't:%'").run();
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  const jar = new Jar();
+  const page = await http('/tournament-request', { jar });
+  const _csrf = tokenFrom(page.text);
+  let ok = 0;
+  let limited = 0;
+  const total = config.tournamentRequest.maxPerWindow + 2;
+  for (let i = 0; i < total; i++) {
+    const r = await http('/tournament-request', {
+      method: 'POST',
+      multipart: { fields: { _csrf, ...BASE_FIELDS, name: `Поток ${i}`, email: `flood${i}@example.com` }, files: [] },
+      jar,
+    });
+    if (r.status === 429) limited += 1;
+    else if (r.status === 302) ok += 1;
+  }
+  assert(ok > 0, `лимитер режет всё подряд: принято ${ok}`);
+  assert(limited > 0, `лимит не сработал: принято ${ok}, отказов ${limited}`);
+  // Счётчики РАЗНЫЕ: поток заявок на турниры не должен закрывать регистрацию игроков.
+  const reg = await http('/register');
+  eq(reg.status, 200, 'форма регистрации должна остаться доступной');
+  const regJar = new Jar();
+  const regPage = await http('/register', { jar: regJar });
+  const regCsrf = tokenFrom(regPage.text);
+  const regRes = await http('/register', {
+    method: 'POST',
+    form: {
+      _csrf: regCsrf, full_name: 'Не Заблокирован', city: 'Смоленск', sex: 'M',
+      email: 'notblocked@example.com', consent_processing: '1',
+    },
+    jar: regJar,
+  });
+  eq(regRes.status, 302, 'лимит заявок на турниры перекрыл регистрацию игрока — счётчики должны быть разными');
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 't:%'").run();
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  db.prepare("DELETE FROM tournament_requests WHERE email LIKE 'flood%@example.com'").run();
+  db.prepare("DELETE FROM registrations WHERE email = 'notblocked@example.com'").run();
+  return `принято ${ok}, отбито ${limited}; регистрация игроков при этом работает (счётчики раздельные)`;
+});
+
+await check('retention заявок уносит и приложенные файлы', async () => {
+  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок отказной'").get();
+  // Заявка без файлов — приложим документ вручную, чтобы проверить каскад по диску.
+  const upload = await up.storeUpload(db, {
+    buffer: PDF, filename: 'setka.pdf', profile: 'tournament-doc', dir: UPLOAD_DIR,
+  });
+  db.prepare('INSERT INTO tournament_request_files (request_id, upload_id) VALUES (?, ?)').run(r.id, upload.id);
+  const onDisk = resolve(UPLOAD_DIR, upload.stored_name);
+  assert(existsSync(onDisk), 'файл не записан');
+
+  const approvedBefore = db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE status = 'approved'").get().n;
+  eq(treq.purgeRequests(db, 365, UPLOAD_DIR), 0, 'свежую заявку чистить рано');
+  db.prepare("UPDATE tournament_requests SET decided_at = datetime('now','-400 days') WHERE id = ?").run(r.id);
+  const removed = treq.purgeRequests(db, 365, UPLOAD_DIR);
+  eq(removed, 1, 'просроченная отклонённая заявка не вычищена');
+  assert(!existsSync(onDisk), 'файл остался на диске после чистки заявки');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM uploads WHERE id = ?').get(upload.id).n, 0, 'запись загрузки осталась');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE status = 'approved'").get().n, approvedBefore,
+    'согласованные заявки чистить нельзя — они объясняют, откуда турнир в календаре');
+  return 'отклонённая заявка старше срока удалена вместе с файлом на диске; согласованные не тронуты';
+});
+
+// ===========================================================================
+section('15. Личный кабинет и право на забвение (ст. 21)');
+
+const accounts = await import('./server/lib/player-accounts.mjs');
+const erasure = await import('./server/lib/erasure.mjs');
+
+/** Ищем строку во ВСЕХ файлах базы: основной + WAL (данные могут быть там). */
+function dbContains(needle) {
+  const files = [DB_FILE, `${DB_FILE}-wal`, `${DB_FILE}-shm`];
+  const probe = Buffer.from(needle, 'utf8');
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    if (readFileSync(file).includes(probe)) return file;
+  }
+  return null;
+}
+
+/** Счётчик кабинета обнуляем: иначе 429 замаскирует настоящую причину отказа. */
+const resetCabinetLimit = () => db.prepare("DELETE FROM write_attempts WHERE key LIKE 'c:%'").run();
+
+const CAB_NAME = 'Кабинетов Тарас Игнатьевич';
+const CAB_EMAIL = 'cabinet@example.com';
+const CAB_PASSWORD = 'смоленский-корт-2026';
+let cabPlayerId = null;
+let cabSetUrl = null;
+
+await check('кабинет без входа объясняет, откуда берётся доступ', async () => {
+  const r = await http('/cabinet');
+  eq(r.status, 403, 'кабинет без входа должен отдавать 403');
+  assert(/заявк/i.test(r.text), 'на странице нет объяснения про заявку');
+  assert(r.text.includes('/register'), 'нет ссылки на регистрацию');
+  assert(r.text.includes('/cabinet/login'), 'нет ссылки на вход');
+  return '403 со страницей «нужен вход»: заявка -> одобрение -> письмо со ссылкой';
+});
+
+await check('одобрение заявки открывает кабинет ссылкой, а не паролем в письме', async () => {
+  const { res } = await submitRegistration({
+    full_name: CAB_NAME, city: 'Смоленск', sex: 'M', age_group: '19-34',
+    email: CAB_EMAIL, consent_processing: '1', consent_distribution: '1',
+  });
+  eq(res.status, 302, 'подача заявки');
+  const reg = db.prepare('SELECT * FROM registrations WHERE email = ?').get(CAB_EMAIL);
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/registrations', { jar });
+  const _csrf = tokenFrom(page.text);
+  const appr = await http(`/admin/registrations/${reg.id}/approve`, { method: 'POST', form: { _csrf }, jar });
+  eq(appr.status, 302, 'одобрение заявки');
+
+  cabPlayerId = db.prepare('SELECT id FROM players WHERE full_name = ?').get(CAB_NAME).id;
+  const account = accounts.accountByPlayer(db, cabPlayerId);
+  assert(account, 'аккаунт кабинета не создан при одобрении');
+  eq(account.password_hash, null, 'пароль не должен придумываться за игрока');
+  const invite = db
+    .prepare("SELECT * FROM mail_outbox WHERE to_email = ? AND kind = 'cabinet.invite'")
+    .get(CAB_EMAIL);
+  assert(invite, 'приглашение в кабинет не поставлено в очередь');
+  const m = /\/cabinet\/reset\/([A-Za-z0-9_-]+)/.exec(invite.body);
+  assert(m, 'в письме нет ссылки установки пароля');
+  cabSetUrl = `/cabinet/reset/${m[1]}`;
+  // В БД лежит ХЭШ токена: дамп базы не должен давать вход в чужой кабинет.
+  assert(account.reset_token && account.reset_token !== m[1], 'токен хранится в открытом виде');
+  return 'аккаунт создан без пароля, в письме одноразовая ссылка, в БД только хэш токена';
+});
+
+await check('политика паролей и одноразовость ссылки', async () => {
+  resetCabinetLimit();
+  // Банка cookie обязательна: CSRF-токен живёт в сессии, и запрос без cookie
+  // получит 403 ещё до проверки самого пароля.
+  const jar = new Jar();
+  const open = await http(cabSetUrl, { jar });
+  eq(open.status, 200, 'страница установки пароля');
+  const _csrf = tokenFrom(open.text);
+
+  for (const [pw, why] of [
+    ['корт', 'слишком короткий'],
+    ['1234567890123', 'только цифры'],
+    ['кабинетов-тарас-1', 'содержит фамилию'],
+    ['cabinet-parol-77', 'содержит адрес почты'],
+  ]) {
+    const bad = await http(cabSetUrl, { method: 'POST', form: { _csrf, password: pw, password2: pw }, jar });
+    eq(bad.status, 400, `пароль «${pw}» (${why}) должен отклоняться`);
+  }
+  const mismatch = await http(cabSetUrl, {
+    method: 'POST', form: { _csrf, password: CAB_PASSWORD, password2: 'другое-значение-99' }, jar,
+  });
+  eq(mismatch.status, 400, 'несовпадение повтора должно отклоняться');
+
+  const ok = await http(cabSetUrl, { method: 'POST', form: { _csrf, password: CAB_PASSWORD, password2: CAB_PASSWORD }, jar });
+  eq(ok.status, 200, 'установка пароля');
+  assert(/Пароль установлен/.test(ok.text), 'нет подтверждения установки пароля');
+
+  // Ссылка одноразовая: письмо из ящика не должно быть вечным ключом.
+  const again = await http(cabSetUrl, { jar });
+  eq(again.status, 404, 'использованная ссылка должна перестать работать');
+  return 'короткий, только цифры, с фамилией и с почтой — отклонены; ссылка сработала один раз';
+});
+
+await check('вход в кабинет, профиль и своя история', async () => {
+  resetCabinetLimit();
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  const _csrf = tokenFrom(page.text);
+  const bad = await http('/cabinet/login', {
+    method: 'POST', form: { _csrf, email: CAB_EMAIL, password: 'неверный-пароль-1' }, jar,
+  });
+  eq(bad.status, 401, 'неверный пароль должен давать 401');
+
+  const good = await http('/cabinet/login', {
+    method: 'POST', form: { _csrf, email: CAB_EMAIL, password: CAB_PASSWORD }, jar,
+  });
+  eq(good.status, 302, 'вход в кабинет');
+  const cab = await http('/cabinet', { jar });
+  eq(cab.status, 200, 'кабинет открывается после входа');
+  assert(cab.text.includes(CAB_NAME), 'в кабинете нет своего имени');
+  assert(cab.text.includes(CAB_EMAIL), 'в кабинете нет своей почты');
+  // Рейтинг НЕ редактируется: поля очков в форме профиля быть не должно.
+  assert(!/name="rating_points"|name="rank"/.test(cab.text), 'в кабинете есть поле рейтинга — его правит движок');
+  return 'неверный пароль 401, верный — вход; профиль показывает имя и почту, полей рейтинга нет';
+});
+
+await check('смена пароля отзывает остальные сессии', async () => {
+  resetCabinetLimit();
+  // Две сессии одного игрока: как будто вход с двух устройств.
+  const jarA = new Jar();
+  const jarB = new Jar();
+  for (const jar of [jarA, jarB]) {
+    const page = await http('/cabinet/login', { jar });
+    const _csrf = tokenFrom(page.text);
+    const r = await http('/cabinet/login', { method: 'POST', form: { _csrf, email: CAB_EMAIL, password: CAB_PASSWORD }, jar });
+    eq(r.status, 302, 'вход в кабинет');
+  }
+  eq((await http('/cabinet', { jar: jarB })).status, 200, 'вторая сессия должна работать до смены пароля');
+
+  const pageA = await http('/cabinet', { jar: jarA });
+  const _csrf = tokenFrom(pageA.text);
+  const NEW_PASSWORD = 'десногорск-ракетка-42';
+  const changed = await http('/cabinet/password', {
+    method: 'POST',
+    form: { _csrf, current_password: CAB_PASSWORD, new_password: NEW_PASSWORD, new_password2: NEW_PASSWORD },
+    jar: jarA,
+  });
+  eq(changed.status, 302, 'смена пароля');
+
+  // Своя сессия жива, чужая — нет: если пароль меняют из-за угона, угнанная
+  // сессия обязана умереть здесь же, а не дожить до истечения.
+  eq((await http('/cabinet', { jar: jarA })).status, 200, 'своя сессия должна остаться');
+  eq((await http('/cabinet', { jar: jarB })).status, 403, 'вторая сессия должна быть отозвана');
+
+  // И вход теперь только по новому паролю.
+  const jarC = new Jar();
+  const pageC = await http('/cabinet/login', { jar: jarC });
+  const csrfC = tokenFrom(pageC.text);
+  eq(
+    (await http('/cabinet/login', { method: 'POST', form: { _csrf: csrfC, email: CAB_EMAIL, password: CAB_PASSWORD }, jar: jarC })).status,
+    401,
+    'старый пароль не должен работать',
+  );
+  return 'своя сессия жива, вторая отозвана, старый пароль недействителен';
+});
+
+await check('сброс пароля не выдаёт, зарегистрирован ли адрес', async () => {
+  resetCabinetLimit();
+  const jarK = new Jar();
+  const jarU = new Jar();
+  const pageK = await http('/cabinet/forgot', { jar: jarK });
+  const pageU = await http('/cabinet/forgot', { jar: jarU });
+  const known = await http('/cabinet/forgot', { method: 'POST', form: { _csrf: tokenFrom(pageK.text), email: CAB_EMAIL }, jar: jarK });
+  const unknown = await http('/cabinet/forgot', { method: 'POST', form: { _csrf: tokenFrom(pageU.text), email: 'nikogo@example.com' }, jar: jarU });
+  eq(known.status, 200, 'ответ по известному адресу');
+  eq(unknown.status, 200, 'ответ по неизвестному адресу');
+  // Тексты должны совпадать: иначе форма превращается в проверку наличия человека.
+  eq(known.text.length, unknown.text.length, 'ответы должны быть неразличимы');
+  eq(
+    db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE to_email = 'nikogo@example.com'").get().n,
+    0,
+    'на неизвестный адрес письмо отправлять нечего',
+  );
+  assert(
+    db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE to_email = ? AND kind = 'cabinet.reset'").get(CAB_EMAIL).n > 0,
+    'по известному адресу письмо не поставлено в очередь',
+  );
+  return 'ответы неразличимы, письмо ушло только по существующему адресу';
+});
+
+await check('игрок сам отзывает согласие на публикацию', async () => {
+  resetCabinetLimit();
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  const _csrf0 = tokenFrom(page.text);
+  await http('/cabinet/login', { method: 'POST', form: { _csrf: _csrf0, email: CAB_EMAIL, password: 'десногорск-ракетка-42' }, jar });
+  const cab = await http('/cabinet', { jar });
+  const _csrf = tokenFrom(cab.text);
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(cabPlayerId).is_public, 1, 'до отзыва игрок публикуется');
+  const off = await http('/cabinet/publication', { method: 'POST', form: { _csrf, publish: '0' }, jar });
+  eq(off.status, 302, 'отзыв согласия');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(cabPlayerId).is_public, 0, 'флаг не снят отзывом');
+  const last = db
+    .prepare("SELECT event, source FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1")
+    .get(cabPlayerId);
+  eq(last.event, 'revoked', 'отзыв не записан событием журнала');
+  eq(last.source, 'web', 'источник отзыва');
+  return 'отзыв из кабинета снимает публикацию и пишется событием журнала';
+});
+
+await check('ЗАБВЕНИЕ: ФИО не восстановимо ниоткуда', async () => {
+  resetCabinetLimit();
+  // Готовим игрока «как в жизни»: фото, результаты, матчи, снимок рейтинга.
+  const photo = await sharpLib({ create: { width: 900, height: 700, channels: 3, background: '#123d68' } })
+    .jpeg().toBuffer();
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  const _csrf0 = tokenFrom(page.text);
+  await http('/cabinet/login', { method: 'POST', form: { _csrf: _csrf0, email: CAB_EMAIL, password: 'десногорск-ракетка-42' }, jar });
+  const cab = await http('/cabinet', { jar });
+  const _csrf = tokenFrom(cab.text);
+  const up1 = await http('/cabinet/profile', {
+    method: 'POST',
+    multipart: {
+      fields: { _csrf, full_name: CAB_NAME, email: CAB_EMAIL },
+      files: [{ field: 'photo', filename: 'me.jpg', type: 'image/jpeg', buffer: photo }],
+    },
+    jar,
+  });
+  eq(up1.status, 302, 'загрузка фото профиля');
+  const withPhoto = db.prepare('SELECT photo_upload_id FROM players WHERE id = ?').get(cabPlayerId);
+  assert(withPhoto.photo_upload_id, 'фото не привязано к профилю');
+  const photoRow = db.prepare('SELECT stored_name FROM uploads WHERE id = ?').get(withPhoto.photo_upload_id);
+  const photoPath = resolve(UPLOAD_DIR, photoRow.stored_name);
+  assert(existsSync(photoPath), 'файл фото не записан');
+
+  // Пусть игрок попадёт в снимок рейтинга — там ФИО хранится копией.
+  const t = Number(
+    db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Турнир забвения', date('now','-20 days'), 'A')").run().lastInsertRowid,
+  );
+  const rival = db.prepare('SELECT id FROM players WHERE full_name = ?').get('Дмитрий Волков');
+  db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, 1)').run(t, cabPlayerId);
+  db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, 2)').run(t, rival.id);
+  db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id) VALUES (?, ?, ?)').run(t, cabPlayerId, rival.id);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  assert(dbContains(CAB_NAME), 'подготовка бессмысленна: имени и так нет в базе');
+
+  // Удаление из кабинета — с подтверждением словом.
+  const del = await http('/cabinet/delete', { jar });
+  eq(del.status, 200, 'страница удаления');
+  const csrfDel = tokenFrom(del.text);
+  const noWord = await http('/cabinet/delete', { method: 'POST', form: { _csrf: csrfDel, confirm: 'да' }, jar });
+  eq(noWord.status, 302, 'без слова подтверждения — отказ с сообщением');
+  assert(!db.prepare('SELECT anonymized_at FROM players WHERE id = ?').get(cabPlayerId).anonymized_at,
+    'удаление сработало без подтверждения');
+
+  const done = await http('/cabinet/delete', { method: 'POST', form: { _csrf: csrfDel, confirm: 'УДАЛИТЬ' }, jar });
+  eq(done.status, 200, 'удаление данных');
+
+  // (1) НЕОБРАТИМОСТЬ: имени нет НИ В ОДНОМ файле базы — ни в строке игрока,
+  // ни в снимках рейтинга, ни в журнале действий, ни в очереди писем.
+  const leak = dbContains(CAB_NAME);
+  assert(!leak, `ФИО осталось в базе (${leak}) — удаление обратимо`);
+  const mailLeak = dbContains(CAB_EMAIL);
+  assert(!mailLeak, `адрес почты остался в базе (${mailLeak})`);
+
+  const row = db.prepare('SELECT * FROM players WHERE id = ?').get(cabPlayerId);
+  assert(row, 'строка игрока должна остаться — на неё ссылаются матчи');
+  assert(row.anonymized_at, 'не проставлена отметка обезличивания');
+  eq(row.full_name, 'Игрок удалён', 'ФИО не затёрто');
+  eq(row.age_group, null, 'возрастная группа не очищена');
+  eq(row.photo_upload_id, null, 'ссылка на фото осталась');
+  eq(row.is_public, 0, 'обезличенный игрок не может публиковаться');
+  assert(!existsSync(photoPath), 'файл фотографии остался на диске');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM player_accounts WHERE player_id = ?').get(cabPlayerId).n, 0, 'аккаунт остался');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(cabPlayerId).n, 0, 'записи согласий остались');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM registrations WHERE player_id = ?').get(cabPlayerId).n, 0, 'заявка осталась');
+
+  // Вход закрыт, кабинет закрыт.
+  const after = await http('/cabinet', { jar });
+  eq(after.status, 403, 'кабинет должен закрыться');
+  const jarX = new Jar();
+  const loginPage = await http('/cabinet/login', { jar: jarX });
+  const reLogin = await http('/cabinet/login', {
+    method: 'POST',
+    form: { _csrf: tokenFrom(loginPage.text), email: CAB_EMAIL, password: 'десногорск-ракетка-42' },
+    jar: jarX,
+  });
+  eq(reLogin.status, 401, 'вход после удаления должен быть невозможен');
+  return 'ни ФИО, ни адреса нет ни в одном файле БД; строка игрока жива и обезличена, аккаунт, согласия, заявка и фото уничтожены';
+});
+
+await check('ЗАБВЕНИЕ: рейтинг соперников не дрогнул', async () => {
+  // Матчи и результаты удалённого остались — иначе места соперников поедут.
+  const kept = db
+    .prepare('SELECT COUNT(*) AS n FROM matches WHERE winner_player_id = ? OR loser_player_id = ?')
+    .get(cabPlayerId, cabPlayerId).n;
+  assert(kept > 0, 'матчи удалённого игрока снесены — рейтинг соперников переписан');
+  assert(
+    db.prepare('SELECT COUNT(*) AS n FROM results WHERE player_id = ?').get(cabPlayerId).n > 0,
+    'результаты удалённого игрока снесены',
+  );
+
+  // Считаем ДВИЖКОМ до и после «повторного» удаления идентичного профиля:
+  // сравниваем места и очки ВСЕХ, кроме самого удалённого.
+  const before = computeStandings(collectEngineInput(db));
+  const beforeMap = new Map(before.players.map((p) => [p.playerId, p]));
+
+  // Повторный вызов обезличивания ничего не меняет (идемпотентность) —
+  // и рейтинг обязан остаться тем же.
+  const again = erasure.erasePlayer(db, cabPlayerId, { uploadDir: UPLOAD_DIR });
+  assert(again.alreadyErased, 'повторное удаление должно быть безопасным no-op');
+
+  const after = computeStandings(collectEngineInput(db));
+  eq(after.players.length, before.players.length, 'число игроков в рейтинге изменилось');
+  for (const p of after.players) {
+    if (p.playerId === cabPlayerId) continue;
+    const was = beforeMap.get(p.playerId);
+    assert(was, `игрок ${p.playerId} появился из ниоткуда`);
+    eq(p.rank, was.rank, `место игрока ${p.playerName} изменилось после удаления соперника`);
+    eq(p.ratingPoints, was.ratingPoints, `очки игрока ${p.playerName} изменились после удаления соперника`);
+  }
+
+  // На витрине удалённый показан обезличенно, но СО СВОИМ местом.
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  const shown = currentStandings(db);
+  const erasedRow = shown.players.find((p) => p.playerId === cabPlayerId);
+  assert(erasedRow, 'обезличенный игрок исчез из таблицы — места соперников поедут');
+  eq(erasedRow.playerName, 'Игрок удалён', 'обезличенный показан не тем ярлыком');
+  eq(erasedRow.anonymized, 'erased', 'причина обезличивания должна быть «удалён», а не «скрыт»');
+  const engineRow = after.players.find((p) => p.playerId === cabPlayerId);
+  eq(erasedRow.rank, engineRow.rank, 'место обезличенного не совпало с расчётом движка');
+  eq(erasedRow.ratingPoints, engineRow.ratingPoints, 'очки обезличенного не совпали с расчётом движка');
+  return `матчей сохранено ${kept}; места и очки всех соперников совпали до и после; удалённый в таблице на своём месте ${erasedRow.rank}`;
+});
+
+// ===========================================================================
+section('16. Разделы витрины: новости, турниры, справочники, документы');
+
+const PUBLIC_SECTIONS = [
+  '/news', '/tournaments', '/coaches', '/courts', '/clubs', '/referees',
+  '/federation', '/gallery', '/documents', '/contacts',
+];
+
+await check('все разделы меню отвечают 200 и не заглушки', async () => {
+  const stubs = [];
+  for (const path of PUBLIC_SECTIONS) {
+    const r = await http(path);
+    eq(r.status, 200, `GET ${path}`);
+    if (/Раздел в разработке/.test(r.text)) stubs.push(path);
+  }
+  eq(stubs.join(','), '', `остались заглушки: ${stubs}`);
+  return `${PUBLIC_SECTIONS.length} разделов живые, заглушек нет`;
+});
+
+await check('черновик новости наружу не отдаётся', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/news', { jar });
+  const _csrf = tokenFrom(page.text);
+  const draft = await http('/admin/news', {
+    method: 'POST',
+    form: { _csrf, title: 'Черновик приёмки', body: 'Текст черновика', is_published: '0' },
+    jar,
+  });
+  eq(draft.status, 302, 'создание черновика');
+  const row = db.prepare("SELECT id FROM news WHERE title = 'Черновик приёмки'").get();
+  const direct = await http(`/news/${row.id}`);
+  eq(direct.status, 404, 'черновик доступен по прямой ссылке');
+  const list = await http('/news');
+  assert(!list.text.includes('Черновик приёмки'), 'черновик виден в списке новостей');
+
+  const published = await http('/admin/news', {
+    method: 'POST',
+    form: {
+      _csrf, title: 'Опубликованная приёмка', summary: 'Кратко',
+      body: 'Первый абзац.\n\nВторой абзац.', is_published: '1', published_at: '2026-08-01',
+    },
+    jar,
+  });
+  eq(published.status, 302, 'публикация новости');
+  const pub = db.prepare("SELECT id FROM news WHERE title = 'Опубликованная приёмка'").get();
+  const open = await http(`/news/${pub.id}`);
+  eq(open.status, 200, 'опубликованная новость открывается');
+  assert(open.text.includes('Первый абзац.'), 'текст новости не выведен');
+  assert((await http('/news')).text.includes('Опубликованная приёмка'), 'новости нет в списке');
+  return 'черновик -> 404 и не в списке; опубликованная открывается и видна';
+});
+
+await check('карточка турнира: участники без ссылок на профили и с обезличиванием', async () => {
+  const t = db.prepare('SELECT id FROM tournaments ORDER BY id LIMIT 1').get();
+  const page = await http(`/tournaments/${t.id}`);
+  eq(page.status, 200, 'карточка турнира');
+  // Ссылок на карточку игрока быть не должно: публичного профиля в проекте нет.
+  assert(!/href="\/players?\//.test(page.text), 'на карточке появились ссылки на профили игроков');
+
+  // Игрок без согласия на публикацию в протоколе тоже обезличен — иначе
+  // протокол турнира стал бы обходным путём вокруг согласия.
+  const participant = db
+    .prepare('SELECT p.id, p.full_name FROM results r JOIN players p ON p.id = r.player_id WHERE r.tournament_id = ? LIMIT 1')
+    .get(t.id);
+  assert(participant, 'в турнире нет участников — проверять нечего');
+  const journal = await import('./server/lib/consent-journal.mjs');
+  journal.setDistributionConsent(db, participant.id, false, { source: 'web', ip: '203.0.113.9' });
+  const hidden = await http(`/tournaments/${t.id}`);
+  assert(!hidden.text.includes(participant.full_name), 'ФИО без согласия попало в протокол турнира');
+  assert(hidden.text.includes('Скрыто по заявлению'), 'нет обезличенной строки в протоколе');
+  journal.setDistributionConsent(db, participant.id, true, { source: 'offline', basis: 'бумажное согласие', documentDate: '2026-07-01' });
+  const back = await http(`/tournaments/${t.id}`);
+  assert(back.text.includes(participant.full_name), 'после возврата согласия имя не вернулось');
+  return 'ссылок на профили нет; участник без согласия показан как «Скрыто по заявлению»';
+});
+
+await check('справочник с ФИО требует правового основания публикации', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/directories/coaches', { jar });
+  eq(page.status, 200, 'админ-страница справочника');
+  const _csrf = tokenFrom(page.text);
+
+  const noBasis = await http('/admin/directories/coaches', {
+    method: 'POST', form: { _csrf, full_name: 'Тренеров Без Основания', club: 'Днепр' }, jar,
+  });
+  eq(noBasis.status, 302, 'ответ на попытку без основания');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM coaches WHERE full_name = 'Тренеров Без Основания'").get().n, 0,
+    'тренер опубликован без правового основания');
+
+  const ok = await http('/admin/directories/coaches', {
+    method: 'POST',
+    form: { _csrf, full_name: 'Тренеров Иван', club: 'Днепр', contact: 'info@example.com',
+            basis: 'согласие от 01.07.2026', document_date: '2026-07-01' },
+    jar,
+  });
+  eq(ok.status, 302, 'добавление тренера с основанием');
+  const row = db.prepare("SELECT * FROM coaches WHERE full_name = 'Тренеров Иван'").get();
+  eq(row.basis, 'согласие от 01.07.2026', 'основание не сохранено');
+  eq(row.document_date, '2026-07-01', 'дата документа не сохранена');
+  assert((await http('/coaches')).text.includes('Тренеров Иван'), 'тренера нет на публичной странице');
+  // Основание — служебное поле, наружу не выводится.
+  assert(!(await http('/coaches')).text.includes('согласие от 01.07.2026'), 'основание публикации утекло на витрину');
+
+  // Корты — про объекты, а не про людей: основание не требуется.
+  const court = await http('/admin/directories/courts', {
+    method: 'POST', form: { _csrf, name: 'Корт приёмки', address: 'Смоленск', surface: 'хард' }, jar,
+  });
+  eq(court.status, 302, 'добавление корта');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM courts WHERE name = 'Корт приёмки'").get().n, 1,
+    'корт без основания должен добавляться — это не персональные данные');
+  return 'тренер без основания отклонён, с основанием добавлен; основание не показывается публично; корт — без основания';
+});
+
+await check('публичный файл отдаётся защищённым путём, документ с модерации — нет', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/library', { jar });
+  const _csrf = tokenFrom(page.text);
+  const add = await http('/admin/library/documents', {
+    method: 'POST',
+    multipart: {
+      fields: { _csrf, title: 'Устав (приёмка)', category: 'Уставные документы' },
+      files: [{ field: 'file', filename: 'ustav.pdf', type: 'application/pdf', buffer: PDF }],
+    },
+    jar,
+  });
+  eq(add.status, 302, 'публикация документа');
+  const doc = db.prepare("SELECT * FROM federation_documents WHERE title = 'Устав (приёмка)'").get();
+  assert(doc, 'документ не сохранён');
+
+  const got = await http(`/files/${doc.upload_id}`);
+  eq(got.status, 200, 'публичный документ должен отдаваться');
+  assert(/^attachment/.test(got.headers.get('content-disposition') || ''), 'документ отдаётся не как attachment');
+  eq(got.headers.get('x-content-type-options'), 'nosniff', 'нет nosniff при публичной отдаче');
+  eq((await http(`/static/uploads/${db.prepare('SELECT stored_name FROM uploads WHERE id = ?').get(doc.upload_id).stored_name}`)).status,
+    404, 'публичный файл достаётся как статика');
+  assert((await http('/documents')).text.includes('Устав (приёмка)'), 'документа нет в разделе');
+
+  // А файл заявки, ждущей модерации, публично НЕ отдаётся: /files пускает
+  // только то, что привязано к опубликованной сущности.
+  const pending = db
+    .prepare(
+      `SELECT f.upload_id FROM tournament_request_files f
+         JOIN tournament_requests r ON r.id = f.request_id
+        WHERE r.status = 'pending' LIMIT 1`,
+    )
+    .get();
+  if (pending) {
+    eq((await http(`/files/${pending.upload_id}`)).status, 404, 'документ с модерации отдан публично');
+  }
+  return `публичный документ 200 + attachment + nosniff, статикой не отдаётся; файл с модерации ${pending ? 'закрыт' : '(нет в наличии)'}`;
+});
+
+await check('согласование заявки переносит документы на карточку турнира', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const { res } = await submitTournament(
+    { ...BASE_FIELDS, name: 'Кубок с переносом файлов', email: 'carry@example.com' },
+    [{ field: 'doc_polozhenie', filename: 'polozhenie.pdf', type: 'application/pdf', buffer: PDF }],
+  );
+  eq(res.status, 302, 'подача заявки');
+  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок с переносом файлов'").get();
+  const page = await http('/admin/tournament-requests', { jar });
+  const _csrf = tokenFrom(page.text);
+  const appr = await http(`/admin/tournament-requests/${r.id}/approve`, { method: 'POST', form: { _csrf }, jar });
+  eq(appr.status, 302, 'согласование');
+  const after = db.prepare('SELECT tournament_id FROM tournament_requests WHERE id = ?').get(r.id);
+  const files = db.prepare('SELECT upload_id FROM tournament_files WHERE tournament_id = ?').all(after.tournament_id);
+  eq(files.length, 1, 'документ не переехал на турнир');
+  // И теперь он публичен — но тем же защищённым путём.
+  const pub = await http(`/files/${files[0].upload_id}`);
+  eq(pub.status, 200, 'документ согласованного турнира должен быть доступен');
+  assert(/^attachment/.test(pub.headers.get('content-disposition') || ''), 'документ турнира отдаётся не как attachment');
+  const card = await http(`/tournaments/${after.tournament_id}`);
+  assert(card.text.includes(`/files/${files[0].upload_id}`), 'на карточке турнира нет ссылки на документ');
+  return 'документ заявки переехал на турнир и стал публичным через /files (attachment + nosniff)';
+});
+
+// ===========================================================================
+section('17. Браузер: адаптив, доступность, тема, CSP, XSS');
 
 let browserNote = '';
 try {
@@ -1101,6 +2441,107 @@ try {
     eq(remembered, after, 'тема не восстановилась при следующем заходе');
     assert(bg === 'rgb(21, 34, 45)', `фон тёмной темы ожидался #15222d, получен ${bg}`);
     return `${before} -> ${after}, localStorage ftso-theme=${stored}, при новом заходе ${remembered}, фон ${bg}; нарушений CSP нет`;
+  });
+
+  // Все публичные страницы разом: адаптив и доступность проверяются ОДНИМ
+  // проходом по одному списку — иначе новый раздел добавят, а проверить забудут.
+  const A11Y_PAGES = [
+    '/', '/rating', '/news', '/tournaments', '/coaches', '/courts', '/clubs', '/referees',
+    '/federation', '/gallery', '/documents', '/contacts', '/privacy', '/consent',
+    '/register', '/tournament-request', '/cabinet/login',
+  ];
+
+  await check('адаптив: 360 и 768 px без горизонтального скролла', async () => {
+    const broken = [];
+    for (const width of [360, 768]) {
+      const page = await browser.newPage();
+      await page.setViewportSize({ width, height: 900 });
+      for (const path of A11Y_PAGES) {
+        await page.goto(inst.base + path, { waitUntil: 'domcontentloaded' });
+        const overflow = await page.evaluate(() => {
+          const doc = document.documentElement;
+          // Ширина документа больше окна = страница уезжает вбок.
+          const spill = doc.scrollWidth - doc.clientWidth;
+          // И ищем КОНКРЕТНОГО виновника, чтобы отчёт был чинибельным.
+          let culprit = null;
+          if (spill > 1) {
+            for (const el of document.body.querySelectorAll('*')) {
+              const r = el.getBoundingClientRect();
+              if (r.right > doc.clientWidth + 1 && r.width > 0) {
+                culprit = `${el.tagName.toLowerCase()}.${(el.className || '').toString().split(' ')[0]}`;
+                break;
+              }
+            }
+          }
+          return { spill, culprit };
+        });
+        if (overflow.spill > 1) broken.push(`${path} @${width}px (+${overflow.spill}px, ${overflow.culprit})`);
+      }
+      await page.close();
+    }
+    eq(broken.join('; '), '', `горизонтальный скролл: ${broken.join('; ')}`);
+    return `${A11Y_PAGES.length} страниц на 360 и 768 px — горизонтального скролла нет`;
+  });
+
+  await check('доступность: заголовки, метки полей, alt, фокус, клавиатура', async () => {
+    const problems = [];
+    const page = await browser.newPage();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    for (const path of A11Y_PAGES) {
+      await page.goto(inst.base + path, { waitUntil: 'domcontentloaded' });
+      const found = await page.evaluate(() => {
+        const out = [];
+        if (document.documentElement.lang !== 'ru') out.push('нет lang="ru"');
+        const h1 = document.querySelectorAll('h1');
+        if (h1.length !== 1) out.push(`заголовков h1: ${h1.length}`);
+        if (!document.querySelector('main')) out.push('нет <main>');
+        if (!document.querySelector('.skip-link')) out.push('нет ссылки «к содержимому»');
+        // Каждому полю ввода — своя метка (label, aria-label или aria-labelledby).
+        for (const el of document.querySelectorAll('input, select, textarea')) {
+          if (el.type === 'hidden') continue;
+          const byId = el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+          const wrapped = el.closest('label');
+          if (!byId && !wrapped && !el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby')) {
+            out.push(`поле без метки: ${el.name || el.type}`);
+          }
+        }
+        // Картинки без alt: либо описание, либо явно декоративная (aria-hidden).
+        for (const img of document.querySelectorAll('img')) {
+          if (!img.hasAttribute('alt') && img.getAttribute('aria-hidden') !== 'true') {
+            out.push(`img без alt: ${img.getAttribute('src')}`);
+          }
+        }
+        // Ссылка без различимого текста читается скринридером как «ссылка».
+        for (const a of document.querySelectorAll('a')) {
+          const text = (a.textContent || '').trim();
+          if (!text && !a.getAttribute('aria-label') && !a.querySelector('img[alt]')) {
+            out.push(`ссылка без текста: ${a.getAttribute('href')}`);
+          }
+        }
+        return out;
+      });
+      for (const item of found) problems.push(`${path}: ${item}`);
+    }
+
+    // ФОКУС ВИДЕН и ходит с клавиатуры: Tab со старта попадает на «к содержимому».
+    await page.goto(inst.base + '/', { waitUntil: 'domcontentloaded' });
+    await page.keyboard.press('Tab');
+    const focus = await page.evaluate(() => {
+      const el = document.activeElement;
+      const style = getComputedStyle(el);
+      return {
+        tag: el.tagName.toLowerCase(),
+        cls: (el.className || '').toString(),
+        outline: style.outlineStyle,
+        width: style.outlineWidth,
+      };
+    });
+    if (!focus.cls.includes('skip-link')) problems.push(`первый Tab попал не на skip-link, а на ${focus.tag}.${focus.cls}`);
+    if (focus.outline === 'none' || parseFloat(focus.width) < 1) problems.push('фокус не виден: контур отсутствует');
+    await page.close();
+
+    eq(problems.join('; '), '', `нарушения доступности: ${problems.join('; ')}`);
+    return `${A11Y_PAGES.length} страниц: lang, один h1, main, skip-link, метки у всех полей, alt у картинок, видимый фокус с клавиатуры`;
   });
 
   await check('адаптив: бургер-меню, одна колонка, таблицы со скроллом', async () => {
@@ -1168,11 +2609,40 @@ try {
     return `в ячейке текст «${asText.text}», тегов script 0, alert не сработал`;
   });
 
-  await check('портальные кнопки — заглушки, ЛК/заявок/оплаты в сборке нет', async () => {
+  await check('регистрация живая, остальные портальные кнопки — заглушки', async () => {
     const page = await browser.newPage();
     await page.goto(inst.base + '/', { waitUntil: 'domcontentloaded' });
+    // «Регистрация» и «Регистрация игрока» ОЖИВЛЕНЫ и ведут на /register.
+    // Личный кабинет, заявка на турнир и приём документов от секретарей — всё
+    // ещё «#»: это отдельные пункты, их функционала в сборке нет.
+    const live = await page.evaluate(() => {
+      const names = ['Регистрация', 'Регистрация игрока', 'Провести турнир', 'Личный кабинет'];
+      return [...document.querySelectorAll('a')]
+        .filter((a) => names.includes(a.textContent.trim()))
+        .map((a) => ({ t: a.textContent.trim(), href: a.getAttribute('href') }));
+    });
+    assert(live.length >= 4, `живых ссылок найдено ${live.length}, ожидалось не меньше 4`);
+    const expected = {
+      'Регистрация': '/register',
+      'Регистрация игрока': '/register',
+      'Провести турнир': '/tournament-request',
+      'Личный кабинет': '/cabinet',
+    };
+    for (const l of live) eq(l.href, expected[l.t], `«${l.t}» ведёт не туда`);
+    for (const path of ['/register', '/tournament-request']) {
+      const r = await http(path);
+      eq(r.status, 200, `страница ${path}`);
+    }
+    // Кабинет без входа отдаёт 403 со страницей «нужен вход» — это рабочая
+    // страница, а не заглушка: пустой ответ здесь был бы неотличим от «#».
+    const cabinet = await http('/cabinet');
+    eq(cabinet.status, 403, 'кабинет без входа');
+    assert(cabinet.text.includes('/cabinet/login'), 'на странице кабинета нет входа');
+
     const portal = await page.evaluate(() => {
-      const names = ['Регистрация', 'Создать личный кабинет', 'Регистрация игрока', 'Провести турнир', 'Личный кабинет', 'Заявка на турнир', 'Секретарям турниров'];
+      // Заявка участника на турнир и приём документов от секретарей — отдельные
+      // пункты бэклога, их функционала в сборке нет.
+      const names = ['Заявка на турнир', 'Секретарям турниров'];
       const out = [];
       for (const a of document.querySelectorAll('a')) {
         const t = a.textContent.trim();
@@ -1185,14 +2655,14 @@ try {
     );
     await page.close();
 
-    assert(portal.length >= 6, `портальных ссылок найдено ${portal.length}, ожидалось не меньше 6`);
+    assert(portal.length >= 2, `портальных ссылок найдено ${portal.length}, ожидалось не меньше 2`);
     for (const p of portal) eq(p.href, '#', `«${p.t}» должна оставаться заглушкой`);
     for (const l of legal) assert(l.href.startsWith('/'), `правовая ссылка «${l.t}» должна вести на реальную страницу, а не «${l.href}»`);
     for (const l of legal) {
       const r = await http(l.href);
       eq(r.status, 200, `правовая страница ${l.href}`);
     }
-    return `${portal.length} портальных ссылок = «#»; правовые ведут на ${legal.map((l) => l.href).join(', ')} (обе 200)`;
+    return `${live.length} живых ссылок (регистрация, заявка на турнир, кабинет); ${portal.length} портальных = «#»; правовые ведут на ${legal.map((l) => l.href).join(', ')} (обе 200)`;
   });
 
   await browser.close();
