@@ -1,0 +1,46 @@
+<%
+/* Справочник — ОДИН шаблон на все четыре раздела: поля берутся из описания
+   раздела (server/lib/directories.mjs), а не дублируются вёрсткой. */
+%>
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Раздел сайта</span>
+    <h1><%= spec.title %></h1>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <% if (!rows.length) { %>
+      <div class="panel notice">Раздел пока не наполнен.</div>
+    <% } else { %>
+      <div class="table-scroll">
+        <table>
+          <caption class="visually-hidden"><%= spec.title %></caption>
+          <thead>
+            <tr><% spec.fields.forEach(function (f) { %><th scope="col"><%= f.label %></th><% }); %></tr>
+          </thead>
+          <tbody>
+            <% rows.forEach(function (row) { %>
+              <tr>
+                <% spec.fields.forEach(function (f) { %>
+                  <td>
+                    <% if (f.name === 'map_url' && row[f.name]) { %>
+                      <a href="<%= row[f.name] %>" rel="nofollow noopener">на карте</a>
+                    <% } else if (f.name === 'site' && row[f.name]) { %>
+                      <a href="<%= row[f.name] %>" rel="nofollow noopener"><%= row[f.name] %></a>
+                    <% } else { %><%= row[f.name] || '—' %><% } %>
+                  </td>
+                <% }); %>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </div>
+</section>
+</main>
+<%- include('partials/footer') %>

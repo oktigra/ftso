@@ -1,0 +1,97 @@
+<%
+/* Админ-справочник — ОДИН шаблон на четыре раздела: поля из описания. */
+%>
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1><%= spec.title %></h1>
+  <%- include('_shell') %>
+
+  <div class="admin-bar">
+    <% directories.forEach(function (d) { %>
+      <a href="/admin/directories/<%= d.key %>"<%= d.key === spec.key ? ' aria-current="page"' : '' %>><%= d.title %></a>
+    <% }); %>
+  </div>
+
+  <div class="panel form-panel">
+    <h2>Добавить запись</h2>
+    <form method="post" action="/admin/directories/<%= spec.key %>" class="stacked-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <% spec.fields.forEach(function (f) { %>
+        <div class="field">
+          <label for="new-<%= f.name %>"><%= f.label %><%= f.required ? ' *' : '' %></label>
+          <input id="new-<%= f.name %>" name="<%= f.name %>" maxlength="<%= f.max %>"<%= f.required ? ' required' : '' %>>
+        </div>
+      <% }); %>
+      <% if (spec.personal) { %>
+        <%
+        /* ФИО живого человека — персональные данные. Публикация требует
+           названного основания и даты документа, как у игроков. */
+        %>
+        <div class="field">
+          <label for="new-basis">Основание публикации *</label>
+          <input id="new-basis" name="basis" maxlength="200" required placeholder="например: согласие от 01.07.2026">
+        </div>
+        <div class="field">
+          <label for="new-doc-date">Дата документа *</label>
+          <input id="new-doc-date" name="document_date" placeholder="ГГГГ-ММ-ДД" required>
+        </div>
+      <% } %>
+      <button class="btn btn--primary" type="submit">Добавить</button>
+    </form>
+    <% if (spec.personal) { %>
+      <p class="muted">
+        Публикация ФИО — это распространение персональных данных (ст. 10.1 152-ФЗ).
+        Без названного основания запись не сохраняется.
+      </p>
+    <% } %>
+  </div>
+
+  <div class="panel">
+    <h2>Список (<%= rows.length %>)</h2>
+    <% if (!rows.length) { %><p class="muted">Записей пока нет.</p><% } %>
+    <div class="table-scroll">
+      <table class="admin-table admin-table--edit">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <% spec.fields.forEach(function (f) { %><th><%= f.label %></th><% }); %>
+            <% if (spec.personal) { %><th>Основание</th><th>Дата документа</th><% } %>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% rows.forEach(function (row) { %>
+            <tr>
+              <td><%= row.id %></td>
+              <% spec.fields.forEach(function (f) { %>
+                <td><input form="edit-<%= spec.key %>-<%= row.id %>" name="<%= f.name %>"
+                           maxlength="<%= f.max %>"<%= f.required ? ' required' : '' %>
+                           value="<%= row[f.name] || '' %>"></td>
+              <% }); %>
+              <% if (spec.personal) { %>
+                <td><input form="edit-<%= spec.key %>-<%= row.id %>" name="basis" maxlength="200" required value="<%= row.basis || '' %>"></td>
+                <td><input form="edit-<%= spec.key %>-<%= row.id %>" name="document_date" required value="<%= row.document_date || '' %>"></td>
+              <% } %>
+              <td class="inline-form">
+                <button class="btn btn--secondary btn--small" type="submit" form="edit-<%= spec.key %>-<%= row.id %>">Сохранить</button>
+                <button class="btn btn--danger btn--small" type="submit" form="del-<%= spec.key %>-<%= row.id %>">Удалить</button>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+    <% rows.forEach(function (row) { %>
+      <form id="edit-<%= spec.key %>-<%= row.id %>" method="post" action="/admin/directories/<%= spec.key %>/<%= row.id %>/update" hidden>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      </form>
+      <form id="del-<%= spec.key %>-<%= row.id %>" method="post" action="/admin/directories/<%= spec.key %>/<%= row.id %>/delete" hidden>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      </form>
+    <% }); %>
+  </div>
+</div>
+</main>
+<%- include('../partials/footer') %>

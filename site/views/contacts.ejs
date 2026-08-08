@@ -1,0 +1,49 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Раздел сайта</span>
+    <h1>Контакты</h1>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container stack">
+    <div class="panel legal-body">
+      <h2>Реквизиты</h2>
+      <dl class="legal-dl">
+        <dt>Наименование</dt><dd><%= op.name %></dd>
+        <dt>Адрес</dt><dd><%= op.address %></dd>
+        <dt>ОГРН</dt><dd><%= op.ogrn %></dd>
+        <dt>ИНН</dt><dd><%= op.inn %></dd>
+        <dt>Электронная почта</dt><dd><a href="mailto:<%= op.email %>"><%= op.email %></a></dd>
+        <dt>Телефон</dt><dd><a href="tel:<%= op.phoneHref %>"><%= op.phone %></a></dd>
+      </dl>
+    </div>
+    <div class="panel">
+      <h2>Как добраться</h2>
+      <%
+      /* Карта — ССЫЛКОЙ, а не встроенным фреймом: сторонний iframe запрещён
+         строгим CSP (frame-src отсутствует), и он же тянул бы к нам чужие
+         счётчики. Ссылка ведёт наружу и ничего не грузит на страницу. */
+      %>
+      <p><%= op.address %></p>
+      <p>
+        <a class="link-more" rel="nofollow noopener"
+           href="https://yandex.ru/maps/?text=<%= encodeURIComponent(op.address) %>">
+          Открыть на карте <span aria-hidden="true">→</span>
+        </a>
+      </p>
+    </div>
+    <div class="panel">
+      <h2>По вопросам обработки персональных данных</h2>
+      <p class="muted">
+        Обращения субъектов персональных данных — на <a href="mailto:<%= op.email %>"><%= op.email %></a>
+        или по адресу <%= op.address %>. Порядок и сроки описаны в
+        <a href="/privacy">Политике обработки персональных данных</a>.
+      </p>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('partials/footer') %>

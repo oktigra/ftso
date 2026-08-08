@@ -1,0 +1,70 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Документы и галерея</h1>
+  <%- include('_shell') %>
+
+  <div class="panel form-panel">
+    <h2>Добавить документ</h2>
+    <form method="post" action="/admin/library/documents" class="stacked-form" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="doc-title">Заголовок</label><input id="doc-title" name="title" maxlength="200" required></div>
+      <div class="field"><label for="doc-cat">Категория</label><input id="doc-cat" name="category" maxlength="80" required placeholder="например: Уставные документы"></div>
+      <div class="field"><label for="doc-file">Файл</label><input id="doc-file" name="file" type="file" required aria-describedby="doc-hint">
+        <p class="field-hint" id="doc-hint">PDF или документ Office. Тип проверяется по содержимому файла.</p>
+      </div>
+      <button class="btn btn--primary" type="submit">Опубликовать</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Документы (<%= documents.length %>)</h2>
+    <% if (!documents.length) { %><p class="muted">Пока нет.</p><% } %>
+    <ul class="log-list">
+      <% documents.forEach(function (d) { %>
+        <li>
+          <code><%= d.category %></code> — <a href="/files/<%= d.upload_id %>"><%= d.title %></a>
+          <span class="muted">(<%= Math.max(1, Math.round(d.size_bytes / 1024)) %> КБ)</span>
+          <form method="post" action="/admin/library/documents/<%= d.id %>/delete" class="inline-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn btn--danger btn--small" type="submit">Удалить</button>
+          </form>
+        </li>
+      <% }); %>
+    </ul>
+  </div>
+
+  <div class="panel form-panel">
+    <h2>Добавить фотографию</h2>
+    <form method="post" action="/admin/library/gallery" class="stacked-form" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="g-title">Подпись</label><input id="g-title" name="title" maxlength="200" required></div>
+      <div class="field"><label for="g-file">Изображение</label><input id="g-file" name="file" type="file" required aria-describedby="g-hint">
+        <p class="field-hint" id="g-hint">
+          Только изображение. Файл пересобирается на сервере: размер приводится к разумному,
+          служебные данные снимка (геолокация, модель камеры) удаляются.
+        </p>
+      </div>
+      <button class="btn btn--primary" type="submit">Добавить</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Галерея (<%= gallery.length %>)</h2>
+    <% if (!gallery.length) { %><p class="muted">Пока нет.</p><% } %>
+    <ul class="log-list">
+      <% gallery.forEach(function (g) { %>
+        <li>
+          <a href="/files/<%= g.upload_id %>"><%= g.title %></a>
+          <form method="post" action="/admin/library/gallery/<%= g.id %>/delete" class="inline-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn btn--danger btn--small" type="submit">Удалить</button>
+          </form>
+        </li>
+      <% }); %>
+    </ul>
+  </div>
+</div>
+</main>
+<%- include('../partials/footer') %>

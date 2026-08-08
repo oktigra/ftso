@@ -1,0 +1,30 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Раздел сайта</span>
+    <h1>Новости</h1>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <% if (!news.length) { %>
+      <div class="panel notice">Новостей пока нет.</div>
+    <% } else { %>
+      <div class="news-grid">
+        <% news.forEach(function (n) { %>
+          <article class="news-card fx-card">
+            <%- include('partials/court-card') %>
+            <span class="news-date"><%= n.published_at || n.created_at.slice(0, 10) %></span>
+            <h2 class="news-card-title"><a href="/news/<%= n.id %>"><%= n.title %></a></h2>
+            <p><%= n.summary || '' %></p>
+            <a class="link-more" href="/news/<%= n.id %>">Читать <span aria-hidden="true">→</span></a>
+          </article>
+        <% }); %>
+      </div>
+    <% } %>
+  </div>
+</section>
+</main>
+<%- include('partials/footer') %>

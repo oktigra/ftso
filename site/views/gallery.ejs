@@ -1,0 +1,29 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Раздел сайта</span>
+    <h1>Галерея</h1>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <% if (!items.length) { %>
+      <div class="panel notice">Фотографий пока нет.</div>
+    <% } else { %>
+      <%
+      /* Файлы отдаются ссылкой, а не <img src>: отдача идёт как attachment с
+         nosniff — так же, как все загруженные файлы. Инлайновый показ чужого
+         файла в нашем домене — это XSS через SVG, поэтому его нет. */
+      %>
+      <ul class="doc-list">
+        <% items.forEach(function (g) { %>
+          <li><a href="/files/<%= g.upload_id %>"><%= g.title %></a></li>
+        <% }); %>
+      </ul>
+    <% } %>
+  </div>
+</section>
+</main>
+<%- include('partials/footer') %>

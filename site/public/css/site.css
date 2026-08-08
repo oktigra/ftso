@@ -379,7 +379,10 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 .form-errors ul{margin:.5rem 0 0; padding-left:1.2rem;}
 /* Приманка для ботов: убрана из потока и с клавиатуры, но существует в разметке. */
 .hp-field{position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden;}
-.consent-box{border:1px solid var(--border); border-radius:.75rem; padding:1rem; display:flex; flex-direction:column; gap:.85rem;}
+/* min-inline-size:0 — у fieldset она по умолчанию min-content, и длинное
+   содержимое (поле выбора файла) распирает страницу на узком экране. */
+.consent-box{border:1px solid var(--border); border-radius:.75rem; padding:1rem; display:flex; flex-direction:column; gap:.85rem; min-inline-size:0;}
+.stacked-form input[type=file]{max-width:100%; width:100%;}
 .consent-box legend{padding:0 .4rem; font-weight:600;}
 .check{display:flex; gap:.6rem; align-items:flex-start;}
 .check input{margin-top:.25rem; flex:0 0 auto; width:1.05rem; height:1.05rem;}
@@ -396,6 +399,44 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 .consent-note{display:block; font-size:.78rem; margin-top:.25rem;}
 .consent-proof{margin-top:.3rem; font-size:.82rem;}
 .cabinet-steps{margin:0; padding-left:1.35rem; display:flex; flex-direction:column; gap:.5rem;}
+
+/* --- доступность и адаптив (единый проход) --- */
+
+/* Заголовок таблицы для скринридера: виден программе чтения, не занимает места.
+   display:none тут не годится — скринридер его тоже не прочитает. */
+.visually-hidden{
+  position:absolute; width:1px; height:1px; margin:-1px; padding:0;
+  overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap; border:0;
+}
+.doc-list{margin:0; padding-left:1.35rem; display:flex; flex-direction:column; gap:.6rem;}
+.doc-list li{padding-left:.15rem;}
+.news-card-title{font-size:1.15rem;}
+.news-card-title a{color:var(--text);}
+.news-card-title a:hover{color:var(--primary);}
+.stacked-form textarea{
+  width:100%; padding:.6rem .75rem; border:1px solid var(--border); border-radius:.6rem;
+  background:var(--surface); color:var(--text); font:inherit; resize:vertical; min-height:6rem;}
+.stacked-form textarea:focus-visible{outline:2px solid var(--primary); outline-offset:1px;}
+
+/* Длинные значения (адреса, ссылки, имена файлов) на узком экране переносятся,
+   а не растягивают страницу горизонтально. */
+.legal-dl dd, .doc-list li, .reg-meta, address{overflow-wrap:anywhere;}
+
+@media (max-width:760px){
+  /* Служебные полосы админки и формы в строку — в колонку: иначе на телефоне
+     они уезжают за край, и появляется горизонтальный скролл. */
+  .admin-bar{flex-wrap:wrap; gap:.5rem;}
+  .inline-form{flex-wrap:wrap;}
+  .reg-actions{flex-direction:column; align-items:stretch; gap:1rem;}
+  .form-panel{max-width:none;}
+}
+
+@media (max-width:400px){
+  /* 360px — нижняя граница проверки. Кнопки не должны выходить за контейнер. */
+  .btn{padding:.7rem 1.1rem; font-size:.95rem;}
+  .hero-cta, .cta-actions{flex-direction:column; align-items:stretch;}
+  .hero-cta .btn, .cta-actions .btn{justify-content:center;}
+}
 .player--anonymized{color:var(--muted); font-style:italic;}
 .legal-statement{border-left:3px solid var(--primary); padding:.15rem 0 .15rem 1rem; margin:0;}
 .legal-dl{margin:0; display:grid; grid-template-columns:minmax(9rem,auto) 1fr; gap:.5rem 1rem;}

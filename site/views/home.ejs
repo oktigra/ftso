@@ -45,8 +45,7 @@
 </section>
 
 <%
-/* Блок турниров — ПОКА статичное содержимое макета. Реальные данные подключим,
-   когда придёт модуль турниров; ссылка ведёт на свой раздел. */
+/* Блок турниров — ЖИВЫЕ данные: пять последних из календаря. */
 %>
 <section class="section-pad section-wm" id="tournaments">
   <svg class="wm wm--tourn" data-parallax=".1" viewBox="0 0 300 400" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><rect x="10" y="10" width="280" height="380" rx="2"/><line x1="10" y1="200" x2="290" y2="200"/><rect x="45" y="70" width="210" height="260"/><line x1="150" y1="70" x2="150" y2="330"/><line x1="45" y1="200" x2="255" y2="200"/></svg>
@@ -60,14 +59,17 @@
       <div>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Дата</th><th>Турнир</th><th>Категория</th><th>Статус</th></tr></thead>
+            <thead><tr><th>Дата</th><th>Турнир</th><th>Категория</th><th>Участников</th></tr></thead>
             <tbody>
+              <% if (!tournaments.length) { %>
+                <tr><td colspan="4" class="muted">Турниры пока не заведены.</td></tr>
+              <% } %>
               <% tournaments.forEach(function (t) { %>
                 <tr>
-                  <td class="t-date"><%= t.date %></td>
-                  <td class="t-name"><a href="/tournaments"><%= t.name %></a></td>
+                  <td class="t-date"><%= t.end_date %></td>
+                  <td class="t-name"><a href="/tournaments/<%= t.id %>"><%= t.name %></a></td>
                   <td><span class="badge badge--<%= t.category.toLowerCase() %>"><%= t.category %></span></td>
-                  <td><span class="status status--<%= t.status %>"><%= t.statusLabel %></span></td>
+                  <td><%= t.participants %></td>
                 </tr>
               <% }); %>
             </tbody>
@@ -137,7 +139,7 @@
 </section>
 
 <%
-/* Новостной блок — ПОКА статичное содержимое макета (модуль новостей позже). */
+/* Новостной блок — ЖИВЫЕ данные: три последние опубликованные новости. */
 %>
 <section class="section-pad section-wm">
   <svg class="wm wm--news" data-parallax=".12" viewBox="0 0 300 400" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><rect x="10" y="10" width="280" height="380" rx="2"/><line x1="10" y1="200" x2="290" y2="200"/><rect x="45" y="70" width="210" height="260"/><line x1="150" y1="70" x2="150" y2="330"/><line x1="45" y1="200" x2="255" y2="200"/></svg>
@@ -146,17 +148,22 @@
       <span class="eyebrow">Новости</span>
       <h2>Актуальное</h2>
     </div>
-    <div class="news-grid">
-      <% news.forEach(function (n) { %>
-        <article class="news-card fx-card">
-          <%- include('partials/court-card') %>
-          <span class="news-date"><%= n.date %></span>
-          <h3><%= n.title %></h3>
-          <p><%= n.excerpt %></p>
-          <a class="link-more" href="/news">Читать <span aria-hidden="true">→</span></a>
-        </article>
-      <% }); %>
-    </div>
+    <% if (!news.length) { %>
+      <div class="panel notice">Новостей пока нет.</div>
+    <% } else { %>
+      <div class="news-grid">
+        <% news.forEach(function (n) { %>
+          <article class="news-card fx-card">
+            <%- include('partials/court-card') %>
+            <span class="news-date"><%= n.published_at || n.created_at.slice(0, 10) %></span>
+            <h3><%= n.title %></h3>
+            <p><%= n.summary || '' %></p>
+            <a class="link-more" href="/news/<%= n.id %>">Читать <span aria-hidden="true">→</span></a>
+          </article>
+        <% }); %>
+      </div>
+    <% } %>
+    <p class="table-foot"><a class="link-more" href="/news">Все новости <span aria-hidden="true">→</span></a></p>
   </div>
 </section>
 

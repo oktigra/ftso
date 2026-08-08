@@ -237,6 +237,103 @@ CREATE TABLE IF NOT EXISTS mail_outbox (
 );
 CREATE INDEX IF NOT EXISTS idx_mail_outbox_status ON mail_outbox (status, id);
 
+-- НОВОСТИ. Черновик и публикация разведены: is_published решает, видна ли
+-- запись публично. Удалять ради «спрятать» ничего не нужно.
+CREATE TABLE IF NOT EXISTS news (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  title          TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 200),
+  summary        TEXT,
+  body           TEXT NOT NULL CHECK (length(trim(body)) BETWEEN 1 AND 20000),
+  cover_upload_id INTEGER REFERENCES uploads(id) ON DELETE SET NULL,
+  is_published   INTEGER NOT NULL DEFAULT 0 CHECK (is_published IN (0,1)),
+  published_at   TEXT,
+  created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_news_published ON news (is_published, published_at DESC);
+
+-- ДОКУМЕНТЫ ТУРНИРА, привязанные к САМОМУ турниру (а не к заявке): заявка
+-- может быть вычищена по сроку хранения, а положение турнира в календаре
+-- остаётся. При согласовании заявки её файлы перевешиваются сюда.
+CREATE TABLE IF NOT EXISTS tournament_files (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  upload_id     INTEGER NOT NULL REFERENCES uploads(id)     ON DELETE CASCADE,
+  title         TEXT,
+  UNIQUE (tournament_id, upload_id)
+);
+
+-- СПРАВОЧНИКИ. Отдельные таблицы, а не статика в шаблоне: их ведёт секретарь
+-- через админку, как игроков.
+--
+-- ФИО тренера и судьи — ПЕРСОНАЛЬНЫЕ ДАННЫЕ, и их публикация на сайте это
+-- распространение (ст. 10.1). Поэтому у обеих таблиц есть ОБЯЗАТЕЛЬНОЕ
+-- основание публикации с датой документа — ровно как у игроков, заводимых
+-- секретарём вручную: галочка в админке основанием не является.
+CREATE TABLE IF NOT EXISTS coaches (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name     TEXT NOT NULL CHECK (length(trim(full_name)) BETWEEN 1 AND 120),
+  club          TEXT,
+  contact       TEXT,
+  note          TEXT,
+  basis         TEXT NOT NULL CHECK (length(trim(basis)) BETWEEN 1 AND 200),
+  document_date TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS referees (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name     TEXT NOT NULL CHECK (length(trim(full_name)) BETWEEN 1 AND 120),
+  category      TEXT,
+  city          TEXT,
+  note          TEXT,
+  basis         TEXT NOT NULL CHECK (length(trim(basis)) BETWEEN 1 AND 200),
+  document_date TEXT NOT NULL,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Корты и клубы — сведения об организациях и объектах, не о людях:
+-- основание публикации им не требуется.
+CREATE TABLE IF NOT EXISTS courts (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 160),
+  address    TEXT,
+  surface    TEXT,
+  map_url    TEXT,
+  note       TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS clubs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 160),
+  address    TEXT,
+  contact    TEXT,
+  site       TEXT,
+  note       TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ДОКУМЕНТЫ ФЕДЕРАЦИИ (/documents): файл + заголовок + категория.
+CREATE TABLE IF NOT EXISTS federation_documents (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  title      TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 200),
+  category   TEXT NOT NULL CHECK (length(trim(category)) BETWEEN 1 AND 80),
+  upload_id  INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_federation_documents_cat ON federation_documents (category, id DESC);
+
+-- ГАЛЕРЕЯ. Изображение проходит общий слой загрузки: ресайз и снятие EXIF
+-- (в снимке с телефона лежат координаты) делает lib/uploads.mjs.
+CREATE TABLE IF NOT EXISTS gallery_items (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  title      TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 200),
+  upload_id  INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Журнал действий: кто, что, когда. action = JSON {type, object_id, diff}.
 CREATE TABLE IF NOT EXISTS action_log (
   id      INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,0 +1,65 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Раздел сайта</span>
+    <h1>О Федерации</h1>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container stack">
+    <div class="panel legal-body">
+      <h2>Организация</h2>
+      <p>
+        <%= op.name %> — региональная спортивная общественная организация, объединяющая
+        теннисистов, тренеров, судей и организаторов соревнований Смоленской области.
+      </p>
+      <p>
+        Федерация ведёт единый региональный рейтинг, согласует календарь соревнований
+        и публикует итоговые протоколы турниров.
+      </p>
+      <h2>Реквизиты</h2>
+      <dl class="legal-dl">
+        <dt>Наименование</dt><dd><%= op.name %></dd>
+        <dt>Адрес</dt><dd><%= op.address %></dd>
+        <dt>ОГРН</dt><dd><%= op.ogrn %></dd>
+        <dt>ИНН</dt><dd><%= op.inn %></dd>
+        <dt>Контакты</dt>
+        <dd>
+          <a href="mailto:<%= op.email %>"><%= op.email %></a>,
+          <a href="tel:<%= op.phoneHref %>"><%= op.phone %></a>
+        </dd>
+      </dl>
+      <%
+      /* Руководство — ФИО живых людей, то есть персональные данные. Список
+         ведётся справочником с зафиксированным основанием публикации, а не
+         вписывается в шаблон руками. */
+      %>
+      <h2>Руководство и состав</h2>
+      <p class="muted">
+        Сведения о руководстве публикуются после оформления оснований на публикацию
+        персональных данных. Тренерский и судейский состав — в разделах
+        <a href="/coaches">Тренеры</a> и <a href="/referees">Судьи</a>.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2>Уставные документы</h2>
+      <% if (!documents.length) { %>
+        <p class="muted">
+          Документы публикуются в разделе <a href="/documents">Документы</a> —
+          категория «Уставные документы».
+        </p>
+      <% } else { %>
+        <ul class="doc-list">
+          <% documents.forEach(function (d) { %>
+            <li><a href="/files/<%= d.upload_id %>"><%= d.title %></a></li>
+          <% }); %>
+        </ul>
+      <% } %>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('partials/footer') %>

@@ -1,31 +1,87 @@
 <%
-/* Динамическая карточка турнира — маршрут-заглушка: оживёт с модулем турниров.
-   Несуществующий id обрабатывается раньше и отдаёт 404 в стиле сайта. */
+/* КАРТОЧКА ТУРНИРА. Участники — СПИСКОМ, без ссылок на профили: публичной
+   карточки игрока в проекте нет.
+   Имена проходят то же обезличивание, что и рейтинг: нет согласия на
+   публикацию — «Скрыто по заявлению», удалён по ст. 21 — «Игрок удалён».
+   Иначе протокол турнира стал бы обходным путём вокруг согласия.
+   Документы отдаются через /files — вне webroot, attachment, nosniff. */
 %>
 <%- include('partials/head') %>
 <%- include('partials/header') %>
-
 <main id="top">
 <section class="page-head">
   <div class="container">
     <span class="eyebrow">Турнир</span>
     <h1><%= tournament.name %></h1>
-    <div class="rating-meta">
-      <span class="badge badge--<%= tournament.category.toLowerCase() %>"><%= tournament.category %></span>
-      <span class="tag">дата завершения: <%= tournament.end_date %></span>
-    </div>
+    <p class="muted">
+      Дата завершения <%= tournament.end_date %> ·
+      категория <span class="badge badge--<%= tournament.category.toLowerCase() %>"><%= tournament.category %></span>
+    </p>
   </div>
 </section>
 
 <section class="section-pad section-pad--tight">
-  <div class="container">
+  <div class="container stack">
     <div class="panel">
-      <p class="lead">Страница турнира в разработке.</p>
-      <p class="muted">Сетка, состав участников и протоколы появятся с модулем турниров. Результаты этого турнира уже участвуют в расчёте рейтинга.</p>
-      <p class="table-foot"><a class="link-more" href="/rating">Рейтинг <span aria-hidden="true">→</span></a></p>
+      <h2>Участники и места</h2>
+      <% if (!participants.length) { %>
+        <p class="muted">Результаты ещё не внесены.</p>
+      <% } else { %>
+        <div class="table-scroll">
+          <table>
+            <caption class="visually-hidden">Итоговые места участников</caption>
+            <thead><tr><th scope="col">Место</th><th scope="col">Участник</th><th scope="col">Город</th></tr></thead>
+            <tbody>
+              <% participants.forEach(function (p) { %>
+                <tr>
+                  <td class="rank"><%= p.place %></td>
+                  <td class="player<%= p.anonymized ? ' player--anonymized' : '' %>"><%= p.name %></td>
+                  <td><%= p.city || '—' %></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
     </div>
+
+    <div class="panel">
+      <h2>Сетка: сыгранные матчи</h2>
+      <% if (!matches.length) { %>
+        <p class="muted">Матчи ещё не внесены.</p>
+      <% } else { %>
+        <div class="table-scroll">
+          <table>
+            <caption class="visually-hidden">Сыгранные матчи турнира</caption>
+            <thead><tr><th scope="col">Победитель</th><th scope="col">Соперник</th></tr></thead>
+            <tbody>
+              <% matches.forEach(function (m) { %>
+                <tr><td><%= m.winner %></td><td><%= m.loser %></td></tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </div>
+
+    <div class="panel">
+      <h2>Документы</h2>
+      <% if (!documents.length) { %>
+        <p class="muted">Документы к этому турниру не приложены.</p>
+      <% } else { %>
+        <ul class="doc-list">
+          <% documents.forEach(function (d) { %>
+            <li>
+              <a href="/files/<%= d.id %>"><%= d.doc_title || d.original_name %></a>
+              <span class="muted">— <%= Math.max(1, Math.round(d.size_bytes / 1024)) %> КБ</span>
+            </li>
+          <% }); %>
+        </ul>
+      <% } %>
+    </div>
+
+    <p class="table-foot"><a class="link-more" href="/tournaments">Все турниры <span aria-hidden="true">→</span></a></p>
   </div>
 </section>
 </main>
-
 <%- include('partials/footer') %>

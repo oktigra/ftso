@@ -28,6 +28,7 @@ import mountCabinet from './routes/cabinet.mjs';
 import mountRating from './routes/rating.mjs';
 import mountAuth from './routes/auth.mjs';
 import mountAdmin from './routes/admin.mjs';
+import mountAdminContent from './routes/admin-content.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -156,6 +157,7 @@ export function createApp(config) {
 
   mountAuth(app, ctx);
   mountAdmin(app, ctx);
+  mountAdminContent(app, ctx);
   mountRating(app, ctx);
   mountRegister(app, ctx);
   mountTournamentRequest(app, ctx);

@@ -1,0 +1,32 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Раздел сайта</span>
+    <h1>Документы</h1>
+    <p class="muted">Документы Федерации. Файлы отдаются на скачивание.</p>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container stack">
+    <% if (!groups.length) { %>
+      <div class="panel notice">Документы пока не опубликованы.</div>
+    <% } %>
+    <% groups.forEach(function (group) { %>
+      <div class="panel">
+        <h2><%= group[0] %></h2>
+        <ul class="doc-list">
+          <% group[1].forEach(function (d) { %>
+            <li>
+              <a href="/files/<%= d.upload_id %>"><%= d.title %></a>
+              <span class="muted">— <%= Math.max(1, Math.round(d.size_bytes / 1024)) %> КБ</span>
+            </li>
+          <% }); %>
+        </ul>
+      </div>
+    <% }); %>
+  </div>
+</section>
+</main>
+<%- include('partials/footer') %>

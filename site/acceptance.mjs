@@ -190,18 +190,25 @@ await check('/rating отвечает', async () => {
   return 'HTTP 200';
 });
 
-await check('заглушки разделов: HTTP 200 и корректный <title>', async () => {
+await check('у каждого раздела свой осмысленный <title> и заголовок', async () => {
+  // Раньше здесь проверялось, что разделы — заглушки «в разработке». Разделы
+  // наполнены, и проверка стала о другом: у каждого свой title и свой h1, а не
+  // общий на всех — иначе поисковик увидит дюжину одинаковых страниц.
   const paths = ['/federation', '/news', '/tournaments', '/coaches', '/courts', '/clubs', '/referees', '/gallery', '/documents', '/contacts'];
-  const seen = [];
+  const titles = new Set();
   for (const p of paths) {
     const r = await http(p);
     eq(r.status, 200, `GET ${p}`);
     const t = /<title>([^<]+)<\/title>/.exec(r.text);
     assert(t && t[1].trim().length > 0, `${p}: пустой <title>`);
-    assert(r.text.includes('Раздел в разработке'), `${p}: нет пометки о разработке`);
-    seen.push(`${p} «${t[1]}»`);
+    assert(/ФТСО/.test(t[1]), `${p}: в <title> нет названия сайта`);
+    assert(!titles.has(t[1]), `${p}: <title> «${t[1]}» повторяет другой раздел`);
+    titles.add(t[1]);
+    const h1 = /<h1[^>]*>([^<]+)<\/h1>/.exec(r.text);
+    assert(h1 && h1[1].trim().length > 0, `${p}: нет заголовка h1`);
+    assert(!r.text.includes('Раздел в разработке'), `${p}: раздел всё ещё заглушка`);
   }
-  return `${paths.length} разделов, все 200 с title`;
+  return `${paths.length} разделов: у каждого свой title и h1, заглушек нет`;
 });
 
 await check('все 12 разделов договора есть в меню шапки и ведут на свои адреса', async () => {
@@ -2201,7 +2208,183 @@ await check('ЗАБВЕНИЕ: рейтинг соперников не дрог
 });
 
 // ===========================================================================
-section('16. Браузер: тема, CSP, адаптив, шрифты, XSS');
+section('16. Разделы витрины: новости, турниры, справочники, документы');
+
+const PUBLIC_SECTIONS = [
+  '/news', '/tournaments', '/coaches', '/courts', '/clubs', '/referees',
+  '/federation', '/gallery', '/documents', '/contacts',
+];
+
+await check('все разделы меню отвечают 200 и не заглушки', async () => {
+  const stubs = [];
+  for (const path of PUBLIC_SECTIONS) {
+    const r = await http(path);
+    eq(r.status, 200, `GET ${path}`);
+    if (/Раздел в разработке/.test(r.text)) stubs.push(path);
+  }
+  eq(stubs.join(','), '', `остались заглушки: ${stubs}`);
+  return `${PUBLIC_SECTIONS.length} разделов живые, заглушек нет`;
+});
+
+await check('черновик новости наружу не отдаётся', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/news', { jar });
+  const _csrf = tokenFrom(page.text);
+  const draft = await http('/admin/news', {
+    method: 'POST',
+    form: { _csrf, title: 'Черновик приёмки', body: 'Текст черновика', is_published: '0' },
+    jar,
+  });
+  eq(draft.status, 302, 'создание черновика');
+  const row = db.prepare("SELECT id FROM news WHERE title = 'Черновик приёмки'").get();
+  const direct = await http(`/news/${row.id}`);
+  eq(direct.status, 404, 'черновик доступен по прямой ссылке');
+  const list = await http('/news');
+  assert(!list.text.includes('Черновик приёмки'), 'черновик виден в списке новостей');
+
+  const published = await http('/admin/news', {
+    method: 'POST',
+    form: {
+      _csrf, title: 'Опубликованная приёмка', summary: 'Кратко',
+      body: 'Первый абзац.\n\nВторой абзац.', is_published: '1', published_at: '2026-08-01',
+    },
+    jar,
+  });
+  eq(published.status, 302, 'публикация новости');
+  const pub = db.prepare("SELECT id FROM news WHERE title = 'Опубликованная приёмка'").get();
+  const open = await http(`/news/${pub.id}`);
+  eq(open.status, 200, 'опубликованная новость открывается');
+  assert(open.text.includes('Первый абзац.'), 'текст новости не выведен');
+  assert((await http('/news')).text.includes('Опубликованная приёмка'), 'новости нет в списке');
+  return 'черновик -> 404 и не в списке; опубликованная открывается и видна';
+});
+
+await check('карточка турнира: участники без ссылок на профили и с обезличиванием', async () => {
+  const t = db.prepare('SELECT id FROM tournaments ORDER BY id LIMIT 1').get();
+  const page = await http(`/tournaments/${t.id}`);
+  eq(page.status, 200, 'карточка турнира');
+  // Ссылок на карточку игрока быть не должно: публичного профиля в проекте нет.
+  assert(!/href="\/players?\//.test(page.text), 'на карточке появились ссылки на профили игроков');
+
+  // Игрок без согласия на публикацию в протоколе тоже обезличен — иначе
+  // протокол турнира стал бы обходным путём вокруг согласия.
+  const participant = db
+    .prepare('SELECT p.id, p.full_name FROM results r JOIN players p ON p.id = r.player_id WHERE r.tournament_id = ? LIMIT 1')
+    .get(t.id);
+  assert(participant, 'в турнире нет участников — проверять нечего');
+  const journal = await import('./server/lib/consent-journal.mjs');
+  journal.setDistributionConsent(db, participant.id, false, { source: 'web', ip: '203.0.113.9' });
+  const hidden = await http(`/tournaments/${t.id}`);
+  assert(!hidden.text.includes(participant.full_name), 'ФИО без согласия попало в протокол турнира');
+  assert(hidden.text.includes('Скрыто по заявлению'), 'нет обезличенной строки в протоколе');
+  journal.setDistributionConsent(db, participant.id, true, { source: 'offline', basis: 'бумажное согласие', documentDate: '2026-07-01' });
+  const back = await http(`/tournaments/${t.id}`);
+  assert(back.text.includes(participant.full_name), 'после возврата согласия имя не вернулось');
+  return 'ссылок на профили нет; участник без согласия показан как «Скрыто по заявлению»';
+});
+
+await check('справочник с ФИО требует правового основания публикации', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/directories/coaches', { jar });
+  eq(page.status, 200, 'админ-страница справочника');
+  const _csrf = tokenFrom(page.text);
+
+  const noBasis = await http('/admin/directories/coaches', {
+    method: 'POST', form: { _csrf, full_name: 'Тренеров Без Основания', club: 'Днепр' }, jar,
+  });
+  eq(noBasis.status, 302, 'ответ на попытку без основания');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM coaches WHERE full_name = 'Тренеров Без Основания'").get().n, 0,
+    'тренер опубликован без правового основания');
+
+  const ok = await http('/admin/directories/coaches', {
+    method: 'POST',
+    form: { _csrf, full_name: 'Тренеров Иван', club: 'Днепр', contact: 'info@example.com',
+            basis: 'согласие от 01.07.2026', document_date: '2026-07-01' },
+    jar,
+  });
+  eq(ok.status, 302, 'добавление тренера с основанием');
+  const row = db.prepare("SELECT * FROM coaches WHERE full_name = 'Тренеров Иван'").get();
+  eq(row.basis, 'согласие от 01.07.2026', 'основание не сохранено');
+  eq(row.document_date, '2026-07-01', 'дата документа не сохранена');
+  assert((await http('/coaches')).text.includes('Тренеров Иван'), 'тренера нет на публичной странице');
+  // Основание — служебное поле, наружу не выводится.
+  assert(!(await http('/coaches')).text.includes('согласие от 01.07.2026'), 'основание публикации утекло на витрину');
+
+  // Корты — про объекты, а не про людей: основание не требуется.
+  const court = await http('/admin/directories/courts', {
+    method: 'POST', form: { _csrf, name: 'Корт приёмки', address: 'Смоленск', surface: 'хард' }, jar,
+  });
+  eq(court.status, 302, 'добавление корта');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM courts WHERE name = 'Корт приёмки'").get().n, 1,
+    'корт без основания должен добавляться — это не персональные данные');
+  return 'тренер без основания отклонён, с основанием добавлен; основание не показывается публично; корт — без основания';
+});
+
+await check('публичный файл отдаётся защищённым путём, документ с модерации — нет', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/library', { jar });
+  const _csrf = tokenFrom(page.text);
+  const add = await http('/admin/library/documents', {
+    method: 'POST',
+    multipart: {
+      fields: { _csrf, title: 'Устав (приёмка)', category: 'Уставные документы' },
+      files: [{ field: 'file', filename: 'ustav.pdf', type: 'application/pdf', buffer: PDF }],
+    },
+    jar,
+  });
+  eq(add.status, 302, 'публикация документа');
+  const doc = db.prepare("SELECT * FROM federation_documents WHERE title = 'Устав (приёмка)'").get();
+  assert(doc, 'документ не сохранён');
+
+  const got = await http(`/files/${doc.upload_id}`);
+  eq(got.status, 200, 'публичный документ должен отдаваться');
+  assert(/^attachment/.test(got.headers.get('content-disposition') || ''), 'документ отдаётся не как attachment');
+  eq(got.headers.get('x-content-type-options'), 'nosniff', 'нет nosniff при публичной отдаче');
+  eq((await http(`/static/uploads/${db.prepare('SELECT stored_name FROM uploads WHERE id = ?').get(doc.upload_id).stored_name}`)).status,
+    404, 'публичный файл достаётся как статика');
+  assert((await http('/documents')).text.includes('Устав (приёмка)'), 'документа нет в разделе');
+
+  // А файл заявки, ждущей модерации, публично НЕ отдаётся: /files пускает
+  // только то, что привязано к опубликованной сущности.
+  const pending = db
+    .prepare(
+      `SELECT f.upload_id FROM tournament_request_files f
+         JOIN tournament_requests r ON r.id = f.request_id
+        WHERE r.status = 'pending' LIMIT 1`,
+    )
+    .get();
+  if (pending) {
+    eq((await http(`/files/${pending.upload_id}`)).status, 404, 'документ с модерации отдан публично');
+  }
+  return `публичный документ 200 + attachment + nosniff, статикой не отдаётся; файл с модерации ${pending ? 'закрыт' : '(нет в наличии)'}`;
+});
+
+await check('согласование заявки переносит документы на карточку турнира', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const { res } = await submitTournament(
+    { ...BASE_FIELDS, name: 'Кубок с переносом файлов', email: 'carry@example.com' },
+    [{ field: 'doc_polozhenie', filename: 'polozhenie.pdf', type: 'application/pdf', buffer: PDF }],
+  );
+  eq(res.status, 302, 'подача заявки');
+  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок с переносом файлов'").get();
+  const page = await http('/admin/tournament-requests', { jar });
+  const _csrf = tokenFrom(page.text);
+  const appr = await http(`/admin/tournament-requests/${r.id}/approve`, { method: 'POST', form: { _csrf }, jar });
+  eq(appr.status, 302, 'согласование');
+  const after = db.prepare('SELECT tournament_id FROM tournament_requests WHERE id = ?').get(r.id);
+  const files = db.prepare('SELECT upload_id FROM tournament_files WHERE tournament_id = ?').all(after.tournament_id);
+  eq(files.length, 1, 'документ не переехал на турнир');
+  // И теперь он публичен — но тем же защищённым путём.
+  const pub = await http(`/files/${files[0].upload_id}`);
+  eq(pub.status, 200, 'документ согласованного турнира должен быть доступен');
+  assert(/^attachment/.test(pub.headers.get('content-disposition') || ''), 'документ турнира отдаётся не как attachment');
+  const card = await http(`/tournaments/${after.tournament_id}`);
+  assert(card.text.includes(`/files/${files[0].upload_id}`), 'на карточке турнира нет ссылки на документ');
+  return 'документ заявки переехал на турнир и стал публичным через /files (attachment + nosniff)';
+});
+
+// ===========================================================================
+section('17. Браузер: адаптив, доступность, тема, CSP, XSS');
 
 let browserNote = '';
 try {
@@ -2258,6 +2441,107 @@ try {
     eq(remembered, after, 'тема не восстановилась при следующем заходе');
     assert(bg === 'rgb(21, 34, 45)', `фон тёмной темы ожидался #15222d, получен ${bg}`);
     return `${before} -> ${after}, localStorage ftso-theme=${stored}, при новом заходе ${remembered}, фон ${bg}; нарушений CSP нет`;
+  });
+
+  // Все публичные страницы разом: адаптив и доступность проверяются ОДНИМ
+  // проходом по одному списку — иначе новый раздел добавят, а проверить забудут.
+  const A11Y_PAGES = [
+    '/', '/rating', '/news', '/tournaments', '/coaches', '/courts', '/clubs', '/referees',
+    '/federation', '/gallery', '/documents', '/contacts', '/privacy', '/consent',
+    '/register', '/tournament-request', '/cabinet/login',
+  ];
+
+  await check('адаптив: 360 и 768 px без горизонтального скролла', async () => {
+    const broken = [];
+    for (const width of [360, 768]) {
+      const page = await browser.newPage();
+      await page.setViewportSize({ width, height: 900 });
+      for (const path of A11Y_PAGES) {
+        await page.goto(inst.base + path, { waitUntil: 'domcontentloaded' });
+        const overflow = await page.evaluate(() => {
+          const doc = document.documentElement;
+          // Ширина документа больше окна = страница уезжает вбок.
+          const spill = doc.scrollWidth - doc.clientWidth;
+          // И ищем КОНКРЕТНОГО виновника, чтобы отчёт был чинибельным.
+          let culprit = null;
+          if (spill > 1) {
+            for (const el of document.body.querySelectorAll('*')) {
+              const r = el.getBoundingClientRect();
+              if (r.right > doc.clientWidth + 1 && r.width > 0) {
+                culprit = `${el.tagName.toLowerCase()}.${(el.className || '').toString().split(' ')[0]}`;
+                break;
+              }
+            }
+          }
+          return { spill, culprit };
+        });
+        if (overflow.spill > 1) broken.push(`${path} @${width}px (+${overflow.spill}px, ${overflow.culprit})`);
+      }
+      await page.close();
+    }
+    eq(broken.join('; '), '', `горизонтальный скролл: ${broken.join('; ')}`);
+    return `${A11Y_PAGES.length} страниц на 360 и 768 px — горизонтального скролла нет`;
+  });
+
+  await check('доступность: заголовки, метки полей, alt, фокус, клавиатура', async () => {
+    const problems = [];
+    const page = await browser.newPage();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    for (const path of A11Y_PAGES) {
+      await page.goto(inst.base + path, { waitUntil: 'domcontentloaded' });
+      const found = await page.evaluate(() => {
+        const out = [];
+        if (document.documentElement.lang !== 'ru') out.push('нет lang="ru"');
+        const h1 = document.querySelectorAll('h1');
+        if (h1.length !== 1) out.push(`заголовков h1: ${h1.length}`);
+        if (!document.querySelector('main')) out.push('нет <main>');
+        if (!document.querySelector('.skip-link')) out.push('нет ссылки «к содержимому»');
+        // Каждому полю ввода — своя метка (label, aria-label или aria-labelledby).
+        for (const el of document.querySelectorAll('input, select, textarea')) {
+          if (el.type === 'hidden') continue;
+          const byId = el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+          const wrapped = el.closest('label');
+          if (!byId && !wrapped && !el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby')) {
+            out.push(`поле без метки: ${el.name || el.type}`);
+          }
+        }
+        // Картинки без alt: либо описание, либо явно декоративная (aria-hidden).
+        for (const img of document.querySelectorAll('img')) {
+          if (!img.hasAttribute('alt') && img.getAttribute('aria-hidden') !== 'true') {
+            out.push(`img без alt: ${img.getAttribute('src')}`);
+          }
+        }
+        // Ссылка без различимого текста читается скринридером как «ссылка».
+        for (const a of document.querySelectorAll('a')) {
+          const text = (a.textContent || '').trim();
+          if (!text && !a.getAttribute('aria-label') && !a.querySelector('img[alt]')) {
+            out.push(`ссылка без текста: ${a.getAttribute('href')}`);
+          }
+        }
+        return out;
+      });
+      for (const item of found) problems.push(`${path}: ${item}`);
+    }
+
+    // ФОКУС ВИДЕН и ходит с клавиатуры: Tab со старта попадает на «к содержимому».
+    await page.goto(inst.base + '/', { waitUntil: 'domcontentloaded' });
+    await page.keyboard.press('Tab');
+    const focus = await page.evaluate(() => {
+      const el = document.activeElement;
+      const style = getComputedStyle(el);
+      return {
+        tag: el.tagName.toLowerCase(),
+        cls: (el.className || '').toString(),
+        outline: style.outlineStyle,
+        width: style.outlineWidth,
+      };
+    });
+    if (!focus.cls.includes('skip-link')) problems.push(`первый Tab попал не на skip-link, а на ${focus.tag}.${focus.cls}`);
+    if (focus.outline === 'none' || parseFloat(focus.width) < 1) problems.push('фокус не виден: контур отсутствует');
+    await page.close();
+
+    eq(problems.join('; '), '', `нарушения доступности: ${problems.join('; ')}`);
+    return `${A11Y_PAGES.length} страниц: lang, один h1, main, skip-link, метки у всех полей, alt у картинок, видимый фокус с клавиатуры`;
   });
 
   await check('адаптив: бургер-меню, одна колонка, таблицы со скроллом', async () => {

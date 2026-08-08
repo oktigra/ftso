@@ -41,6 +41,7 @@ import {
   byId as tournamentRequestById,
 } from '../lib/tournament-requests.mjs';
 import { sendUpload, uploadById } from '../lib/uploads.mjs';
+import { attachRequestFiles } from '../lib/content.mjs';
 import { createAccount, issueResetToken } from '../lib/player-accounts.mjs';
 import {
   queueMail,
@@ -382,6 +383,9 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         throw new ValidationError(err.message);
       }
       const r = out.request;
+      // Документы переезжают с заявки на САМ турнир: заявку однажды вычистит
+      // срок хранения, а положение турнира в календаре должно остаться.
+      attachRequestFiles(db, id, out.tournamentId);
       const letter = mailTournamentApproved({
         organizer: r.organizer,
         name: r.name,
