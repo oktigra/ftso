@@ -24,6 +24,7 @@ import { ValidationError } from './lib/validate.mjs';
 import mountPublic from './routes/public.mjs';
 import mountRegister from './routes/register.mjs';
 import mountTournamentRequest from './routes/tournament-request.mjs';
+import mountCabinet from './routes/cabinet.mjs';
 import mountRating from './routes/rating.mjs';
 import mountAuth from './routes/auth.mjs';
 import mountAdmin from './routes/admin.mjs';
@@ -146,14 +147,19 @@ export function createApp(config) {
   // Счётчик СВОЙ (ключ «t»): поток заявок на турниры не должен съедать лимит
   // регистрации игроков и наоборот.
   const limitTournamentRequest = publicFormLimiter(db, { ...config.tournamentRequest, key: 't' });
+  // И у кабинета свой (ключ «c»): подбор пароля не должен закрывать приём заявок.
+  const limitCabinet = publicFormLimiter(db, { ...config.cabinet, key: 'c' });
 
-  const ctx = { db, config, attempts, limitWrites, limitRegister, limitTournamentRequest, store };
+  const ctx = {
+    db, config, attempts, limitWrites, limitRegister, limitTournamentRequest, limitCabinet, store,
+  };
 
   mountAuth(app, ctx);
   mountAdmin(app, ctx);
   mountRating(app, ctx);
   mountRegister(app, ctx);
   mountTournamentRequest(app, ctx);
+  mountCabinet(app, ctx);
   mountPublic(app, ctx);
 
   /**

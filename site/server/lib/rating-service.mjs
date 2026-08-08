@@ -140,9 +140,14 @@ export const HIDDEN_LABEL = 'Скрыто по заявлению';
 export const ERASED_LABEL = 'Игрок удалён';
 
 /**
- * ОДИН слой обезличивания на ДВА случая:
+ * ОДИН слой обезличивания на ТРИ случая:
  *  - нет действующего согласия на распространение (is_public = 0) -> «Скрыто по заявлению»;
- *  - игрока больше нет в БД (удалён, а снимок ещё старый)         -> «Игрок удалён».
+ *  - игрок ОБЕЗЛИЧЕН по ст. 21 (anonymized_at заполнен)          -> «Игрок удалён»;
+ *  - игрока больше нет в БД (снесён из админки, снимок старый)    -> «Игрок удалён».
+ *
+ * Разница между вторым и третьим случаем только в способе: в обоих личных
+ * данных на витрине нет. Но различать «нет согласия» и «удалён» ОБЯЗАТЕЛЬНО:
+ * первое обратимо согласием субъекта, второе — нет.
  *
  * МЕСТО И ОЧКИ СОХРАНЯЮТСЯ. Выкинуть строку нельзя: места соперников уедут
  * вверх и опубликованная таблица перестанет биться с расчётом движка.
@@ -155,18 +160,22 @@ export const ERASED_LABEL = 'Игрок удалён';
  */
 export function anonymizeForPublic(db, players) {
   const state = new Map(
-    db.prepare('SELECT id, is_public FROM players').all().map((r) => [r.id, r.is_public]),
+    db
+      .prepare('SELECT id, is_public, anonymized_at FROM players')
+      .all()
+      .map((r) => [r.id, r]),
   );
   return players.map((p) => {
-    const known = state.has(p.playerId);
-    if (known && state.get(p.playerId)) return p;
+    const row = state.get(p.playerId);
+    if (row && row.is_public && !row.anonymized_at) return p;
+    const erased = !row || Boolean(row.anonymized_at);
     return {
       ...p,
-      playerName: known ? HIDDEN_LABEL : ERASED_LABEL,
+      playerName: erased ? ERASED_LABEL : HIDDEN_LABEL,
       city: '',
       sex: '',
       ageGroup: null,
-      anonymized: known ? 'hidden' : 'erased',
+      anonymized: erased ? 'erased' : 'hidden',
     };
   });
 }

@@ -1,0 +1,35 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Личный кабинет</span>
+    <h1>Новый пароль</h1>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel form-panel">
+      <% if (error) { %><div class="form-errors" role="alert"><p><%= error %></p></div><% } %>
+      <form method="post" action="/cabinet/reset/<%= token %>" class="stacked-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="field">
+          <label for="r-pass">Пароль</label>
+          <input id="r-pass" name="password" type="password" maxlength="200" required
+                 autocomplete="new-password" aria-describedby="r-pass-hint">
+          <p class="field-hint" id="r-pass-hint">
+            Не короче <%= passwordMin %> символов, буквы вместе с цифрой или знаком.
+            Не должен содержать вашу почту или имя.
+          </p>
+        </div>
+        <div class="field">
+          <label for="r-pass2">Повторите пароль</label>
+          <input id="r-pass2" name="password2" type="password" maxlength="200" required autocomplete="new-password">
+        </div>
+        <button class="btn btn--primary" type="submit">Сохранить пароль</button>
+      </form>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

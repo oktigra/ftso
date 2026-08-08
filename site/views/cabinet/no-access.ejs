@@ -1,0 +1,33 @@
+<%
+/* «Нет доступа» — не сухой отказ, а объяснение, откуда доступ берётся. */
+%>
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Личный кабинет</span>
+    <h1><%= typeof erased !== 'undefined' && erased ? 'Кабинет закрыт' : 'Нужен вход' %></h1>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel">
+      <% if (typeof erased !== 'undefined' && erased) { %>
+        <p class="lead">Данные этого кабинета удалены по заявлению владельца.</p>
+        <p class="muted">Восстановить их нельзя — удаление необратимо.</p>
+      <% } else { %>
+        <p class="lead">Личный кабинет доступен игрокам Федерации после входа.</p>
+        <ol class="cabinet-steps">
+          <li>Подайте <a href="/register">заявку на регистрацию</a>.</li>
+          <li>Дождитесь решения секретаря — оно придёт письмом.</li>
+          <li>После одобрения на почту придёт ссылка для установки пароля.</li>
+        </ol>
+        <p><a class="btn btn--primary" href="/cabinet/login">Войти</a></p>
+      <% } %>
+      <p class="table-foot"><a class="link-more" href="/">На главную <span aria-hidden="true">→</span></a></p>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

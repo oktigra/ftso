@@ -32,6 +32,9 @@ export function migrate() {
   // Правовое основание и дата бумажного согласия — для внесённых секретарём.
   addColumnIfMissing(db, 'consents', 'basis', 'TEXT');
   addColumnIfMissing(db, 'consents', 'document_date', 'TEXT');
+  // Личный кабинет: фото профиля и отметка обезличивания по ст. 21.
+  addColumnIfMissing(db, 'players', 'photo_upload_id', 'INTEGER REFERENCES uploads(id)');
+  addColumnIfMissing(db, 'players', 'anonymized_at', 'TEXT');
   return db;
 }
 

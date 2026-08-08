@@ -1,0 +1,37 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Личный кабинет</span>
+    <h1>Вход для игроков</h1>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel form-panel">
+      <% if (error) { %><div class="form-errors" role="alert"><p><%= error %></p></div><% } %>
+      <form method="post" action="/cabinet/login" class="stacked-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="field">
+          <label for="c-email">Электронная почта</label>
+          <input id="c-email" name="email" type="email" maxlength="160" required autocomplete="email" value="<%= email %>">
+        </div>
+        <div class="field">
+          <label for="c-pass">Пароль</label>
+          <input id="c-pass" name="password" type="password" maxlength="200" required autocomplete="current-password">
+        </div>
+        <button class="btn btn--primary" type="submit">Войти</button>
+      </form>
+      <p class="muted">
+        Забыли пароль или ещё не задавали его — <a href="/cabinet/forgot">получите ссылку на почту</a>.
+      </p>
+      <p class="muted">
+        Кабинета ещё нет? Он открывается после одобрения
+        <a href="/register">заявки на регистрацию</a>.
+      </p>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

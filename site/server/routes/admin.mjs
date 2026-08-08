@@ -41,6 +41,7 @@ import {
   byId as tournamentRequestById,
 } from '../lib/tournament-requests.mjs';
 import { sendUpload, uploadById } from '../lib/uploads.mjs';
+import { createAccount, issueResetToken } from '../lib/player-accounts.mjs';
 import {
   queueMail,
   flushOutbox,
@@ -48,6 +49,7 @@ import {
   recentMail,
   mailApproved,
   mailRejected,
+  mailCabinetInvite,
   mailTournamentApproved,
   mailTournamentRejected,
 } from '../lib/mailer.mjs';
@@ -274,6 +276,16 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const reg = out.registration;
       const letter = mailApproved({ fullName: reg.full_name, statusUrl: statusUrlFor(req, reg.status_token) });
       queueMail(db, { to: reg.email, kind: 'registration.approved', ...letter });
+      // ЛИЧНЫЙ КАБИНЕТ открывается здесь же: аккаунт создаётся без пароля, а
+      // пароль игрок задаёт сам по одноразовой ссылке. Пароль за человека мы
+      // не придумываем и по почте не отправляем.
+      const account = createAccount(db, { playerId: out.playerId, email: reg.email });
+      if (!account.password_hash) {
+        const token = issueResetToken(db, account.id);
+        const setUrl = `${req.protocol}://${req.get('host')}/cabinet/reset/${token}`;
+        const invite = mailCabinetInvite({ fullName: reg.full_name, setUrl });
+        queueMail(db, { to: account.email, kind: 'cabinet.invite', ...invite });
+      }
       flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
       logAction(db, req.session.user.id, 'registration.approve', id, {
         player_id: out.playerId,

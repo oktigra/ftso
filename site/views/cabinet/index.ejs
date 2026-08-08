@@ -1,0 +1,167 @@
+<%
+/* Кабинет игрока. РЕДАКТИРУЕМО: ФИО, почта, фото. НЕ редактируемо: рейтинг,
+   очки, места — их считает движок по результатам, а не владелец профиля. */
+%>
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Личный кабинет</span>
+    <h1><%= profile.full_name %></h1>
+    <p class="muted"><%= profile.city %><%= profile.age_group ? ' · ' + profile.age_group : '' %></p>
+  </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container stack">
+    <% if (cabinetFlash) { %>
+      <div class="flash flash--<%= cabinetFlash.kind %>" role="status"><%= cabinetFlash.text %></div>
+    <% } %>
+
+    <div class="panel form-panel">
+      <h2>Профиль</h2>
+      <form method="post" action="/cabinet/profile" class="stacked-form" enctype="multipart/form-data">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="field">
+          <label for="p-full-name">Фамилия, имя, отчество</label>
+          <input id="p-full-name" name="full_name" maxlength="120" required value="<%= profile.full_name %>">
+        </div>
+        <div class="field">
+          <label for="p-email">Электронная почта</label>
+          <input id="p-email" name="email" type="email" maxlength="160" required value="<%= profile.email || '' %>"
+                 aria-describedby="p-email-hint">
+          <p class="field-hint" id="p-email-hint">Это же адрес для входа в кабинет.</p>
+        </div>
+        <div class="field">
+          <label for="p-photo">Фотография</label>
+          <input id="p-photo" name="photo" type="file" aria-describedby="p-photo-hint">
+          <p class="field-hint" id="p-photo-hint">
+            Только изображение. Файл пересобирается на сервере: размер приводится к
+            разумному, а служебные данные снимка (в том числе геолокация и модель камеры)
+            удаляются.
+            <% if (profile.photo_upload_id) { %>
+              Сейчас загружена — <a href="/cabinet/photo">посмотреть</a>.
+            <% } %>
+          </p>
+        </div>
+        <button class="btn btn--primary" type="submit">Сохранить</button>
+      </form>
+      <p class="muted">
+        Город и возрастную группу меняет секретарь Федерации — они влияют на рейтинговые
+        группы. Рейтинг, очки и места не редактируются: их считает движок по результатам.
+      </p>
+    </div>
+
+    <div class="panel">
+      <h2>Публикация в открытом рейтинге</h2>
+      <p>
+        Сейчас: <strong><%= profile.is_public ? 'публикуется' : 'не публикуется' %></strong>.
+        <% if (consent.distribution === 'revoked') { %><span class="muted">Согласие отозвано.</span><% } %>
+      </p>
+      <form method="post" action="/cabinet/publication" class="inline-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="publish" value="<%= profile.is_public ? '0' : '1' %>">
+        <button class="btn btn--secondary btn--small" type="submit">
+          <%= profile.is_public ? 'Отозвать согласие на публикацию' : 'Дать согласие на публикацию' %>
+        </button>
+      </form>
+      <p class="muted">
+        Без согласия вы остаётесь в рейтинге и участвуете в соревнованиях, но в открытых
+        таблицах на месте фамилии стоит «Скрыто по заявлению» — место и очки сохраняются.
+        Подробнее — в <a href="/consent#distribution">тексте согласия</a>.
+      </p>
+    </div>
+
+    <div class="panel form-panel">
+      <h2>Смена пароля</h2>
+      <form method="post" action="/cabinet/password" class="stacked-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="field">
+          <label for="pw-cur">Текущий пароль</label>
+          <input id="pw-cur" name="current_password" type="password" maxlength="200" required autocomplete="current-password">
+        </div>
+        <div class="field">
+          <label for="pw-new">Новый пароль</label>
+          <input id="pw-new" name="new_password" type="password" maxlength="200" required
+                 autocomplete="new-password" aria-describedby="pw-hint">
+          <p class="field-hint" id="pw-hint">
+            Не короче <%= passwordMin %> символов, буквы вместе с цифрой или знаком.
+            Не должен содержать вашу почту или имя.
+          </p>
+        </div>
+        <div class="field">
+          <label for="pw-new2">Повторите новый пароль</label>
+          <input id="pw-new2" name="new_password2" type="password" maxlength="200" required autocomplete="new-password">
+        </div>
+        <button class="btn btn--primary" type="submit">Сменить пароль</button>
+      </form>
+      <p class="muted">После смены пароля все остальные входы в кабинет прекращаются.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Мои результаты</h2>
+      <% if (!history.results.length) { %>
+        <p class="muted">Результатов пока нет.</p>
+      <% } else { %>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Турнир</th><th>Дата</th><th>Категория</th><th>Место</th></tr></thead>
+            <tbody>
+              <% history.results.forEach(function (r) { %>
+                <tr>
+                  <td><%= r.name %></td>
+                  <td><%= r.end_date %></td>
+                  <td><span class="badge badge--<%= r.category.toLowerCase() %>"><%= r.category %></span></td>
+                  <td><%= r.place %></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </div>
+
+    <div class="panel">
+      <h2>Мои матчи</h2>
+      <% if (!history.matches.length) { %>
+        <p class="muted">Матчей пока нет.</p>
+      <% } else { %>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Турнир</th><th>Дата</th><th>Соперник</th><th>Результат</th></tr></thead>
+            <tbody>
+              <% history.matches.forEach(function (m) { %>
+                <tr>
+                  <td><%= m.tournament %></td>
+                  <td><%= m.end_date %></td>
+                  <%
+                  /* Соперник, удалившийся по ст. 21, показывается обезличенно и
+                     здесь: его матч остаётся, имя — нет. */
+                  %>
+                  <td<%= m.opponent_erased ? ' class="player--anonymized"' : '' %>><%= m.opponent %></td>
+                  <td><%= m.outcome %></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </div>
+
+    <div class="panel">
+      <h2>Удаление данных</h2>
+      <p class="muted">
+        Право на удаление персональных данных (ст. 21 152-ФЗ). Действие необратимо.
+      </p>
+      <p><a class="btn btn--danger" href="/cabinet/delete">Удалить мои данные</a></p>
+    </div>
+
+    <form method="post" action="/cabinet/logout" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="btn btn--secondary btn--small" type="submit">Выйти из кабинета</button>
+    </form>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

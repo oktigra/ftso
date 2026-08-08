@@ -123,6 +123,13 @@ export function loadConfig({ requireSecrets = true } = {}) {
       retentionDays: Number(process.env.TOURNAMENT_REQUEST_RETENTION_DAYS || 365),
       maxFiles: Number(process.env.TOURNAMENT_REQUEST_MAX_FILES || 3),
     },
+    cabinet: {
+      // СВОЙ счётчик у входа в кабинет: делить его с формой регистрации нельзя —
+      // поток заявок закрывал бы игрокам вход, а подбор пароля съедал бы приём
+      // заявок. Порог мягче: человек имеет право промахнуться паролем.
+      maxPerWindow: Number(process.env.CABINET_MAX_PER_WINDOW || 15),
+      windowMinutes: Number(process.env.CABINET_WINDOW_MINUTES || 15),
+    },
     consent: {
       // RETENTION журнала согласий. Считается ОТ ОТЗЫВА: действующее согласие
       // не чистится никогда — оно и есть основание обработки. 1095 дней = 3 года,

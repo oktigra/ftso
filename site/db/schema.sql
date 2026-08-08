@@ -27,7 +27,14 @@ CREATE TABLE IF NOT EXISTS players (
   -- пересчитывает syncPlayerPublicFlag() по последнему событию kind='distribution'.
   -- Отозвал согласие -> флаг снят -> игрок уходит под «Скрыто по заявлению»,
   -- СОХРАНЯЯ место и очки (движок считает по реальным данным).
-  is_public INTEGER NOT NULL DEFAULT 0 CHECK (is_public IN (0,1))
+  is_public INTEGER NOT NULL DEFAULT 0 CHECK (is_public IN (0,1)),
+  -- Фото профиля (личный кабинет). Файл живёт в uploads, вне webroot.
+  photo_upload_id INTEGER REFERENCES uploads(id) ON DELETE SET NULL,
+  -- ОБЕЗЛИЧЕНА ПО СТ. 21. Строка игрока остаётся, но личных данных в ней больше
+  -- нет: ФИО затёрто, город и группа очищены, аккаунт и фото удалены.
+  -- Строку нельзя было удалить целиком — на неё ссылаются матчи, а они влияют
+  -- на рейтинг СОПЕРНИКОВ. Игрок остаётся анонимной вершиной графа матчей.
+  anonymized_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS tournaments (
@@ -194,6 +201,23 @@ CREATE TABLE IF NOT EXISTS tournament_request_files (
   upload_id  INTEGER NOT NULL REFERENCES uploads(id)             ON DELETE CASCADE,
   UNIQUE (request_id, upload_id)
 );
+
+-- АККАУНТ ИГРОКА для личного кабинета. Отдельно от users: users — это
+-- сотрудники Федерации с ролями, у игрока роли нет, у него есть свой профиль.
+-- password_hash NULL — аккаунт создан при одобрении заявки, пароль игрок ещё
+-- не задал: он приходит по ссылке из письма.
+CREATE TABLE IF NOT EXISTS player_accounts (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id           INTEGER NOT NULL UNIQUE REFERENCES players(id) ON DELETE CASCADE,
+  email               TEXT NOT NULL UNIQUE,
+  password_hash       TEXT CHECK (password_hash IS NULL OR password_hash LIKE 'scrypt$%'),
+  -- Токен установки/сброса пароля: одноразовый, с истечением.
+  reset_token         TEXT,
+  reset_expires_at    TEXT,
+  password_changed_at TEXT,
+  created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_player_accounts_reset ON player_accounts (reset_token);
 
 -- ИСХОДЯЩАЯ ПОЧТА. Письмо сперва ЛОЖИТСЯ В ОЧЕРЕДЬ и только потом отправляется:
 -- иначе сбой SMTP означал бы «заявка принята, но человеку никто не сообщил», и

@@ -1871,7 +1871,337 @@ await check('retention заявок уносит и приложенные фа�
 });
 
 // ===========================================================================
-section('15. Браузер: тема, CSP, адаптив, шрифты, XSS');
+section('15. Личный кабинет и право на забвение (ст. 21)');
+
+const accounts = await import('./server/lib/player-accounts.mjs');
+const erasure = await import('./server/lib/erasure.mjs');
+
+/** Ищем строку во ВСЕХ файлах базы: основной + WAL (данные могут быть там). */
+function dbContains(needle) {
+  const files = [DB_FILE, `${DB_FILE}-wal`, `${DB_FILE}-shm`];
+  const probe = Buffer.from(needle, 'utf8');
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    if (readFileSync(file).includes(probe)) return file;
+  }
+  return null;
+}
+
+/** Счётчик кабинета обнуляем: иначе 429 замаскирует настоящую причину отказа. */
+const resetCabinetLimit = () => db.prepare("DELETE FROM write_attempts WHERE key LIKE 'c:%'").run();
+
+const CAB_NAME = 'Кабинетов Тарас Игнатьевич';
+const CAB_EMAIL = 'cabinet@example.com';
+const CAB_PASSWORD = 'смоленский-корт-2026';
+let cabPlayerId = null;
+let cabSetUrl = null;
+
+await check('кабинет без входа объясняет, откуда берётся доступ', async () => {
+  const r = await http('/cabinet');
+  eq(r.status, 403, 'кабинет без входа должен отдавать 403');
+  assert(/заявк/i.test(r.text), 'на странице нет объяснения про заявку');
+  assert(r.text.includes('/register'), 'нет ссылки на регистрацию');
+  assert(r.text.includes('/cabinet/login'), 'нет ссылки на вход');
+  return '403 со страницей «нужен вход»: заявка -> одобрение -> письмо со ссылкой';
+});
+
+await check('одобрение заявки открывает кабинет ссылкой, а не паролем в письме', async () => {
+  const { res } = await submitRegistration({
+    full_name: CAB_NAME, city: 'Смоленск', sex: 'M', age_group: '19-34',
+    email: CAB_EMAIL, consent_processing: '1', consent_distribution: '1',
+  });
+  eq(res.status, 302, 'подача заявки');
+  const reg = db.prepare('SELECT * FROM registrations WHERE email = ?').get(CAB_EMAIL);
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/registrations', { jar });
+  const _csrf = tokenFrom(page.text);
+  const appr = await http(`/admin/registrations/${reg.id}/approve`, { method: 'POST', form: { _csrf }, jar });
+  eq(appr.status, 302, 'одобрение заявки');
+
+  cabPlayerId = db.prepare('SELECT id FROM players WHERE full_name = ?').get(CAB_NAME).id;
+  const account = accounts.accountByPlayer(db, cabPlayerId);
+  assert(account, 'аккаунт кабинета не создан при одобрении');
+  eq(account.password_hash, null, 'пароль не должен придумываться за игрока');
+  const invite = db
+    .prepare("SELECT * FROM mail_outbox WHERE to_email = ? AND kind = 'cabinet.invite'")
+    .get(CAB_EMAIL);
+  assert(invite, 'приглашение в кабинет не поставлено в очередь');
+  const m = /\/cabinet\/reset\/([A-Za-z0-9_-]+)/.exec(invite.body);
+  assert(m, 'в письме нет ссылки установки пароля');
+  cabSetUrl = `/cabinet/reset/${m[1]}`;
+  // В БД лежит ХЭШ токена: дамп базы не должен давать вход в чужой кабинет.
+  assert(account.reset_token && account.reset_token !== m[1], 'токен хранится в открытом виде');
+  return 'аккаунт создан без пароля, в письме одноразовая ссылка, в БД только хэш токена';
+});
+
+await check('политика паролей и одноразовость ссылки', async () => {
+  resetCabinetLimit();
+  // Банка cookie обязательна: CSRF-токен живёт в сессии, и запрос без cookie
+  // получит 403 ещё до проверки самого пароля.
+  const jar = new Jar();
+  const open = await http(cabSetUrl, { jar });
+  eq(open.status, 200, 'страница установки пароля');
+  const _csrf = tokenFrom(open.text);
+
+  for (const [pw, why] of [
+    ['корт', 'слишком короткий'],
+    ['1234567890123', 'только цифры'],
+    ['кабинетов-тарас-1', 'содержит фамилию'],
+    ['cabinet-parol-77', 'содержит адрес почты'],
+  ]) {
+    const bad = await http(cabSetUrl, { method: 'POST', form: { _csrf, password: pw, password2: pw }, jar });
+    eq(bad.status, 400, `пароль «${pw}» (${why}) должен отклоняться`);
+  }
+  const mismatch = await http(cabSetUrl, {
+    method: 'POST', form: { _csrf, password: CAB_PASSWORD, password2: 'другое-значение-99' }, jar,
+  });
+  eq(mismatch.status, 400, 'несовпадение повтора должно отклоняться');
+
+  const ok = await http(cabSetUrl, { method: 'POST', form: { _csrf, password: CAB_PASSWORD, password2: CAB_PASSWORD }, jar });
+  eq(ok.status, 200, 'установка пароля');
+  assert(/Пароль установлен/.test(ok.text), 'нет подтверждения установки пароля');
+
+  // Ссылка одноразовая: письмо из ящика не должно быть вечным ключом.
+  const again = await http(cabSetUrl, { jar });
+  eq(again.status, 404, 'использованная ссылка должна перестать работать');
+  return 'короткий, только цифры, с фамилией и с почтой — отклонены; ссылка сработала один раз';
+});
+
+await check('вход в кабинет, профиль и своя история', async () => {
+  resetCabinetLimit();
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  const _csrf = tokenFrom(page.text);
+  const bad = await http('/cabinet/login', {
+    method: 'POST', form: { _csrf, email: CAB_EMAIL, password: 'неверный-пароль-1' }, jar,
+  });
+  eq(bad.status, 401, 'неверный пароль должен давать 401');
+
+  const good = await http('/cabinet/login', {
+    method: 'POST', form: { _csrf, email: CAB_EMAIL, password: CAB_PASSWORD }, jar,
+  });
+  eq(good.status, 302, 'вход в кабинет');
+  const cab = await http('/cabinet', { jar });
+  eq(cab.status, 200, 'кабинет открывается после входа');
+  assert(cab.text.includes(CAB_NAME), 'в кабинете нет своего имени');
+  assert(cab.text.includes(CAB_EMAIL), 'в кабинете нет своей почты');
+  // Рейтинг НЕ редактируется: поля очков в форме профиля быть не должно.
+  assert(!/name="rating_points"|name="rank"/.test(cab.text), 'в кабинете есть поле рейтинга — его правит движок');
+  return 'неверный пароль 401, верный — вход; профиль показывает имя и почту, полей рейтинга нет';
+});
+
+await check('смена пароля отзывает остальные сессии', async () => {
+  resetCabinetLimit();
+  // Две сессии одного игрока: как будто вход с двух устройств.
+  const jarA = new Jar();
+  const jarB = new Jar();
+  for (const jar of [jarA, jarB]) {
+    const page = await http('/cabinet/login', { jar });
+    const _csrf = tokenFrom(page.text);
+    const r = await http('/cabinet/login', { method: 'POST', form: { _csrf, email: CAB_EMAIL, password: CAB_PASSWORD }, jar });
+    eq(r.status, 302, 'вход в кабинет');
+  }
+  eq((await http('/cabinet', { jar: jarB })).status, 200, 'вторая сессия должна работать до смены пароля');
+
+  const pageA = await http('/cabinet', { jar: jarA });
+  const _csrf = tokenFrom(pageA.text);
+  const NEW_PASSWORD = 'десногорск-ракетка-42';
+  const changed = await http('/cabinet/password', {
+    method: 'POST',
+    form: { _csrf, current_password: CAB_PASSWORD, new_password: NEW_PASSWORD, new_password2: NEW_PASSWORD },
+    jar: jarA,
+  });
+  eq(changed.status, 302, 'смена пароля');
+
+  // Своя сессия жива, чужая — нет: если пароль меняют из-за угона, угнанная
+  // сессия обязана умереть здесь же, а не дожить до истечения.
+  eq((await http('/cabinet', { jar: jarA })).status, 200, 'своя сессия должна остаться');
+  eq((await http('/cabinet', { jar: jarB })).status, 403, 'вторая сессия должна быть отозвана');
+
+  // И вход теперь только по новому паролю.
+  const jarC = new Jar();
+  const pageC = await http('/cabinet/login', { jar: jarC });
+  const csrfC = tokenFrom(pageC.text);
+  eq(
+    (await http('/cabinet/login', { method: 'POST', form: { _csrf: csrfC, email: CAB_EMAIL, password: CAB_PASSWORD }, jar: jarC })).status,
+    401,
+    'старый пароль не должен работать',
+  );
+  return 'своя сессия жива, вторая отозвана, старый пароль недействителен';
+});
+
+await check('сброс пароля не выдаёт, зарегистрирован ли адрес', async () => {
+  resetCabinetLimit();
+  const jarK = new Jar();
+  const jarU = new Jar();
+  const pageK = await http('/cabinet/forgot', { jar: jarK });
+  const pageU = await http('/cabinet/forgot', { jar: jarU });
+  const known = await http('/cabinet/forgot', { method: 'POST', form: { _csrf: tokenFrom(pageK.text), email: CAB_EMAIL }, jar: jarK });
+  const unknown = await http('/cabinet/forgot', { method: 'POST', form: { _csrf: tokenFrom(pageU.text), email: 'nikogo@example.com' }, jar: jarU });
+  eq(known.status, 200, 'ответ по известному адресу');
+  eq(unknown.status, 200, 'ответ по неизвестному адресу');
+  // Тексты должны совпадать: иначе форма превращается в проверку наличия человека.
+  eq(known.text.length, unknown.text.length, 'ответы должны быть неразличимы');
+  eq(
+    db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE to_email = 'nikogo@example.com'").get().n,
+    0,
+    'на неизвестный адрес письмо отправлять нечего',
+  );
+  assert(
+    db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE to_email = ? AND kind = 'cabinet.reset'").get(CAB_EMAIL).n > 0,
+    'по известному адресу письмо не поставлено в очередь',
+  );
+  return 'ответы неразличимы, письмо ушло только по существующему адресу';
+});
+
+await check('игрок сам отзывает согласие на публикацию', async () => {
+  resetCabinetLimit();
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  const _csrf0 = tokenFrom(page.text);
+  await http('/cabinet/login', { method: 'POST', form: { _csrf: _csrf0, email: CAB_EMAIL, password: 'десногорск-ракетка-42' }, jar });
+  const cab = await http('/cabinet', { jar });
+  const _csrf = tokenFrom(cab.text);
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(cabPlayerId).is_public, 1, 'до отзыва игрок публикуется');
+  const off = await http('/cabinet/publication', { method: 'POST', form: { _csrf, publish: '0' }, jar });
+  eq(off.status, 302, 'отзыв согласия');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(cabPlayerId).is_public, 0, 'флаг не снят отзывом');
+  const last = db
+    .prepare("SELECT event, source FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1")
+    .get(cabPlayerId);
+  eq(last.event, 'revoked', 'отзыв не записан событием журнала');
+  eq(last.source, 'web', 'источник отзыва');
+  return 'отзыв из кабинета снимает публикацию и пишется событием журнала';
+});
+
+await check('ЗАБВЕНИЕ: ФИО не восстановимо ниоткуда', async () => {
+  resetCabinetLimit();
+  // Готовим игрока «как в жизни»: фото, результаты, матчи, снимок рейтинга.
+  const photo = await sharpLib({ create: { width: 900, height: 700, channels: 3, background: '#123d68' } })
+    .jpeg().toBuffer();
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  const _csrf0 = tokenFrom(page.text);
+  await http('/cabinet/login', { method: 'POST', form: { _csrf: _csrf0, email: CAB_EMAIL, password: 'десногорск-ракетка-42' }, jar });
+  const cab = await http('/cabinet', { jar });
+  const _csrf = tokenFrom(cab.text);
+  const up1 = await http('/cabinet/profile', {
+    method: 'POST',
+    multipart: {
+      fields: { _csrf, full_name: CAB_NAME, email: CAB_EMAIL },
+      files: [{ field: 'photo', filename: 'me.jpg', type: 'image/jpeg', buffer: photo }],
+    },
+    jar,
+  });
+  eq(up1.status, 302, 'загрузка фото профиля');
+  const withPhoto = db.prepare('SELECT photo_upload_id FROM players WHERE id = ?').get(cabPlayerId);
+  assert(withPhoto.photo_upload_id, 'фото не привязано к профилю');
+  const photoRow = db.prepare('SELECT stored_name FROM uploads WHERE id = ?').get(withPhoto.photo_upload_id);
+  const photoPath = resolve(UPLOAD_DIR, photoRow.stored_name);
+  assert(existsSync(photoPath), 'файл фото не записан');
+
+  // Пусть игрок попадёт в снимок рейтинга — там ФИО хранится копией.
+  const t = Number(
+    db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Турнир забвения', date('now','-20 days'), 'A')").run().lastInsertRowid,
+  );
+  const rival = db.prepare('SELECT id FROM players WHERE full_name = ?').get('Дмитрий Волков');
+  db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, 1)').run(t, cabPlayerId);
+  db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, 2)').run(t, rival.id);
+  db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id) VALUES (?, ?, ?)').run(t, cabPlayerId, rival.id);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  assert(dbContains(CAB_NAME), 'подготовка бессмысленна: имени и так нет в базе');
+
+  // Удаление из кабинета — с подтверждением словом.
+  const del = await http('/cabinet/delete', { jar });
+  eq(del.status, 200, 'страница удаления');
+  const csrfDel = tokenFrom(del.text);
+  const noWord = await http('/cabinet/delete', { method: 'POST', form: { _csrf: csrfDel, confirm: 'да' }, jar });
+  eq(noWord.status, 302, 'без слова подтверждения — отказ с сообщением');
+  assert(!db.prepare('SELECT anonymized_at FROM players WHERE id = ?').get(cabPlayerId).anonymized_at,
+    'удаление сработало без подтверждения');
+
+  const done = await http('/cabinet/delete', { method: 'POST', form: { _csrf: csrfDel, confirm: 'УДАЛИТЬ' }, jar });
+  eq(done.status, 200, 'удаление данных');
+
+  // (1) НЕОБРАТИМОСТЬ: имени нет НИ В ОДНОМ файле базы — ни в строке игрока,
+  // ни в снимках рейтинга, ни в журнале действий, ни в очереди писем.
+  const leak = dbContains(CAB_NAME);
+  assert(!leak, `ФИО осталось в базе (${leak}) — удаление обратимо`);
+  const mailLeak = dbContains(CAB_EMAIL);
+  assert(!mailLeak, `адрес почты остался в базе (${mailLeak})`);
+
+  const row = db.prepare('SELECT * FROM players WHERE id = ?').get(cabPlayerId);
+  assert(row, 'строка игрока должна остаться — на неё ссылаются матчи');
+  assert(row.anonymized_at, 'не проставлена отметка обезличивания');
+  eq(row.full_name, 'Игрок удалён', 'ФИО не затёрто');
+  eq(row.age_group, null, 'возрастная группа не очищена');
+  eq(row.photo_upload_id, null, 'ссылка на фото осталась');
+  eq(row.is_public, 0, 'обезличенный игрок не может публиковаться');
+  assert(!existsSync(photoPath), 'файл фотографии остался на диске');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM player_accounts WHERE player_id = ?').get(cabPlayerId).n, 0, 'аккаунт остался');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(cabPlayerId).n, 0, 'записи согласий остались');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM registrations WHERE player_id = ?').get(cabPlayerId).n, 0, 'заявка осталась');
+
+  // Вход закрыт, кабинет закрыт.
+  const after = await http('/cabinet', { jar });
+  eq(after.status, 403, 'кабинет должен закрыться');
+  const jarX = new Jar();
+  const loginPage = await http('/cabinet/login', { jar: jarX });
+  const reLogin = await http('/cabinet/login', {
+    method: 'POST',
+    form: { _csrf: tokenFrom(loginPage.text), email: CAB_EMAIL, password: 'десногорск-ракетка-42' },
+    jar: jarX,
+  });
+  eq(reLogin.status, 401, 'вход после удаления должен быть невозможен');
+  return 'ни ФИО, ни адреса нет ни в одном файле БД; строка игрока жива и обезличена, аккаунт, согласия, заявка и фото уничтожены';
+});
+
+await check('ЗАБВЕНИЕ: рейтинг соперников не дрогнул', async () => {
+  // Матчи и результаты удалённого остались — иначе места соперников поедут.
+  const kept = db
+    .prepare('SELECT COUNT(*) AS n FROM matches WHERE winner_player_id = ? OR loser_player_id = ?')
+    .get(cabPlayerId, cabPlayerId).n;
+  assert(kept > 0, 'матчи удалённого игрока снесены — рейтинг соперников переписан');
+  assert(
+    db.prepare('SELECT COUNT(*) AS n FROM results WHERE player_id = ?').get(cabPlayerId).n > 0,
+    'результаты удалённого игрока снесены',
+  );
+
+  // Считаем ДВИЖКОМ до и после «повторного» удаления идентичного профиля:
+  // сравниваем места и очки ВСЕХ, кроме самого удалённого.
+  const before = computeStandings(collectEngineInput(db));
+  const beforeMap = new Map(before.players.map((p) => [p.playerId, p]));
+
+  // Повторный вызов обезличивания ничего не меняет (идемпотентность) —
+  // и рейтинг обязан остаться тем же.
+  const again = erasure.erasePlayer(db, cabPlayerId, { uploadDir: UPLOAD_DIR });
+  assert(again.alreadyErased, 'повторное удаление должно быть безопасным no-op');
+
+  const after = computeStandings(collectEngineInput(db));
+  eq(after.players.length, before.players.length, 'число игроков в рейтинге изменилось');
+  for (const p of after.players) {
+    if (p.playerId === cabPlayerId) continue;
+    const was = beforeMap.get(p.playerId);
+    assert(was, `игрок ${p.playerId} появился из ниоткуда`);
+    eq(p.rank, was.rank, `место игрока ${p.playerName} изменилось после удаления соперника`);
+    eq(p.ratingPoints, was.ratingPoints, `очки игрока ${p.playerName} изменились после удаления соперника`);
+  }
+
+  // На витрине удалённый показан обезличенно, но СО СВОИМ местом.
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  const shown = currentStandings(db);
+  const erasedRow = shown.players.find((p) => p.playerId === cabPlayerId);
+  assert(erasedRow, 'обезличенный игрок исчез из таблицы — места соперников поедут');
+  eq(erasedRow.playerName, 'Игрок удалён', 'обезличенный показан не тем ярлыком');
+  eq(erasedRow.anonymized, 'erased', 'причина обезличивания должна быть «удалён», а не «скрыт»');
+  const engineRow = after.players.find((p) => p.playerId === cabPlayerId);
+  eq(erasedRow.rank, engineRow.rank, 'место обезличенного не совпало с расчётом движка');
+  eq(erasedRow.ratingPoints, engineRow.ratingPoints, 'очки обезличенного не совпали с расчётом движка');
+  return `матчей сохранено ${kept}; места и очки всех соперников совпали до и после; удалённый в таблице на своём месте ${erasedRow.rank}`;
+});
+
+// ===========================================================================
+section('16. Браузер: тема, CSP, адаптив, шрифты, XSS');
 
 let browserNote = '';
 try {
@@ -2002,23 +2332,33 @@ try {
     // Личный кабинет, заявка на турнир и приём документов от секретарей — всё
     // ещё «#»: это отдельные пункты, их функционала в сборке нет.
     const live = await page.evaluate(() => {
-      const names = ['Регистрация', 'Регистрация игрока', 'Провести турнир'];
+      const names = ['Регистрация', 'Регистрация игрока', 'Провести турнир', 'Личный кабинет'];
       return [...document.querySelectorAll('a')]
         .filter((a) => names.includes(a.textContent.trim()))
         .map((a) => ({ t: a.textContent.trim(), href: a.getAttribute('href') }));
     });
-    assert(live.length >= 3, `живых ссылок найдено ${live.length}, ожидалось не меньше 3`);
-    const expected = { 'Регистрация': '/register', 'Регистрация игрока': '/register', 'Провести турнир': '/tournament-request' };
+    assert(live.length >= 4, `живых ссылок найдено ${live.length}, ожидалось не меньше 4`);
+    const expected = {
+      'Регистрация': '/register',
+      'Регистрация игрока': '/register',
+      'Провести турнир': '/tournament-request',
+      'Личный кабинет': '/cabinet',
+    };
     for (const l of live) eq(l.href, expected[l.t], `«${l.t}» ведёт не туда`);
     for (const path of ['/register', '/tournament-request']) {
       const r = await http(path);
       eq(r.status, 200, `страница ${path}`);
     }
+    // Кабинет без входа отдаёт 403 со страницей «нужен вход» — это рабочая
+    // страница, а не заглушка: пустой ответ здесь был бы неотличим от «#».
+    const cabinet = await http('/cabinet');
+    eq(cabinet.status, 403, 'кабинет без входа');
+    assert(cabinet.text.includes('/cabinet/login'), 'на странице кабинета нет входа');
 
     const portal = await page.evaluate(() => {
-      // Личный кабинет, заявка участника на турнир и приём документов от
-      // секретарей — отдельные пункты, их функционала в сборке нет.
-      const names = ['Создать личный кабинет', 'Личный кабинет', 'Заявка на турнир', 'Секретарям турниров'];
+      // Заявка участника на турнир и приём документов от секретарей — отдельные
+      // пункты бэклога, их функционала в сборке нет.
+      const names = ['Заявка на турнир', 'Секретарям турниров'];
       const out = [];
       for (const a of document.querySelectorAll('a')) {
         const t = a.textContent.trim();
@@ -2031,14 +2371,14 @@ try {
     );
     await page.close();
 
-    assert(portal.length >= 3, `портальных ссылок найдено ${portal.length}, ожидалось не меньше 3`);
+    assert(portal.length >= 2, `портальных ссылок найдено ${portal.length}, ожидалось не меньше 2`);
     for (const p of portal) eq(p.href, '#', `«${p.t}» должна оставаться заглушкой`);
     for (const l of legal) assert(l.href.startsWith('/'), `правовая ссылка «${l.t}» должна вести на реальную страницу, а не «${l.href}»`);
     for (const l of legal) {
       const r = await http(l.href);
       eq(r.status, 200, `правовая страница ${l.href}`);
     }
-    return `${live.length} живых ссылки (регистрация, заявка на турнир) отвечают 200; ${portal.length} портальных = «#»; правовые ведут на ${legal.map((l) => l.href).join(', ')} (обе 200)`;
+    return `${live.length} живых ссылок (регистрация, заявка на турнир, кабинет); ${portal.length} портальных = «#»; правовые ведут на ${legal.map((l) => l.href).join(', ')} (обе 200)`;
   });
 
   await browser.close();
