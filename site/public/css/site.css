@@ -362,5 +362,12 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 .log-list code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--text);}
 .legal-body{max-width:70ch; display:flex; flex-direction:column; gap:1rem;}
 .legal-body h2{font-size:1.2rem; margin-top:.75rem;}
+.legal-body h3{font-size:1.02rem; margin-top:.25rem;}
+.legal-body ul{margin:0; padding-left:1.35rem; display:flex; flex-direction:column; gap:.5rem;}
+.legal-body li{padding-left:.15rem;}
+.legal-dl{margin:0; display:grid; grid-template-columns:minmax(9rem,auto) 1fr; gap:.5rem 1rem;}
+.legal-dl dt{color:var(--muted);}
+.legal-dl dd{margin:0;}
+@media (max-width:520px){.legal-dl{grid-template-columns:1fr; gap:.15rem;} .legal-dl dd{margin-bottom:.6rem;}}
 .skip-link{position:absolute; left:-9999px; top:0;}
 .skip-link:focus{left:1rem; top:1rem; z-index:100; background:var(--surface); padding:.6rem 1rem; border-radius:.6rem; border:1px solid var(--primary);}

@@ -1,6 +1,7 @@
 import { STUB_SECTIONS, SECTIONS } from '../lib/nav.mjs';
 import { currentStandings, statusLabel, RATING_CONFIG } from '../lib/rating-service.mjs';
 import { HOME_TOURNAMENTS, HOME_NEWS, HOME_STATS, HOME_NEXT_EVENT } from '../lib/home-content.mjs';
+import { OPERATOR, LEGAL_VERSION_LABEL } from '../lib/legal.mjs';
 
 export default function mountPublic(app, { db }) {
   // Главная — по утверждённому дизайну. Живой блок один: ТОП-5 рейтинга.
@@ -50,11 +51,15 @@ export default function mountPublic(app, { db }) {
   });
 
   // 152-ФЗ: эти страницы В объёме и реальны (не заглушки-«#»).
+  // bodyView задаётся ЗДЕСЬ, из кода: в шаблон не должно попадать имя файла,
+  // собранное из запроса, иначе include превратится в чтение произвольного пути.
   app.get('/privacy', (req, res) => {
     res.render('legal', {
-      title: 'Политика конфиденциальности — ФТСО',
-      heading: 'Политика конфиденциальности',
-      kind: 'privacy',
+      title: 'Политика обработки персональных данных — ФТСО',
+      heading: 'Политика обработки персональных данных',
+      bodyView: 'legal/privacy',
+      op: OPERATOR,
+      legalVersionLabel: LEGAL_VERSION_LABEL,
     });
   });
 
@@ -62,7 +67,9 @@ export default function mountPublic(app, { db }) {
     res.render('legal', {
       title: 'Согласие на обработку персональных данных — ФТСО',
       heading: 'Согласие на обработку персональных данных',
-      kind: 'consent',
+      bodyView: 'legal/consent',
+      op: OPERATOR,
+      legalVersionLabel: LEGAL_VERSION_LABEL,
     });
   });
 }
