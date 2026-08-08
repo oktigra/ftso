@@ -85,6 +85,21 @@ export function loadConfig({ requireSecrets = true } = {}) {
       keepSnapshots: Number(process.env.RATING_KEEP_SNAPSHOTS || 24),
       maxParticipants: Number(process.env.TOURNAMENT_MAX_PARTICIPANTS || 256),
     },
+    smtp: {
+      host: process.env.SMTP_HOST || 'smtp.yandex.ru',
+      port: Number(process.env.SMTP_PORT || 465),
+      // 465 -> TLS сразу; для 587 (STARTTLS) поставить SMTP_SECURE=0.
+      secure: process.env.SMTP_SECURE !== '0',
+      user: process.env.SMTP_USER || '',
+      // ПАРОЛЬ ПРИЛОЖЕНИЯ, не пароль от почты. Живёт только в .env, в git его нет
+      // и в логи он не попадает: наружу печатается лишь хост и имя ящика.
+      pass: process.env.SMTP_PASS || '',
+      from: process.env.MAIL_FROM || '',
+      // Повтор застрявших писем. Не агрессивно: короткий сбой SMTP не должен
+      // сжечь все попытки за пять минут и пометить письмо безнадёжным.
+      retryMinutes: Number(process.env.MAIL_RETRY_MINUTES || 10),
+      failAfter: Number(process.env.MAIL_FAIL_AFTER || 8),
+    },
     register: {
       // Публичная форма без входа: 5 заявок с адреса в час. Живому человеку
       // хватает с запасом, скрипту — нет.

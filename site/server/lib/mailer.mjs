@@ -13,10 +13,17 @@
 import { OPERATOR } from './legal.mjs';
 
 let transport = null;
+// После скольких неудач письмо считается безнадёжным. Значение приходит из
+// конфига при старте; дефолт нужен тестам и разбору очереди до настройки.
+let failAfterDefault = 8;
 
 /** transport: async ({to, subject, body}) => void; бросает — значит не отправлено. */
 export function setTransport(fn) {
   transport = fn;
+}
+
+export function configureMailer({ failAfter } = {}) {
+  if (Number.isFinite(failAfter) && failAfter > 0) failAfterDefault = failAfter;
 }
 
 export function hasTransport() {
@@ -36,7 +43,7 @@ export function queueMail(db, { to, subject, body, kind }) {
  * failAfter — после скольких неудач считать письмо безнадёжным (статус failed),
  * чтобы очередь не крутила один и тот же битый адрес вечно.
  */
-export async function flushOutbox(db, { limit = 20, failAfter = 5 } = {}) {
+export async function flushOutbox(db, { limit = 20, failAfter = failAfterDefault } = {}) {
   const rows = db
     .prepare("SELECT id, to_email, subject, body, attempts FROM mail_outbox WHERE status = 'queued' ORDER BY id LIMIT ?")
     .all(limit);
@@ -58,6 +65,26 @@ export async function flushOutbox(db, { limit = 20, failAfter = 5 } = {}) {
     }
   }
   return stat;
+}
+
+/**
+ * Периодический разбор очереди. Нужен именно потому, что отправка отвязана от
+ * запроса: SMTP полежал пять минут — письмо уйдёт со следующим проходом, а не
+ * потеряется вместе с завершившимся HTTP-запросом.
+ * unref() — таймер не держит процесс живым и не мешает тестам.
+ */
+export function scheduleMailFlush(db, { intervalMs = 10 * 60 * 1000 } = {}) {
+  const timer = setInterval(() => {
+    flushOutbox(db)
+      .then((stat) => {
+        if (stat.sent || stat.failed) {
+          console.log(`[почта] очередь: отправлено ${stat.sent}, признано неотправленными ${stat.failed}`);
+        }
+      })
+      .catch((err) => console.error('[почта] разбор очереди упал', err));
+  }, intervalMs);
+  timer.unref();
+  return timer;
 }
 
 /** Сводка для админки: сколько писем висит и сколько признано неотправленными. */

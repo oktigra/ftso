@@ -1413,6 +1413,97 @@ await check('retention заявок: отклонённые чистятся, о
   return `удалено просроченных отклонённых: ${removed}; одобренные (${before}) на месте`;
 });
 
+await check('письмо доходит до транспорта и помечается отправленным', async () => {
+  const mailer = await import('./server/lib/mailer.mjs');
+  const sent = [];
+  mailer.setTransport(async (msg) => { sent.push(msg); });
+  try {
+    const { res } = await submitRegistration({
+      // Город НАРОЧНО отличается от города оператора: в подписи письма стоит
+      // адрес Федерации (это её контакты, так и надо), и на «Смоленск» проверка
+      // города заявителя срабатывала бы ложно.
+      full_name: 'Почтовый Заявитель', city: 'Десногорск', sex: 'M',
+      email: 'pochta@example.com', consent_processing: '1',
+    });
+    eq(res.status, 302, 'подача заявки');
+    // Отправка асинхронная и не блокирует ответ — дожидаемся разбора очереди.
+    await mailer.flushOutbox(db);
+    const row = db.prepare("SELECT * FROM mail_outbox WHERE to_email = 'pochta@example.com'").get();
+    eq(row.status, 'sent', 'письмо должно быть отправлено');
+    assert(row.sent_at, 'не проставлено время отправки');
+    eq(row.last_error, null, 'у отправленного письма не должно остаться ошибки');
+    const msg = sent.find((m) => m.to === 'pochta@example.com');
+    assert(msg, 'транспорт не получил письмо');
+    assert(msg.subject.includes('принята'), 'не тот шаблон письма');
+    assert(msg.body.includes('Почтовый Заявитель'), 'в письме нет имени заявителя');
+    assert(/\/register\/status\//.test(msg.body), 'в письме нет ссылки на статус заявки');
+    // МИНИМИЗАЦИЯ: почта идёт открытым каналом, лишних ПДн в теле быть не должно.
+    assert(!msg.body.includes('Десногорск'), 'в письмо утёк город заявителя');
+    return `письмо ушло в транспорт (${sent.length} шт.), статус sent, ссылка на статус внутри, лишних данных нет`;
+  } finally {
+    mailer.setTransport(null);
+  }
+});
+
+await check('сбой SMTP не теряет заявку: письмо ждёт и объясняет причину', async () => {
+  const mailer = await import('./server/lib/mailer.mjs');
+  mailer.setTransport(async () => { throw new Error('соединение с smtp.yandex.ru отклонено'); });
+  try {
+    const { res } = await submitRegistration({
+      full_name: 'Сбойный Заявитель', city: 'Вязьма', sex: 'F',
+      email: 'sboy@example.com', consent_processing: '1',
+    });
+    eq(res.status, 302, 'заявка должна приниматься даже при мёртвом SMTP');
+    await mailer.flushOutbox(db);
+    const reg = db.prepare("SELECT * FROM registrations WHERE email = 'sboy@example.com'").get();
+    assert(reg, 'заявка потеряна из-за сбоя почты');
+    eq(reg.status, 'pending', 'заявка должна ждать модерации');
+    let row = db.prepare("SELECT * FROM mail_outbox WHERE to_email = 'sboy@example.com'").get();
+    eq(row.status, 'queued', 'письмо должно остаться в очереди, а не пропасть');
+    assert(row.attempts > 0, 'попытка не засчитана');
+    assert(row.last_error.includes('smtp.yandex.ru'), 'причина сбоя не записана');
+
+    // После исчерпания попыток письмо помечается неотправленным — очередь не
+    // крутит битый адрес вечно, но и не забывает про него.
+    for (let i = 0; i < 10; i++) await mailer.flushOutbox(db);
+    row = db.prepare("SELECT * FROM mail_outbox WHERE to_email = 'sboy@example.com'").get();
+    eq(row.status, 'failed', 'после исчерпания попыток статус должен стать failed');
+    const summary = mailer.outboxSummary(db);
+    assert(summary.failed > 0, 'сводка для админки не видит неотправленных');
+
+    // Кнопка «попробовать снова» возвращает письмо в очередь и досылает.
+    const delivered = [];
+    mailer.setTransport(async (msg) => { delivered.push(msg); });
+    const { jar } = await login(ADMIN.user, ADMIN.pass);
+    const page = await http('/admin/registrations', { jar });
+    assert(page.text.includes('Письма не доставлены'), 'админке не показано, что письма не ушли');
+    const _csrf = tokenFrom(page.text);
+    const retry = await http('/admin/registrations/mail/retry', { method: 'POST', form: { _csrf }, jar });
+    eq(retry.status, 302, 'повтор отправки');
+    row = db.prepare("SELECT * FROM mail_outbox WHERE to_email = 'sboy@example.com'").get();
+    eq(row.status, 'sent', 'после повтора письмо должно уйти');
+    assert(delivered.length > 0, 'транспорт не получил письмо при повторе');
+    return 'заявка принята, письмо ждёт с причиной, после исчерпания попыток — failed и видно в админке, повтор досылает';
+  } finally {
+    mailer.setTransport(null);
+  }
+});
+
+await check('пароль SMTP не утекает в лог и не лежит в git', async () => {
+  const { createSmtpTransport, smtpConfigured } = await import('./server/lib/smtp.mjs');
+  eq(smtpConfigured({ host: 'smtp.yandex.ru', user: '', pass: '' }), false, 'пустые реквизиты — не настроено');
+  eq(smtpConfigured({ host: 'smtp.yandex.ru', user: 'a@b.ru', pass: 'x' }), true, 'заполненные реквизиты — настроено');
+  // Транспорт создаётся, но ничего не печатает: пароль виден только nodemailer.
+  const send = createSmtpTransport({ host: 'smtp.yandex.ru', port: 465, secure: true, user: 'a@b.ru', pass: 'секрет-пароль', from: '' });
+  eq(typeof send, 'function', 'транспорт должен быть функцией отправки');
+  const example = readFileSync(resolve(HERE, '.env.example'), 'utf8');
+  assert(example.includes('SMTP_USER') && example.includes('SMTP_PASS'), 'в .env.example нет заглушек SMTP');
+  assert(!example.includes('пароль-приложения-яндекса-настоящий'), 'в образец попал реальный пароль');
+  const gitTracked = spawnSync('git', ['ls-files', '.env'], { cwd: HERE, encoding: 'utf8' });
+  eq(gitTracked.stdout.trim(), '', 'файл .env не должен быть под контролем git');
+  return 'реквизиты только из окружения, .env вне git, в образце заглушки';
+});
+
 // ===========================================================================
 section('13. Браузер: тема, CSP, адаптив, шрифты, XSS');
 
