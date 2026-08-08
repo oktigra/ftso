@@ -18,6 +18,7 @@ import {
   FOOTER_PARTICIPANTS,
   FOOTER_LEGAL,
 } from './lib/nav.mjs';
+import { OPERATOR } from './lib/legal.mjs';
 import { ValidationError } from './lib/validate.mjs';
 
 import mountPublic from './routes/public.mjs';
@@ -96,6 +97,10 @@ export function createApp(config) {
     res.locals.footerSections = FOOTER_SECTIONS;
     res.locals.footerParticipants = FOOTER_PARTICIPANTS;
     res.locals.footerLegal = FOOTER_LEGAL;
+    // Реквизиты оператора — ОДИН источник на весь сайт (подвал, юр-страницы,
+    // «Контакты»): расхождение контактов оператора между страницами читается
+    // как недостоверные сведения об операторе.
+    res.locals.operator = OPERATOR;
     res.locals.currentPath = req.path;
     res.locals.year = new Date().getFullYear();
     res.locals.user = null;
