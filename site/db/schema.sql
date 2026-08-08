@@ -20,7 +20,14 @@ CREATE TABLE IF NOT EXISTS players (
   sex       TEXT NOT NULL CHECK (sex IN ('M','F')),
   -- контролируемый список, набор задаёт Федерация -> жёсткий CHECK не ставим,
   -- проверяется валидацией в server/lib/validate.mjs
-  age_group TEXT
+  age_group TEXT,
+  -- ПУБЛИКУЕМОСТЬ. Дефолт 0 = НЕ публиковать: публикация ФИО в открытом рейтинге —
+  -- это распространение (ст. 10.1 152-ФЗ), для него нужно ОТДЕЛЬНОЕ согласие.
+  -- Флаг НЕ выставляется руками: он производный от журнала согласий, его
+  -- пересчитывает syncPlayerPublicFlag() по последнему событию kind='distribution'.
+  -- Отозвал согласие -> флаг снят -> игрок уходит под «Скрыто по заявлению»,
+  -- СОХРАНЯЯ место и очки (движок считает по реальным данным).
+  is_public INTEGER NOT NULL DEFAULT 0 CHECK (is_public IN (0,1))
 );
 
 CREATE TABLE IF NOT EXISTS tournaments (
@@ -60,6 +67,38 @@ CREATE TABLE IF NOT EXISTS rating_cache (
   standings_json TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_rating_cache_id ON rating_cache (id DESC);
+
+-- ЖУРНАЛ СОГЛАСИЙ (152-ФЗ). Доказательство того, ЧТО и КОГДА принял субъект.
+-- Согласий ДВА и они раздельные (ч. 6 ст. 10.1): 'processing' — обработка (ст. 9),
+-- 'distribution' — распространение, то есть публикация в открытом доступе.
+-- Пишется СОБЫТИЯМИ: 'granted' и 'revoked'. Отзыв — не удаление строки, а новая
+-- запись с датой, иначе нечем доказать, что согласие когда-то действовало.
+--
+-- Сама запись журнала — тоже ПДн, поэтому у неё есть retention: отозванные
+-- согласия чистятся через CONSENT_RETENTION_DAYS (см. lib/consent-journal.mjs).
+--
+-- player_id NULL — заявка подана, но игрок ещё не заведён (модерация впереди);
+-- subject_ref хранит, кем субъект представился, иначе запись недоказуема.
+-- ON DELETE CASCADE — право на забвение (ст. 21): снесли игрока, ушли и согласия.
+CREATE TABLE IF NOT EXISTS consents (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id     INTEGER REFERENCES players(id) ON DELETE CASCADE,
+  subject_ref   TEXT,
+  kind          TEXT NOT NULL CHECK (kind  IN ('processing','distribution')),
+  event         TEXT NOT NULL CHECK (event IN ('granted','revoked')),
+  -- РЕДАКЦИЯ принятого текста (server/lib/legal.mjs). Согласие без указания
+  -- редакции юридически пусто: через год не доказать, что именно приняли.
+  legal_version TEXT NOT NULL,
+  -- 'web' — отметка в форме на сайте, 'offline' — бумажное согласие, внесённое
+  -- секретарём. Для 'offline' ip осмысленно пуст.
+  source        TEXT NOT NULL DEFAULT 'web' CHECK (source IN ('web','offline')),
+  ip            TEXT,
+  at            TEXT NOT NULL DEFAULT (datetime('now'))
+);
+-- Поиск последнего события по паре «игрок + вид согласия».
+CREATE INDEX IF NOT EXISTS idx_consents_player_kind ON consents (player_id, kind, id DESC);
+-- Автоочистка ходит по дате.
+CREATE INDEX IF NOT EXISTS idx_consents_at ON consents (at);
 
 -- Журнал действий: кто, что, когда. action = JSON {type, object_id, diff}.
 CREATE TABLE IF NOT EXISTS action_log (

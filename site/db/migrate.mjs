@@ -7,9 +7,26 @@ import { getDb, dbPath, closeDb } from './connect.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * ALTER TABLE ADD COLUMN идемпотентным не бывает: второй запуск падает
+ * «duplicate column». Поэтому колонки, добавленные к УЖЕ СУЩЕСТВУЮЩИМ таблицам,
+ * доливаются здесь с проверкой по PRAGMA — в schema.sql они объявлены сразу,
+ * чтобы чистая база создавалась одним CREATE.
+ */
+function addColumnIfMissing(db, table, column, definition) {
+  const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  if (has) return false;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  return true;
+}
+
 export function migrate() {
   const db = getDb();
   db.exec(readFileSync(resolve(HERE, 'schema.sql'), 'utf8'));
+  // Флаг публикуемости для баз, созданных до журнала согласий. Дефолт 0:
+  // существующие игроки становятся НЕпубличными, пока согласие на
+  // распространение не подтверждено — умолчание в пользу субъекта, а не витрины.
+  addColumnIfMissing(db, 'players', 'is_public', 'INTEGER NOT NULL DEFAULT 0');
   return db;
 }
 

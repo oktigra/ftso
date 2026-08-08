@@ -85,6 +85,14 @@ export function loadConfig({ requireSecrets = true } = {}) {
       keepSnapshots: Number(process.env.RATING_KEEP_SNAPSHOTS || 24),
       maxParticipants: Number(process.env.TOURNAMENT_MAX_PARTICIPANTS || 256),
     },
+    consent: {
+      // RETENTION журнала согласий. Считается ОТ ОТЗЫВА: действующее согласие
+      // не чистится никогда — оно и есть основание обработки. 1095 дней = 3 года,
+      // общий срок исковой давности: столько ещё можно спорить о правомерности
+      // обработки, и столько нужно доказательство. Действующие согласия и
+      // непривязанные заявки живут по тому же сроку.
+      retentionDays: Number(process.env.CONSENT_RETENTION_DAYS || 1095),
+    },
     bodyLimit: process.env.BODY_LIMIT || '100kb',
   };
 }

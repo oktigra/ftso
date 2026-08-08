@@ -3,6 +3,7 @@
 import { loadConfig, ConfigError } from './lib/config.mjs';
 import { createApp } from './app.mjs';
 import { getDb, dbPath } from '../db/connect.mjs';
+import { scheduleConsentPurge } from './lib/consent-journal.mjs';
 
 let config;
 try {
@@ -26,6 +27,11 @@ if (!schemaReady) {
   );
   process.exit(1);
 }
+
+// Автоочистка журнала согласий: при старте и раз в сутки. Отдельного крона нет
+// намеренно — процесс Node один, better-sqlite3 синхронный, второй писатель дал
+// бы «database is locked».
+scheduleConsentPurge(db, config.consent.retentionDays);
 
 const app = createApp(config);
 const server = app.listen(config.port, config.host, () => {

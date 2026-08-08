@@ -365,6 +365,8 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 .legal-body h3{font-size:1.02rem; margin-top:.25rem;}
 .legal-body ul{margin:0; padding-left:1.35rem; display:flex; flex-direction:column; gap:.5rem;}
 .legal-body li{padding-left:.15rem;}
+.consent-note{display:block; font-size:.78rem; margin-top:.25rem;}
+.player--anonymized{color:var(--muted); font-style:italic;}
 .legal-statement{border-left:3px solid var(--primary); padding:.15rem 0 .15rem 1rem; margin:0;}
 .legal-dl{margin:0; display:grid; grid-template-columns:minmax(9rem,auto) 1fr; gap:.5rem 1rem;}
 .legal-dl dt{color:var(--muted);}

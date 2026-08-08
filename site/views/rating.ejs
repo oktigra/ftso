@@ -74,9 +74,9 @@
                      никогда «сырым». Игрок с именем <script>alert(1)</script>
                      покажется ТЕКСТОМ, скрипт не выполнится. */
                   %>
-                  <td class="player"><%= p.playerName %></td>
-                  <td><%= p.city %></td>
-                  <td><%= sexRu[p.sex] || p.sex %></td>
+                  <td class="player<%= p.anonymized ? ' player--anonymized' : '' %>"><%= p.playerName %></td>
+                  <td><%= p.city || '—' %></td>
+                  <td><%= sexRu[p.sex] || p.sex || '—' %></td>
                   <td><%= p.ageGroup || '—' %></td>
                   <td class="pts"><%= p.ratingPoints %></td>
                   <td class="chg chg--<%= p.change.kind %>"><%= p.change.label %></td>

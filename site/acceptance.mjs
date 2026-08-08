@@ -1044,7 +1044,166 @@ await check('лимит тела запроса включён', async () => {
 });
 
 // ===========================================================================
-section('11. Браузер: тема, CSP, адаптив, шрифты, XSS');
+section('11. Журнал согласий и публикуемость (152-ФЗ)');
+
+const journal = await import('./server/lib/consent-journal.mjs');
+const { LEGAL_VERSION } = await import('./server/lib/legal.mjs');
+// Имена игроков в таблице рейтинга, В ПОРЯДКЕ строк.
+const rowNames = (html) =>
+  [...html.matchAll(/<td class="player[^"]*">([^<]*)<\/td>/g)].map((m) => m[1]);
+
+await check('регистрация пишет ДВЕ раздельные записи с одной редакцией', async () => {
+  const id = Number(
+    db.prepare("INSERT INTO players (full_name, city, sex, age_group) VALUES ('Тест Согласиев','Смоленск','M','19-34')").run()
+      .lastInsertRowid,
+  );
+  journal.recordRegistrationConsents(db, { playerId: id, distribution: true, source: 'web', ip: '203.0.113.9' });
+  const rows = db.prepare('SELECT kind, event, legal_version FROM consents WHERE player_id = ? ORDER BY id').all(id);
+  eq(rows.length, 2, 'записей согласия');
+  eq(rows[0].kind, 'processing', 'первая запись — обработка');
+  eq(rows[1].kind, 'distribution', 'вторая запись — распространение');
+  assert(rows.every((r) => r.event === 'granted'), 'обе записи должны быть выдачей');
+  eq(rows[0].legal_version, rows[1].legal_version, 'редакция у обеих записей');
+  eq(rows[0].legal_version, LEGAL_VERSION, 'редакция = текущая константа');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(id).is_public, 1, 'флаг публикуемости');
+
+  // Отказ от публикации: обработка есть, распространения нет, игрок скрыт.
+  const id2 = Number(
+    db.prepare("INSERT INTO players (full_name, city, sex, age_group) VALUES ('Тест Скрытный','Вязьма','F','19-34')").run()
+      .lastInsertRowid,
+  );
+  journal.recordRegistrationConsents(db, { playerId: id2, distribution: false, source: 'web', ip: '203.0.113.9' });
+  eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(id2).n, 1, 'только обработка');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(id2).is_public, 0, 'без согласия — не публикуется');
+
+  db.prepare('DELETE FROM players WHERE id IN (?, ?)').run(id, id2);
+  return `две записи, редакция ${LEGAL_VERSION} у обеих; отказ от публикации оставляет только обработку`;
+});
+
+await check('отзыв распространения скрывает игрока, СОХРАНЯЯ место', async () => {
+  const before = rowNames((await http('/rating')).text);
+  const target = before.find((n) => n === 'Сергей Новиков');
+  assert(target, 'в таблице нет ожидаемого игрока');
+  const idx = before.indexOf(target);
+  const player = db.prepare('SELECT id FROM players WHERE full_name = ?').get(target);
+
+  journal.setDistributionConsent(db, player.id, false, { source: 'web', ip: '203.0.113.9' });
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(player.id).is_public, 0, 'флаг снят отзывом');
+
+  const after = rowNames((await http('/rating')).text);
+  eq(after.length, before.length, 'число строк не изменилось');
+  eq(after[idx], 'Скрыто по заявлению', 'строка обезличена на своём месте');
+  for (let i = 0; i < before.length; i++) {
+    if (i !== idx) eq(after[i], before[i], `строка ${i + 1} не должна была измениться`);
+  }
+
+  // Через поиск и через CSV настоящая фамилия тоже не достаётся.
+  // Сверяем СТРОКИ ТАБЛИЦЫ, а не весь HTML: страница честно возвращает запрос
+  // в поле поиска, и «Новиков» в разметке — это эхо ввода, а не данные игрока.
+  const search = await http(`/rating?q=${encodeURIComponent('Новиков')}`);
+  eq(rowNames(search.text).length, 0, 'скрытый игрок находится поиском по фамилии');
+  const csv = await http('/rating.csv');
+  assert(!csv.text.includes('Новиков'), 'скрытый игрок утекает в CSV');
+  assert(csv.text.includes('Скрыто по заявлению'), 'в CSV нет обезличенной строки');
+
+  // Движок продолжает считать по РЕАЛЬНЫМ данным — обезличивание только на выдаче.
+  const direct = computeStandings(collectEngineInput(db));
+  assert(
+    direct.players.some((p) => p.playerName === target),
+    'движок не должен видеть обезличивание',
+  );
+
+  journal.setDistributionConsent(db, player.id, true, { source: 'offline' });
+  const restored = rowNames((await http('/rating')).text);
+  eq(restored[idx], target, 'после возврата согласия имя вернулось на своё место');
+  return `${target}: отзыв -> «Скрыто по заявлению» на месте ${idx + 1}, места соперников не поехали; движок видит реальные данные`;
+});
+
+await check('удалённый игрок в старом снимке -> «Игрок удалён»', async () => {
+  const id = Number(
+    db.prepare("INSERT INTO players (full_name, city, sex, age_group) VALUES ('Тест Удалённый','Ярцево','M','19-34')").run()
+      .lastInsertRowid,
+  );
+  journal.recordRegistrationConsents(db, { playerId: id, distribution: true, source: 'offline' });
+  const t = Number(
+    db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Тестовый турнир', date('now','-10 days'), 'B')").run()
+      .lastInsertRowid,
+  );
+  db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, 1)').run(t, id);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  assert(rowNames((await http('/rating')).text).includes('Тест Удалённый'), 'игрок не попал в снимок');
+
+  // Снос игрока БЕЗ пересчёта: снимок ещё помнит его имя.
+  const wiped = journal.eraseConsents(db, id);
+  db.prepare('DELETE FROM players WHERE id = ?').run(id);
+  eq(wiped, 2, 'записи согласий стёрты при удалении');
+  const after = rowNames((await http('/rating')).text);
+  assert(!after.includes('Тест Удалённый'), 'имя удалённого игрока осталось на витрине');
+  assert(after.includes('Игрок удалён'), 'нет строки «Игрок удалён»');
+
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  return `удалённый игрок показан как «Игрок удалён»; ${wiped} записи согласий стёрты (ст. 21)`;
+});
+
+await check('автоочистка чистит отозванные, действующие не трогает', async () => {
+  const id = Number(
+    db.prepare("INSERT INTO players (full_name, city, sex, age_group) VALUES ('Тест Ретеншен','Сафоново','M','19-34')").run()
+      .lastInsertRowid,
+  );
+  journal.recordRegistrationConsents(db, { playerId: id, distribution: true, source: 'offline' });
+  journal.setDistributionConsent(db, id, false, { source: 'web', ip: '203.0.113.9' });
+  eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(id).n, 3, 'записей до очистки');
+
+  eq(journal.purgeExpired(db, 1095), 0, 'свежий отзыв чистить рано');
+  db.prepare("UPDATE consents SET at = datetime('now','-1200 days') WHERE player_id = ?").run(id);
+  const removed = journal.purgeExpired(db, 1095);
+  eq(removed, 2, 'удаляется пара «выдано + отозвано» по распространению');
+  const left = db.prepare('SELECT kind, event FROM consents WHERE player_id = ?').all(id);
+  eq(left.length, 1, 'осталась одна запись');
+  eq(left[0].kind, 'processing', 'действующее согласие на обработку не тронуто');
+
+  db.prepare('DELETE FROM players WHERE id = ?').run(id);
+  return 'отозванное старше срока удалено (2 записи), действующее согласие на обработку осталось';
+});
+
+await check('публикация из админки идёт ЧЕРЕЗ журнал, а не мимо', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/players', { jar });
+  const _csrf = tokenFrom(page.text);
+  const r = await http('/admin/players', {
+    method: 'POST',
+    form: { _csrf, full_name: 'Тест Секретарёв', city: 'Смоленск', sex: 'M', age_group: '19-34', is_public: '1' },
+    jar,
+  });
+  eq(r.status, 302, 'создание игрока');
+  const created = db.prepare('SELECT id, is_public FROM players WHERE full_name = ?').get('Тест Секретарёв');
+  eq(created.is_public, 1, 'флаг публикуемости выставлен');
+  const rows = db.prepare('SELECT kind, event, source, ip FROM consents WHERE player_id = ?').all(created.id);
+  eq(rows.length, 1, 'ровно одна запись — о распространении');
+  eq(rows[0].kind, 'distribution', 'вид записи');
+  eq(rows[0].event, 'granted', 'событие');
+  eq(rows[0].source, 'offline', 'источник — бумажное согласие');
+  eq(rows[0].ip, null, 'для офлайн-согласия IP не пишется');
+
+  // Снятие отметки = ОТЗЫВ, тоже событием.
+  const upd = await http(`/admin/players/${created.id}/update`, {
+    method: 'POST',
+    form: { _csrf, full_name: 'Тест Секретарёв', city: 'Смоленск', sex: 'M', age_group: '19-34', is_public: '0' },
+    jar,
+  });
+  eq(upd.status, 302, 'обновление игрока');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(created.id).is_public, 0, 'флаг снят');
+  const last = db.prepare('SELECT event FROM consents WHERE player_id = ? ORDER BY id DESC LIMIT 1').get(created.id);
+  eq(last.event, 'revoked', 'снятие отметки записано отзывом');
+
+  journal.eraseConsents(db, created.id);
+  db.prepare('DELETE FROM players WHERE id = ?').run(created.id);
+  return 'отметка секретаря пишется событием journal (source=offline, без IP); снятие = отзыв';
+});
+
+// ===========================================================================
+section('12. Браузер: тема, CSP, адаптив, шрифты, XSS');
 
 let browserNote = '';
 try {

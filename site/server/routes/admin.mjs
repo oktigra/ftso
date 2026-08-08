@@ -4,6 +4,7 @@ import { hashPassword, verifyPassword } from '../lib/password.mjs';
 import { logAction, recentActions } from '../lib/action-log.mjs';
 import {
   playerInput,
+  publicFlag,
   tournamentInput,
   intAtLeast,
   str,
@@ -20,6 +21,7 @@ import {
   lockState,
   statusLabel,
 } from '../lib/rating-service.mjs';
+import { setDistributionConsent, consentState, eraseConsents } from '../lib/consent-journal.mjs';
 
 // Кто ведёт данные рейтинга: турниры, игроков, результаты, пересчёт.
 const DATA_ROLES = ['super-admin', 'tournament-admin'];
@@ -80,9 +82,12 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
 
   // --- игроки -------------------------------------------------------------
   app.get('/admin/players', requireRole(...DATA_ROLES), (req, res) => {
+    const players = db.prepare('SELECT * FROM players ORDER BY full_name').all();
     res.render('admin/players', {
       title: 'Игроки — админка ФТСО',
-      players: db.prepare('SELECT * FROM players ORDER BY full_name').all(),
+      // Состояние согласий рядом с игроком: секретарь должен видеть, ПОЧЕМУ
+      // игрок не публикуется, а не гадать по флагу.
+      players: players.map((p) => ({ ...p, consent: consentState(db, p.id) })),
       ageGroups: AGE_GROUPS,
       sexes: SEXES,
     });
@@ -94,10 +99,19 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     limitWrites,
     guard((req, res) => {
       const data = playerInput(req.body);
+      const publish = publicFlag(req.body);
       const info = db
         .prepare('INSERT INTO players (full_name, city, sex, age_group) VALUES (?, ?, ?, ?)')
         .run(data.full_name, data.city, data.sex, data.age_group);
-      logAction(db, req.session.user.id, 'player.create', info.lastInsertRowid, data);
+      const id = Number(info.lastInsertRowid);
+      // Публикация включается ТОЛЬКО событием журнала: секретарь отмечает, что
+      // бумажное согласие на распространение получено. Прямой записи в is_public
+      // нет нигде, иначе витрина разъедется с согласием.
+      if (publish === true) {
+        setDistributionConsent(db, id, true, { source: 'offline' });
+        logAction(db, req.session.user.id, 'consent.distribution.granted', id, { source: 'offline' });
+      }
+      logAction(db, req.session.user.id, 'player.create', id, { ...data, is_public: publish === true ? 1 : 0 });
       flash(req, res, 'ok', `Игрок «${data.full_name}» добавлен.`, '/admin/players');
     }),
   );
@@ -109,10 +123,27 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     guard((req, res) => {
       const id = intAtLeast(req.params.id, 'id');
       const data = playerInput(req.body);
+      const publish = publicFlag(req.body);
+      const before = db.prepare('SELECT is_public FROM players WHERE id = ?').get(id);
+      if (!before) throw new ValidationError('Игрок не найден');
       const info = db
         .prepare('UPDATE players SET full_name = ?, city = ?, sex = ?, age_group = ? WHERE id = ?')
         .run(data.full_name, data.city, data.sex, data.age_group, id);
       if (!info.changes) throw new ValidationError('Игрок не найден');
+      // Смена публикации = событие журнала (выдача или ОТЗЫВ согласия на
+      // распространение), а не правка флага. Отзыв по ч. 12-13 ст. 10.1 обязан
+      // снять публикацию — здесь это происходит сразу, а не за 3 рабочих дня.
+      // publish === null («поле не пришло») согласие НЕ трогает.
+      if (publish !== null && Boolean(before.is_public) !== publish) {
+        setDistributionConsent(db, id, publish, { source: 'offline' });
+        logAction(
+          db,
+          req.session.user.id,
+          publish ? 'consent.distribution.granted' : 'consent.distribution.revoked',
+          id,
+          { source: 'offline' },
+        );
+      }
       logAction(db, req.session.user.id, 'player.update', id, data);
       flash(req, res, 'ok', 'Игрок обновлён.', '/admin/players');
     }),
@@ -124,8 +155,12 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     limitWrites,
     guard((req, res) => {
       const id = intAtLeast(req.params.id, 'id');
+      // ПРАВО НА ЗАБВЕНИЕ (ст. 21): записи согласий стираются явно, не только
+      // каскадом — удаление игрока в личном кабинете будет ОБЕЗЛИЧИВАНИЕМ
+      // строки, а не DELETE, и каскад там не сработает.
+      const wiped = eraseConsents(db, id);
       db.prepare('DELETE FROM players WHERE id = ?').run(id);
-      logAction(db, req.session.user.id, 'player.delete', id, null);
+      logAction(db, req.session.user.id, 'player.delete', id, { consents_erased: wiped });
       flash(req, res, 'ok', 'Игрок удалён.', '/admin/players');
     }),
   );

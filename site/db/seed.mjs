@@ -7,6 +7,7 @@ import { migrate } from './migrate.mjs';
 import { hashPassword } from '../server/lib/password.mjs';
 import { loadConfig } from '../server/lib/config.mjs';
 import { recompute } from '../server/lib/rating-service.mjs';
+import { recordRegistrationConsents } from '../server/lib/consent-journal.mjs';
 
 const config = loadConfig();
 const db = getDb();
@@ -58,6 +59,14 @@ const PLAYERS = [
 
 const insPlayer = db.prepare('INSERT INTO players (full_name, city, sex, age_group) VALUES (?, ?, ?, ?)');
 const P = PLAYERS.map((p) => Number(insPlayer.run(...p).lastInsertRowid));
+
+// Выдуманным игрокам проставляем согласие на распространение — иначе витрина
+// покажет восемь строк «Скрыто по заявлению» и проверять будет нечего.
+// Флаг is_public не пишется напрямую: он производный от журнала согласий,
+// поэтому сид идёт тем же путём, что и секретарь в админке.
+for (const id of P) {
+  recordRegistrationConsents(db, { playerId: id, distribution: true, source: 'offline' });
+}
 
 const TOURNAMENTS = [
   ['Кубок Смоленска', daysAgo(300), 'A'],

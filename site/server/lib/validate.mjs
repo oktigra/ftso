@@ -80,6 +80,20 @@ export function playerInput(body) {
   };
 }
 
+/**
+ * Отметка «есть согласие на публикацию»: true, false или NULL — «поле не пришло».
+ *
+ * Поле приходит СПИСКОМ, а не чекбоксом: невыбранный чекбокс браузер не
+ * отправляет вовсе. Но одного списка мало — запрос мог прийти и не из этой
+ * формы. Поэтому отсутствие поля означает «НЕ ТРОГАТЬ согласие», а не «отозвать»:
+ * отзыв согласия — юридически значимое действие субъекта, и получиться сам собой
+ * из-за недостающего поля в POST он не имеет права.
+ */
+export function publicFlag(body) {
+  if (body.is_public === undefined || body.is_public === null || body.is_public === '') return null;
+  return oneOf(String(body.is_public), 'Публикация', ['0', '1']) === '1';
+}
+
 export function tournamentInput(body) {
   return {
     name: str(body.name, 'Название', { max: 160 }),

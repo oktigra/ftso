@@ -23,8 +23,24 @@
           <% ageGroups.forEach(function (g) { %><option value="<%= g %>"><%= g %></option><% }); %>
         </select>
       </div>
+      <div class="field"><label for="p-public">Публикация</label>
+        <%
+        /* Списком, а НЕ чекбоксом: невыбранный чекбокс браузер не отправляет,
+           и «снять публикацию» было бы неотличимо от «поле не пришло».
+           Дефолт — «скрыт»: публикация требует согласия, а не наоборот. */
+        %>
+        <select id="p-public" name="is_public">
+          <option value="0" selected>скрыт</option>
+          <option value="1">публикуется</option>
+        </select>
+      </div>
       <button class="btn btn--primary" type="submit">Добавить</button>
     </form>
+    <p class="muted">
+      «Публикуется» ставится, только если получено согласие на распространение
+      персональных данных (ст. 10.1 152-ФЗ). Отметка пишется в журнал согласий
+      событием с датой; снятие отметки — это отзыв согласия.
+    </p>
   </div>
 
   <div class="panel">
@@ -37,7 +53,7 @@
     %>
     <div class="table-scroll">
       <table class="admin-table admin-table--edit">
-        <thead><tr><th>ID</th><th>ФИО</th><th>Город</th><th>Пол</th><th>Группа</th><th>Действия</th></tr></thead>
+        <thead><tr><th>ID</th><th>ФИО</th><th>Город</th><th>Пол</th><th>Группа</th><th>Публикация</th><th>Действия</th></tr></thead>
         <tbody>
           <% players.forEach(function (p) { %>
             <tr>
@@ -58,6 +74,21 @@
                     <option value="<%= g %>"<%= p.age_group === g ? ' selected' : '' %>><%= g %></option>
                   <% }); %>
                 </select>
+              </td>
+              <td>
+                <select form="edit-player-<%= p.id %>" name="is_public">
+                  <option value="0"<%= p.is_public ? '' : ' selected' %>>скрыт</option>
+                  <option value="1"<%= p.is_public ? ' selected' : '' %>>публикуется</option>
+                </select>
+                <%
+                /* Почему игрок скрыт — видно сразу: согласия не было вовсе или
+                   оно отозвано. Иначе секретарь будет гадать по флагу. */
+                %>
+                <span class="muted consent-note">
+                  <% if (p.consent.distribution === 'granted') { %>согласие есть
+                  <% } else if (p.consent.distribution === 'revoked') { %>согласие отозвано
+                  <% } else { %>согласия нет<% } %>
+                </span>
               </td>
               <td class="inline-form">
                 <button class="btn btn--secondary btn--small" type="submit" form="edit-player-<%= p.id %>">Сохранить</button>
