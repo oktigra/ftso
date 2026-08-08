@@ -6,6 +6,7 @@ import { getDb, dbPath } from '../db/connect.mjs';
 import { scheduleDailyPurge } from './lib/retention.mjs';
 import { purgeExpired } from './lib/consent-journal.mjs';
 import { purgeRegistrations } from './lib/registrations.mjs';
+import { purgeRequests } from './lib/tournament-requests.mjs';
 import { setTransport, configureMailer, scheduleMailFlush } from './lib/mailer.mjs';
 import { createSmtpTransport, smtpConfigured } from './lib/smtp.mjs';
 
@@ -50,6 +51,11 @@ scheduleMailFlush(db, { intervalMs: config.smtp.retryMinutes * 60 * 1000 });
 // СРОКИ ХРАНЕНИЯ: при старте и дальше раз в сутки.
 scheduleDailyPurge('журнал согласий', () => purgeExpired(db, config.consent.retentionDays));
 scheduleDailyPurge('заявки на регистрацию', () => purgeRegistrations(db, config.register.retentionDays));
+// Заявки на турниры чистятся ВМЕСТЕ С ФАЙЛАМИ: снести строку и оставить
+// документы на диске значит хранить чужие данные без основания и без срока.
+scheduleDailyPurge('заявки на турниры', () =>
+  purgeRequests(db, config.tournamentRequest.retentionDays, config.upload.dir),
+);
 
 const app = createApp(config);
 const server = app.listen(config.port, config.host, () => {

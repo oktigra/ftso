@@ -132,6 +132,45 @@ export function mailApproved({ fullName, statusUrl }) {
   };
 }
 
+export function mailTournamentSubmitted({ organizer, name, statusUrl }) {
+  return {
+    subject: 'Заявка на проведение турнира принята — ФТСО',
+    body:
+      `Здравствуйте, ${organizer}.\n\n` +
+      `Заявка на проведение турнира «${name}» принята и передана на рассмотрение. ` +
+      'О решении сообщим этим же письмом.\n\n' +
+      `Статус заявки: ${statusUrl}\n` +
+      'Ссылка личная — не пересылайте её посторонним.' +
+      SIGN,
+  };
+}
+
+export function mailTournamentApproved({ organizer, name, statusUrl }) {
+  return {
+    subject: 'Турнир согласован — ФТСО',
+    body:
+      `Здравствуйте, ${organizer}.\n\n` +
+      `Турнир «${name}» согласован и добавлен в календарь Федерации.\n\n` +
+      'Результаты для рейтинга вносятся секретарём через административную часть — ' +
+      'файлом сетки рейтинг не рассчитывается.\n\n' +
+      `Статус заявки: ${statusUrl}` +
+      SIGN,
+  };
+}
+
+export function mailTournamentRejected({ organizer, name, reason, statusUrl }) {
+  return {
+    subject: 'Заявка на проведение турнира отклонена — ФТСО',
+    body:
+      `Здравствуйте, ${organizer}.\n\n` +
+      `Заявка на проведение турнира «${name}» отклонена.\n` +
+      (reason ? `Причина: ${reason}\n` : '') +
+      '\nЕсли это ошибка, ответьте на это письмо или позвоните нам.\n' +
+      `Статус заявки: ${statusUrl}` +
+      SIGN,
+  };
+}
+
 export function mailRejected({ fullName, reason, statusUrl }) {
   return {
     subject: 'Заявка отклонена — ФТСО',

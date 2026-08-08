@@ -23,6 +23,8 @@ process.env.LOGIN_MAX_ACCOUNT_FAILS = '5';
 process.env.LOGIN_MAX_IP_FAILS = '20';
 process.env.LOGIN_LOCK_MINUTES = '15';
 process.env.RATING_STALE_LOCK_MINUTES = '5';
+// Загрузки — в изолированный каталог прогона, а не в site/storage.
+process.env.UPLOAD_DIR = resolve(WORK, 'uploads');
 
 const CHROMIUM = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
@@ -79,13 +81,22 @@ class Jar {
 }
 
 function makeClient(base) {
-  return async function req(path, { method = 'GET', form, jar, headers = {}, redirect = 'manual' } = {}) {
+  return async function req(path, { method = 'GET', form, multipart, jar, headers = {}, redirect = 'manual' } = {}) {
     const h = { ...headers };
     if (jar) h.cookie = jar.header();
     let body;
     if (form) {
       h['content-type'] = 'application/x-www-form-urlencoded';
       body = new URLSearchParams(form).toString();
+    }
+    // multipart: content-type НЕ ставим руками — fetch сам подставит boundary.
+    if (multipart) {
+      const fd = new FormData();
+      for (const [k, v] of Object.entries(multipart.fields || {})) fd.append(k, String(v));
+      for (const f of multipart.files || []) {
+        fd.append(f.field, new Blob([f.buffer], { type: f.type || 'application/octet-stream' }), f.filename);
+      }
+      body = fd;
     }
     const res = await fetch(base + path, { method, headers: h, body, redirect });
     const setCookie = jar ? jar.absorb(res) : [];
@@ -652,18 +663,33 @@ await check('валидация админки: дата 2026-13-40 и кате�
   return '2026-13-40, 2026-02-30 и категория C отклонены';
 });
 
-await check('аплоада файлов в каркасе НЕТ', async () => {
+await check('загрузка файлов идёт ТОЛЬКО через общий слой', async () => {
+  // Раньше здесь проверялось, что аплоада нет вовсе. Аплоад появился — и теперь
+  // проверяется главное: он ОДИН. Второй разбор multipart или вторая запись
+  // файла на диск мимо lib/uploads.mjs означали бы вторую копию правил
+  // (magic bytes, лимит, вне webroot, attachment), которая разойдётся с первой.
+  const parsers = spawnSync('grep', ['-rlE', "from 'busboy'|require\\('busboy'\\)", 'server'], {
+    cwd: HERE, encoding: 'utf8',
+  }).stdout.split('\n').filter(Boolean);
+  eq(parsers.join(','), 'server/lib/multipart.mjs', `разбор multipart должен быть в одном месте, найдено: ${parsers}`);
+
+  const writers = spawnSync('grep', ['-rlE', 'writeFileSync', 'server'], { cwd: HERE, encoding: 'utf8' })
+    .stdout.split('\n').filter(Boolean);
+  eq(writers.join(','), 'server/lib/uploads.mjs', `запись файлов должна быть в одном месте, найдено: ${writers}`);
+
+  // Маршруты не проверяют файлы сами — они зовут слой. Ищем ПРИЗНАКИ КОДА
+  // (сигнатуры, вызовы распознавания), а не слово «magic» в комментарии.
+  const routeChecks = spawnSync('grep', ['-rlE', '%PDF|0x89|sniffType|looksExecutable', 'server/routes'], {
+    cwd: HERE, encoding: 'utf8',
+  }).stdout.trim();
+  assert(!routeChecks, `в маршрутах появились свои проверки типа файла: ${routeChecks}`);
+
   const pkg = JSON.parse(readFileSync(resolve(HERE, 'package.json'), 'utf8'));
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-  for (const bad of ['multer', 'formidable', 'busboy', 'express-fileupload']) {
-    assert(!deps[bad], `в зависимостях есть загрузчик файлов: ${bad}`);
+  for (const extra of ['multer', 'formidable', 'express-fileupload']) {
+    assert(!deps[extra], `второй загрузчик файлов в зависимостях: ${extra}`);
   }
-  const grep = spawnSync('grep', ['-rniE', 'multipart|multer|formidable|busboy|req\\.files', 'server', 'views', 'db'], {
-    cwd: HERE,
-    encoding: 'utf8',
-  });
-  assert(!grep.stdout.trim(), `найдены следы загрузки файлов:\n${grep.stdout}`);
-  return 'ни зависимостей, ни маршрутов загрузки';
+  return 'один разбор multipart, одна запись на диск, в маршрутах своих проверок типа нет';
 });
 
 await check('500 отдаёт свою страницу без стектрейса наружу', async () => {
@@ -1509,6 +1535,7 @@ section('13. Единые требования к загрузке файлов'
 
 const up = await import('./server/lib/uploads.mjs');
 const UPLOAD_DIR = resolve(WORK, 'uploads');
+eq(UPLOAD_DIR, config.upload.dir, 'приёмка и приложение должны писать в один каталог загрузок');
 
 // Мини-файлы с настоящими сигнатурами: проверяем распознавание по СОДЕРЖИМОМУ.
 const fileOf = (head, tail = 'x'.repeat(64)) => Buffer.concat([Buffer.from(head, 'latin1'), Buffer.from(tail)]);
@@ -1582,7 +1609,7 @@ await check('лимит размера и профиль назначения с
 });
 
 await check('файл лежит ВНЕ webroot под случайным именем', async () => {
-  const row = up.storeUpload(db, {
+  const row = await up.storeUpload(db, {
     buffer: PDF, filename: '../../evil name".pdf', profile: 'tournament-doc', dir: UPLOAD_DIR,
   });
   assert(row.stored_name !== '../../evil name".pdf', 'имя с диска взято из присланного');
@@ -1606,7 +1633,245 @@ await check('файл лежит ВНЕ webroot под случайным име
 });
 
 // ===========================================================================
-section('14. Браузер: тема, CSP, адаптив, шрифты, XSS');
+section('14. Заявка «провести турнир» с документами');
+
+const treq = await import('./server/lib/tournament-requests.mjs');
+const sharpLib = (await import('sharp')).default;
+
+async function submitTournament(fields, files = [], jar = new Jar()) {
+  // Счётчик лимитера обнуляем: иначе 429 замаскирует ПРИЧИНУ отказа, и проверка
+  // формата файла «позеленеет» на самом деле от лимита подач.
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 't:%'").run();
+  const page = await http('/tournament-request', { jar });
+  const _csrf = tokenFrom(page.text);
+  const res = await http('/tournament-request', {
+    method: 'POST',
+    multipart: { fields: { _csrf, ...fields }, files },
+    jar,
+  });
+  return { res, jar, _csrf };
+}
+
+const BASE_FIELDS = {
+  name: 'Кубок приёмки', city: 'Смоленск', end_date: '2026-09-01', category: 'A',
+  organizer: 'Иван Организаторов', email: 'org@example.com', consent_processing: '1',
+};
+
+await check('multipart без CSRF-токена отвергается', async () => {
+  const res = await http('/tournament-request', {
+    method: 'POST',
+    multipart: { fields: { ...BASE_FIELDS }, files: [] },
+  });
+  eq(res.status, 403, 'форма с файлами без токена должна давать 403');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE email = 'org@example.com'").get().n, 0,
+    'заявка без CSRF записана');
+  return 'multipart-форма без токена -> 403; общий middleware её пропускает, проверяет парсер';
+});
+
+await check('exe под именем .pdf отбит, файл на диске не остался', async () => {
+  const before = db.prepare('SELECT COUNT(*) AS n FROM uploads').get().n;
+  const { res } = await submitTournament(BASE_FIELDS, [
+    { field: 'doc_polozhenie', filename: 'polozhenie.pdf', type: 'application/pdf', buffer: EXE },
+  ]);
+  eq(res.status, 400, 'заявка с исполняемым файлом должна отклоняться');
+  assert(/Исполняемые файлы/.test(res.text), 'причина отказа не названа');
+  assert(res.text.includes('value="Кубок приёмки"'), 'черновик текстовых полей потерян');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM uploads').get().n, before,
+    'после отказа осталась запись загрузки — файл осиротел');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE name = 'Кубок приёмки'").get().n, 0,
+    'заявка с отклонённым файлом записана');
+  return 'HTTP 400 с причиной, текстовые поля сохранены, осиротевших файлов нет';
+});
+
+await check('заявка с документом уходит на модерацию, а не в календарь', async () => {
+  const tournamentsBefore = db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n;
+  const { res } = await submitTournament(
+    { ...BASE_FIELDS, name: 'Кубок Смоленска (приёмка)', phone: '8-900-000-00-00', comment: 'корты «Днепр»' },
+    [{ field: 'doc_polozhenie', filename: 'polozhenie.pdf', type: 'application/pdf', buffer: PDF }],
+  );
+  eq(res.status, 302, 'подача заявки');
+  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок Смоленска (приёмка)'").get();
+  eq(r.status, 'pending', 'заявка должна ждать модерации');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n, tournamentsBefore,
+    'форма НЕ должна создавать турнир до модерации');
+  const files = treq.requestFiles(db, r.id);
+  eq(files.length, 1, 'документ не привязан к заявке');
+  eq(files[0].profile, 'tournament-doc', 'профиль загрузки');
+  assert(existsSync(resolve(UPLOAD_DIR, files[0].stored_name)), 'файла нет на диске');
+  // Контакты организатора — ПДн, у обработки должно быть основание в журнале.
+  const consent = db
+    .prepare("SELECT kind, event, source FROM consents WHERE subject_ref LIKE '%заявка на турнир%' ORDER BY id DESC LIMIT 1")
+    .get();
+  eq(consent.kind, 'processing', 'согласие организатора не записано');
+  eq(consent.event, 'granted', 'событие согласия');
+  const mail = db.prepare("SELECT kind FROM mail_outbox WHERE to_email = 'org@example.com' ORDER BY id DESC LIMIT 1").get();
+  eq(mail.kind, 'tournament.submitted', 'письмо о приёме заявки не поставлено в очередь');
+  const status = await http(`/tournament-request/status/${r.status_token}`);
+  eq(status.status, 200, 'страница статуса по токену');
+  assert(status.text.includes('на рассмотрении'), 'статус не показан');
+  return 'заявка pending, документ привязан и лежит на диске, согласие организатора в журнале, письмо в очереди';
+});
+
+await check('изображение пересобирается: ресайз и снятый EXIF', async () => {
+  // Снимок «с телефона»: большой и с EXIF, где живут геолокация и модель камеры.
+  const photo = await sharpLib({ create: { width: 2400, height: 1400, channels: 3, background: '#0e7a52' } })
+    .jpeg()
+    .withExif({ IFD0: { Make: 'TestCam', Copyright: 'ФТСО' } })
+    .toBuffer();
+  const metaIn = await sharpLib(photo).metadata();
+  assert(metaIn.exif, 'исходный файл должен содержать EXIF, иначе проверка бессмысленна');
+
+  const { res } = await submitTournament(
+    { ...BASE_FIELDS, name: 'Кубок с фотографией', email: 'photo@example.com' },
+    [{ field: 'doc_setka', filename: 'setka.jpg', type: 'image/jpeg', buffer: photo }],
+  );
+  eq(res.status, 302, 'подача заявки с изображением');
+  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок с фотографией'").get();
+  const [file] = treq.requestFiles(db, r.id);
+  const stored = readFileSync(resolve(UPLOAD_DIR, file.stored_name));
+  const metaOut = await sharpLib(stored).metadata();
+  assert(!metaOut.exif, 'EXIF остался в сохранённом файле — утекли бы геолокация и модель камеры');
+  assert(metaOut.width <= 1600 && metaOut.height <= 1600, `изображение не уменьшено: ${metaOut.width}x${metaOut.height}`);
+  assert(stored.length < photo.length, 'сохранённый файл не должен быть больше исходного');
+  return `${metaIn.width}x${metaIn.height} с EXIF -> ${metaOut.width}x${metaOut.height} без EXIF`;
+});
+
+await check('число файлов ограничено', async () => {
+  const files = Array.from({ length: 5 }, (_, i) => ({
+    field: `doc_${i}`, filename: `doc${i}.pdf`, type: 'application/pdf', buffer: PDF,
+  }));
+  const { res } = await submitTournament({ ...BASE_FIELDS, name: 'Кубок с пачкой файлов' }, files);
+  eq(res.status, 400, `перебор файлов должен давать 400 (а не 429 от лимитера), получено ${res.status}`);
+  assert(/Слишком много файлов/.test(res.text), 'отказ не по числу файлов — проверка ловит не то');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE name = 'Кубок с пачкой файлов'").get().n, 0,
+    'заявка с перебором файлов записана');
+  return `5 файлов при лимите ${config.tournamentRequest.maxFiles} -> 400 «Слишком много файлов», заявки нет`;
+});
+
+await check('документ отдаётся только за логином и только как attachment', async () => {
+  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок Смоленска (приёмка)'").get();
+  const [file] = treq.requestFiles(db, r.id);
+
+  const anon = await http(`/admin/files/${file.id}`);
+  assert(anon.status === 302 || anon.status === 403, `аноним получил файл (HTTP ${anon.status})`);
+
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const got = await http(`/admin/files/${file.id}`, { jar });
+  eq(got.status, 200, 'модератор должен получать документ');
+  const disposition = got.headers.get('content-disposition') || '';
+  assert(/^attachment/.test(disposition), `отдача должна быть attachment, получено: ${disposition}`);
+  eq(got.headers.get('x-content-type-options'), 'nosniff', 'нет nosniff при отдаче файла');
+  // И тем же путём файл не достаётся как статика.
+  const viaStatic = await http(`/static/uploads/${file.stored_name}`);
+  eq(viaStatic.status, 404, 'файл достаётся как статика');
+  return `аноним ${anon.status}, модератор 200 + attachment + nosniff, статикой не отдаётся`;
+});
+
+await check('согласование создаёт турнир, отказ объясняется организатору', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/tournament-requests', { jar });
+  const _csrf = tokenFrom(page.text);
+  assert(page.text.includes('Кубок Смоленска (приёмка)'), 'заявки нет в списке модерации');
+  assert(page.text.includes('polozhenie.pdf'), 'документ не показан модератору');
+
+  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок Смоленска (приёмка)'").get();
+  const before = db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n;
+  const appr = await http(`/admin/tournament-requests/${r.id}/approve`, { method: 'POST', form: { _csrf }, jar });
+  eq(appr.status, 302, 'согласование заявки');
+  const after = db.prepare('SELECT status, tournament_id FROM tournament_requests WHERE id = ?').get(r.id);
+  eq(after.status, 'approved', 'статус заявки');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n, before + 1, 'турнир не создан');
+  const created = db.prepare('SELECT name, end_date, category FROM tournaments WHERE id = ?').get(after.tournament_id);
+  eq(created.name, r.name, 'название турнира');
+  eq(created.end_date, r.end_date, 'дата турнира');
+  eq(created.category, r.category, 'категория турнира');
+  // Результаты файлом не принимаются: матчей у нового турнира нет.
+  eq(db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(after.tournament_id).n, 0,
+    'из файла подтянулись результаты — рейтинг должен считаться только по структурным данным');
+  assert(
+    db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE to_email = ? AND kind = 'tournament.approved'").get(r.email).n === 1,
+    'письмо о согласовании не поставлено в очередь',
+  );
+
+  const bad = await submitTournament({ ...BASE_FIELDS, name: 'Кубок отказной', email: 'otkaz-org@example.com' });
+  eq(bad.res.status, 302, 'подача заявки для отказа');
+  const badRow = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок отказной'").get();
+  const rej = await http(`/admin/tournament-requests/${badRow.id}/reject`, {
+    method: 'POST', form: { _csrf, reason: 'Даты пересекаются с этапом первенства области' }, jar,
+  });
+  eq(rej.status, 302, 'отклонение заявки');
+  const statusPage = await http(`/tournament-request/status/${badRow.status_token}`);
+  assert(statusPage.text.includes('отклонена'), 'организатору не показан отказ');
+  assert(statusPage.text.includes('Даты пересекаются'), 'организатору не показана причина');
+  return 'согласование добавляет турнир в календарь без результатов; отказ с причиной виден организатору, письма в очереди';
+});
+
+await check('rate-limit формы турнира срабатывает и не путается с регистрацией', async () => {
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 't:%'").run();
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  const jar = new Jar();
+  const page = await http('/tournament-request', { jar });
+  const _csrf = tokenFrom(page.text);
+  let ok = 0;
+  let limited = 0;
+  const total = config.tournamentRequest.maxPerWindow + 2;
+  for (let i = 0; i < total; i++) {
+    const r = await http('/tournament-request', {
+      method: 'POST',
+      multipart: { fields: { _csrf, ...BASE_FIELDS, name: `Поток ${i}`, email: `flood${i}@example.com` }, files: [] },
+      jar,
+    });
+    if (r.status === 429) limited += 1;
+    else if (r.status === 302) ok += 1;
+  }
+  assert(ok > 0, `лимитер режет всё подряд: принято ${ok}`);
+  assert(limited > 0, `лимит не сработал: принято ${ok}, отказов ${limited}`);
+  // Счётчики РАЗНЫЕ: поток заявок на турниры не должен закрывать регистрацию игроков.
+  const reg = await http('/register');
+  eq(reg.status, 200, 'форма регистрации должна остаться доступной');
+  const regJar = new Jar();
+  const regPage = await http('/register', { jar: regJar });
+  const regCsrf = tokenFrom(regPage.text);
+  const regRes = await http('/register', {
+    method: 'POST',
+    form: {
+      _csrf: regCsrf, full_name: 'Не Заблокирован', city: 'Смоленск', sex: 'M',
+      email: 'notblocked@example.com', consent_processing: '1',
+    },
+    jar: regJar,
+  });
+  eq(regRes.status, 302, 'лимит заявок на турниры перекрыл регистрацию игрока — счётчики должны быть разными');
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 't:%'").run();
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  db.prepare("DELETE FROM tournament_requests WHERE email LIKE 'flood%@example.com'").run();
+  db.prepare("DELETE FROM registrations WHERE email = 'notblocked@example.com'").run();
+  return `принято ${ok}, отбито ${limited}; регистрация игроков при этом работает (счётчики раздельные)`;
+});
+
+await check('retention заявок уносит и приложенные файлы', async () => {
+  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок отказной'").get();
+  // Заявка без файлов — приложим документ вручную, чтобы проверить каскад по диску.
+  const upload = await up.storeUpload(db, {
+    buffer: PDF, filename: 'setka.pdf', profile: 'tournament-doc', dir: UPLOAD_DIR,
+  });
+  db.prepare('INSERT INTO tournament_request_files (request_id, upload_id) VALUES (?, ?)').run(r.id, upload.id);
+  const onDisk = resolve(UPLOAD_DIR, upload.stored_name);
+  assert(existsSync(onDisk), 'файл не записан');
+
+  const approvedBefore = db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE status = 'approved'").get().n;
+  eq(treq.purgeRequests(db, 365, UPLOAD_DIR), 0, 'свежую заявку чистить рано');
+  db.prepare("UPDATE tournament_requests SET decided_at = datetime('now','-400 days') WHERE id = ?").run(r.id);
+  const removed = treq.purgeRequests(db, 365, UPLOAD_DIR);
+  eq(removed, 1, 'просроченная отклонённая заявка не вычищена');
+  assert(!existsSync(onDisk), 'файл остался на диске после чистки заявки');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM uploads WHERE id = ?').get(upload.id).n, 0, 'запись загрузки осталась');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE status = 'approved'").get().n, approvedBefore,
+    'согласованные заявки чистить нельзя — они объясняют, откуда турнир в календаре');
+  return 'отклонённая заявка старше срока удалена вместе с файлом на диске; согласованные не тронуты';
+});
+
+// ===========================================================================
+section('15. Браузер: тема, CSP, адаптив, шрифты, XSS');
 
 let browserNote = '';
 try {
@@ -1737,18 +2002,23 @@ try {
     // Личный кабинет, заявка на турнир и приём документов от секретарей — всё
     // ещё «#»: это отдельные пункты, их функционала в сборке нет.
     const live = await page.evaluate(() => {
-      const names = ['Регистрация', 'Регистрация игрока'];
+      const names = ['Регистрация', 'Регистрация игрока', 'Провести турнир'];
       return [...document.querySelectorAll('a')]
         .filter((a) => names.includes(a.textContent.trim()))
         .map((a) => ({ t: a.textContent.trim(), href: a.getAttribute('href') }));
     });
-    assert(live.length >= 2, `живых ссылок регистрации найдено ${live.length}, ожидалось не меньше 2`);
-    for (const l of live) eq(l.href, '/register', `«${l.t}» должна вести на форму регистрации`);
-    const regPage = await http('/register');
-    eq(regPage.status, 200, 'страница регистрации');
+    assert(live.length >= 3, `живых ссылок найдено ${live.length}, ожидалось не меньше 3`);
+    const expected = { 'Регистрация': '/register', 'Регистрация игрока': '/register', 'Провести турнир': '/tournament-request' };
+    for (const l of live) eq(l.href, expected[l.t], `«${l.t}» ведёт не туда`);
+    for (const path of ['/register', '/tournament-request']) {
+      const r = await http(path);
+      eq(r.status, 200, `страница ${path}`);
+    }
 
     const portal = await page.evaluate(() => {
-      const names = ['Создать личный кабинет', 'Провести турнир', 'Личный кабинет', 'Заявка на турнир', 'Секретарям турниров'];
+      // Личный кабинет, заявка участника на турнир и приём документов от
+      // секретарей — отдельные пункты, их функционала в сборке нет.
+      const names = ['Создать личный кабинет', 'Личный кабинет', 'Заявка на турнир', 'Секретарям турниров'];
       const out = [];
       for (const a of document.querySelectorAll('a')) {
         const t = a.textContent.trim();
@@ -1761,14 +2031,14 @@ try {
     );
     await page.close();
 
-    assert(portal.length >= 4, `портальных ссылок найдено ${portal.length}, ожидалось не меньше 4`);
+    assert(portal.length >= 3, `портальных ссылок найдено ${portal.length}, ожидалось не меньше 3`);
     for (const p of portal) eq(p.href, '#', `«${p.t}» должна оставаться заглушкой`);
     for (const l of legal) assert(l.href.startsWith('/'), `правовая ссылка «${l.t}» должна вести на реальную страницу, а не «${l.href}»`);
     for (const l of legal) {
       const r = await http(l.href);
       eq(r.status, 200, `правовая страница ${l.href}`);
     }
-    return `${live.length} ссылки регистрации -> /register (200); ${portal.length} портальных = «#»; правовые ведут на ${legal.map((l) => l.href).join(', ')} (обе 200)`;
+    return `${live.length} живых ссылки (регистрация, заявка на турнир) отвечают 200; ${portal.length} портальных = «#»; правовые ведут на ${legal.map((l) => l.href).join(', ')} (обе 200)`;
   });
 
   await browser.close();

@@ -124,6 +124,24 @@ export function registrationInput(body) {
   };
 }
 
+/**
+ * Поля публичной заявки «провести турнир». МИНИМИЗАЦИЯ: организатор, почта,
+ * название, город, дата и категория — то, без чего заявку не рассмотреть.
+ * Телефон и комментарий необязательны.
+ */
+export function tournamentRequestInput(body) {
+  return {
+    name: str(body.name, 'Название турнира', { max: 160 }),
+    city: str(body.city, 'Город', { max: 80 }),
+    end_date: isoDate(body.end_date, 'Дата завершения'),
+    category: oneOf(body.category, 'Категория', CATEGORIES),
+    organizer: str(body.organizer, 'Организатор', { max: 160 }),
+    email: email(body.email),
+    phone: str(body.phone, 'Телефон', { max: 40, required: false }),
+    comment: str(body.comment, 'Комментарий', { max: 1000, required: false }),
+  };
+}
+
 export function tournamentInput(body) {
   return {
     name: str(body.name, 'Название', { max: 160 }),

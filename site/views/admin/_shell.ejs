@@ -6,7 +6,8 @@
   <a href="/admin"<%= currentPath === '/admin' ? ' aria-current="page"' : '' %>>Сводка</a>
   <a href="/admin/players"<%= currentPath === '/admin/players' ? ' aria-current="page"' : '' %>>Игроки</a>
   <a href="/admin/registrations"<%= currentPath.indexOf('/admin/registrations') === 0 ? ' aria-current="page"' : '' %>>Заявки<%= typeof pendingCount !== 'undefined' && pendingCount ? ` (${pendingCount})` : '' %></a>
-  <a href="/admin/tournaments"<%= currentPath.indexOf('/admin/tournaments') === 0 ? ' aria-current="page"' : '' %>>Турниры</a>
+  <a href="/admin/tournaments"<%= currentPath === '/admin/tournaments' ? ' aria-current="page"' : '' %>>Турниры</a>
+  <a href="/admin/tournament-requests"<%= currentPath.indexOf('/admin/tournament-requests') === 0 ? ' aria-current="page"' : '' %>>Заявки на турниры<%= typeof pendingTournamentCount !== 'undefined' && pendingTournamentCount ? ` (${pendingTournamentCount})` : '' %></a>
   <a href="/admin/account"<%= currentPath === '/admin/account' ? ' aria-current="page"' : '' %>>Мой аккаунт</a>
   <% if (user && user.role === 'super-admin') { %>
     <a href="/admin/users"<%= currentPath === '/admin/users' ? ' aria-current="page"' : '' %>>Пользователи</a>

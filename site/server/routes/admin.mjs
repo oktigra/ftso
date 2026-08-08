@@ -33,12 +33,23 @@ import {
   byId as registrationById,
 } from '../lib/registrations.mjs';
 import {
+  pendingRequests,
+  decidedRequests,
+  requestFiles,
+  approveRequest,
+  rejectRequest,
+  byId as tournamentRequestById,
+} from '../lib/tournament-requests.mjs';
+import { sendUpload, uploadById } from '../lib/uploads.mjs';
+import {
   queueMail,
   flushOutbox,
   outboxSummary,
   recentMail,
   mailApproved,
   mailRejected,
+  mailTournamentApproved,
+  mailTournamentRejected,
 } from '../lib/mailer.mjs';
 
 // Кто ведёт данные рейтинга: турниры, игроков, результаты, пересчёт.
@@ -70,6 +81,9 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     // Счётчик в меню: заявка, про которую забыли, — это человек без ответа.
     res.locals.pendingCount = db
       .prepare("SELECT COUNT(*) AS n FROM registrations WHERE status = 'pending'")
+      .get().n;
+    res.locals.pendingTournamentCount = db
+      .prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE status = 'pending'")
       .get().n;
     next();
   });
@@ -317,6 +331,90 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         })
         .catch(next);
     },
+  );
+
+  // --- заявки «провести турнир» -------------------------------------------
+  const requestStatusUrl = (req, token) =>
+    `${req.protocol}://${req.get('host')}/tournament-request/status/${token}`;
+
+  app.get('/admin/tournament-requests', requireRole(...DATA_ROLES), (req, res) => {
+    res.render('admin/tournament-requests', {
+      title: 'Заявки на турниры — админка ФТСО',
+      pending: pendingRequests(db).map((r) => ({ ...r, files: requestFiles(db, r.id) })),
+      decided: decidedRequests(db),
+    });
+  });
+
+  /**
+   * ОТДАЧА приложенного документа. Только за логином и только через наш
+   * маршрут: файлы лежат вне webroot, статикой не раздаются, и отдаются как
+   * attachment — см. lib/uploads.mjs.
+   */
+  app.get('/admin/files/:id', requireRole(...DATA_ROLES), (req, res, next) => {
+    const id = intAtLeast(req.params.id, 'id');
+    const row = uploadById(db, id);
+    if (!row) return next();
+    if (!sendUpload(res, row, config.upload.dir)) return next();
+  });
+
+  app.post(
+    '/admin/tournament-requests/:id/approve',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      let out;
+      try {
+        out = approveRequest(db, id, { userId: req.session.user.id });
+      } catch (err) {
+        throw new ValidationError(err.message);
+      }
+      const r = out.request;
+      const letter = mailTournamentApproved({
+        organizer: r.organizer,
+        name: r.name,
+        statusUrl: requestStatusUrl(req, r.status_token),
+      });
+      queueMail(db, { to: r.email, kind: 'tournament.approved', ...letter });
+      flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
+      logAction(db, req.session.user.id, 'tournament_request.approve', id, {
+        tournament_id: out.tournamentId,
+      });
+      flash(
+        req,
+        res,
+        'ok',
+        `Турнир «${r.name}» согласован и добавлен в календарь (#${out.tournamentId}). ` +
+          'Результаты вносятся через раздел «Результаты».',
+        '/admin/tournament-requests',
+      );
+    }),
+  );
+
+  app.post(
+    '/admin/tournament-requests/:id/reject',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const reason = str(req.body.reason, 'Причина', { max: 300, required: false });
+      let r;
+      try {
+        r = rejectRequest(db, id, { reason, userId: req.session.user.id });
+      } catch (err) {
+        throw new ValidationError(err.message);
+      }
+      const letter = mailTournamentRejected({
+        organizer: r.organizer,
+        name: r.name,
+        reason,
+        statusUrl: requestStatusUrl(req, r.status_token),
+      });
+      queueMail(db, { to: r.email, kind: 'tournament.rejected', ...letter });
+      flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
+      logAction(db, req.session.user.id, 'tournament_request.reject', id, { reason });
+      flash(req, res, 'ok', 'Заявка отклонена, уведомление поставлено в очередь.', '/admin/tournament-requests');
+    }),
   );
 
   // --- турниры ------------------------------------------------------------

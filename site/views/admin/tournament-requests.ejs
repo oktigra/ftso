@@ -1,0 +1,94 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Заявки на проведение турниров</h1>
+  <%- include('_shell') %>
+
+  <div class="panel">
+    <h2>На рассмотрении (<%= pending.length %>)</h2>
+    <% if (!pending.length) { %>
+      <p class="muted">Новых заявок нет.</p>
+    <% } else { %>
+      <% pending.forEach(function (r) { %>
+        <div class="reg-item">
+          <div class="reg-head">
+            <strong><%= r.name %></strong>
+            <span class="muted"><%= r.city %> · до <%= r.end_date %> · категория <%= r.category %></span>
+          </div>
+          <p class="muted reg-meta">
+            Организатор: <%= r.organizer %> · <%= r.email %><%= r.phone ? ' · ' + r.phone : '' %>
+            · подана <%= r.created_at %>
+          </p>
+          <% if (r.comment) { %><p class="muted">Комментарий: <%= r.comment %></p><% } %>
+
+          <% if (r.files.length) { %>
+            <%
+            /* Документы отдаются ТОЛЬКО через /admin/files — они лежат вне
+               webroot, статикой не раздаются и уходят как attachment. */
+            %>
+            <p class="muted">Документы:</p>
+            <ul class="log-list">
+              <% r.files.forEach(function (f) { %>
+                <li>
+                  <a href="/admin/files/<%= f.id %>"><%= f.original_name %></a>
+                  <span class="muted">— <%= f.mime %>, <%= Math.max(1, Math.round(f.size_bytes / 1024)) %> КБ</span>
+                </li>
+              <% }); %>
+            </ul>
+          <% } else { %>
+            <p class="muted">Документы не приложены.</p>
+          <% } %>
+
+          <div class="reg-actions">
+            <form method="post" action="/admin/tournament-requests/<%= r.id %>/approve" class="inline-form">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button class="btn btn--primary btn--small" type="submit">Согласовать и добавить в календарь</button>
+            </form>
+            <form method="post" action="/admin/tournament-requests/<%= r.id %>/reject" class="inline-form">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <div class="field">
+                <label for="tr-reason-<%= r.id %>">Причина отказа</label>
+                <input id="tr-reason-<%= r.id %>" name="reason" maxlength="300" placeholder="необязательно, но её увидит организатор">
+              </div>
+              <button class="btn btn--danger btn--small" type="submit">Отклонить</button>
+            </form>
+          </div>
+        </div>
+      <% }); %>
+      <p class="muted">
+        Согласование создаёт турнир в календаре. <strong>Результаты и матчи вносятся отдельно</strong>
+        — в разделе «Результаты», а не из приложенного файла: рейтинг считается по структурным данным.
+      </p>
+    <% } %>
+  </div>
+
+  <div class="panel">
+    <h2>Рассмотренные</h2>
+    <% if (!decided.length) { %>
+      <p class="muted">Пока нет.</p>
+    <% } else { %>
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead><tr><th>ID</th><th>Турнир</th><th>Решение</th><th>Когда</th><th>Причина</th><th>Турнир в календаре</th></tr></thead>
+          <tbody>
+            <% decided.forEach(function (r) { %>
+              <tr>
+                <td><%= r.id %></td>
+                <td><%= r.name %></td>
+                <td><%= r.status === 'approved' ? 'согласована' : 'отклонена' %></td>
+                <td><%= r.decided_at || '—' %></td>
+                <td><%= r.reject_reason || '—' %></td>
+                <td><%= r.tournament_id ? '#' + r.tournament_id : '—' %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </div>
+</div>
+</main>
+
+<%- include('../partials/footer') %>

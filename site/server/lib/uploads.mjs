@@ -13,6 +13,7 @@
 //     как статика, иначе его отдаст веб-сервер мимо всех наших проверок;
 //  5) отдача ТОЛЬКО как attachment;
 //  6) ресайз изображений.
+import sharp from 'sharp';
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync, existsSync, unlinkSync, statSync } from 'node:fs';
 import { resolve, join } from 'node:path';
@@ -137,6 +138,45 @@ export function validateUpload({ buffer, filename = '', profile = 'tournament-do
   return { ...sniffed, ext, size: buffer.length };
 }
 
+// --- изображения -----------------------------------------------------------
+
+// Потолок стороны. Фото с телефона — это 4000+ px и несколько мегабайт;
+// в галерее и в документах турнира такой размер не нужен никому.
+export const IMAGE_MAX_SIDE = 1600;
+
+/**
+ * ПЕРЕЗАПИСЬ ИЗОБРАЖЕНИЯ. Ресайз здесь — не про вес картинки, а про ПДн:
+ * снимок с телефона несёт EXIF, а в EXIF лежат geolocation и модель камеры.
+ * Опубликовать такое фото в открытой галерее значит опубликовать координаты.
+ * Полная перекодировка срезает метаданные целиком — sharp по умолчанию их не
+ * переносит, а .rotate() до ресайза применяет ориентацию из EXIF, чтобы
+ * снимок не лёг на бок вместе с удалением тега.
+ *
+ * GIF не трогаем: EXIF в нём не бывает, а перекодировка убила бы анимацию.
+ */
+export async function normalizeImage(buffer, mime, { maxSide = IMAGE_MAX_SIDE } = {}) {
+  if (mime === 'image/gif') return { buffer, mime, ext: 'gif', resized: false };
+
+  const pipeline = sharp(buffer, { failOn: 'error' })
+    .rotate()
+    .resize({ width: maxSide, height: maxSide, fit: 'inside', withoutEnlargement: true });
+
+  let out;
+  let ext;
+  if (mime === 'image/png') {
+    out = await pipeline.png({ compressionLevel: 9 }).toBuffer();
+    ext = 'png';
+  } else if (mime === 'image/webp') {
+    out = await pipeline.webp({ quality: 82 }).toBuffer();
+    ext = 'webp';
+  } else {
+    out = await pipeline.jpeg({ quality: 82, mozjpeg: true }).toBuffer();
+    ext = 'jpg';
+    mime = 'image/jpeg';
+  }
+  return { buffer: out, mime, ext, resized: true };
+}
+
 // --- хранение --------------------------------------------------------------
 
 /**
@@ -169,12 +209,26 @@ export function safeDownloadName(original, ext) {
  * uploads. Дубликаты по sha256 не склеиваются намеренно: у файлов разные
  * владельцы и разные сроки хранения, склейка усложнила бы удаление.
  */
-export function storeUpload(db, { buffer, filename, profile, meta, uploadedBy = null, dir }) {
+export async function storeUpload(db, { buffer, filename, profile, meta, uploadedBy = null, dir }) {
   const checked = validateUpload({ buffer, filename, profile });
+
+  // Изображение кладём НЕ ТЕМ ЖЕ файлом, что прислали: перезапись срезает EXIF
+  // (геолокация, модель камеры) и приводит размер к разумному. Проверка типа
+  // уже прошла — перекодируем то, что доказано картинкой.
+  let data = buffer;
+  let mime = checked.mime;
+  let ext = checked.ext;
+  if (checked.kind === 'image') {
+    const normalized = await normalizeImage(buffer, checked.mime);
+    data = normalized.buffer;
+    mime = normalized.mime;
+    ext = normalized.ext;
+  }
+
   ensureStorage(dir);
-  const storedName = `${randomBytes(16).toString('hex')}.${checked.ext}`;
-  const sha256 = createHash('sha256').update(buffer).digest('hex');
-  writeFileSync(storagePath(dir, storedName), buffer, { mode: 0o640 });
+  const storedName = `${randomBytes(16).toString('hex')}.${ext}`;
+  const sha256 = createHash('sha256').update(data).digest('hex');
+  writeFileSync(storagePath(dir, storedName), data, { mode: 0o640 });
 
   const info = db
     .prepare(
@@ -183,11 +237,11 @@ export function storeUpload(db, { buffer, filename, profile, meta, uploadedBy = 
     )
     .run(
       storedName,
-      safeDownloadName(filename, checked.ext),
-      checked.mime,
+      safeDownloadName(filename, ext),
+      mime,
       checked.kind,
       profile,
-      checked.size,
+      data.length,
       sha256,
       uploadedBy,
       meta ? JSON.stringify(meta) : null,

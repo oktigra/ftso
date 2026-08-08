@@ -115,6 +115,14 @@ export function loadConfig({ requireSecrets = true } = {}) {
       // год. Одобренные живут вместе с игроком — они объясняют основание.
       retentionDays: Number(process.env.REGISTRATION_RETENTION_DAYS || 365),
     },
+    tournamentRequest: {
+      // Публичная форма с ФАЙЛАМИ: лимит строже, чем у регистрации, — каждая
+      // заявка пишет на диск. Счётчик отдельный от регистрации и от админки.
+      maxPerWindow: Number(process.env.TOURNAMENT_REQUEST_MAX_PER_WINDOW || 3),
+      windowMinutes: Number(process.env.TOURNAMENT_REQUEST_WINDOW_MINUTES || 60),
+      retentionDays: Number(process.env.TOURNAMENT_REQUEST_RETENTION_DAYS || 365),
+      maxFiles: Number(process.env.TOURNAMENT_REQUEST_MAX_FILES || 3),
+    },
     consent: {
       // RETENTION журнала согласий. Считается ОТ ОТЗЫВА: действующее согласие
       // не чистится никогда — оно и есть основание обработки. 1095 дней = 3 года,

@@ -1,0 +1,59 @@
+<%
+/* СТАТУС заявки на турнир — по секретной ссылке. Показываем минимум:
+   название, статус, решение. Контакты организатора и приложенные файлы здесь
+   не выводятся: ссылка может уехать в чужие руки. */
+%>
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Организаторам</span>
+    <h1>Статус заявки на турнир</h1>
+  </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel">
+      <% if (!request) { %>
+        <p class="lead">Заявка отправлена.</p>
+        <p class="muted">Ссылка на статус заявки отправлена на указанную почту.</p>
+      <% } else { %>
+        <p class="lead">
+          Заявка на турнир «<%= request.name %>» — <strong><%= statusText %></strong>.
+        </p>
+        <p class="muted">
+          <%= request.city %> · дата завершения <%= request.end_date %> · заявленная категория <%= request.category %>
+        </p>
+
+        <% if (request.status === 'pending') { %>
+          <p class="muted">
+            Заявка передана секретарю Федерации. Решение придёт письмом, здесь оно тоже
+            появится — сохраните эту ссылку.
+          </p>
+        <% } else if (request.status === 'approved') { %>
+          <p class="muted">
+            Турнир согласован и добавлен в календарь Федерации.
+            Результаты для рейтинга вносит секретарь через административную часть —
+            файлом сетки рейтинг не рассчитывается.
+          </p>
+        <% } else { %>
+          <p class="muted">
+            <% if (request.reject_reason) { %>Причина: <%= request.reject_reason %><% } else { %>Причина не указана.<% } %>
+          </p>
+          <p class="muted">
+            Если считаете отказ ошибкой — напишите на
+            <a href="mailto:<%= op.email %>"><%= op.email %></a> или позвоните
+            <a href="tel:<%= op.phoneHref %>"><%= op.phone %></a>.
+          </p>
+        <% } %>
+      <% } %>
+      <p class="table-foot"><a class="link-more" href="/">На главную <span aria-hidden="true">→</span></a></p>
+    </div>
+  </div>
+</section>
+</main>
+
+<%- include('partials/footer') %>
