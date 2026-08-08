@@ -9,7 +9,7 @@ import { getDb } from '../db/connect.mjs';
 import { SqliteStore } from './lib/session-store.mjs';
 import { csrfMiddleware } from './lib/csrf.mjs';
 import { LoginAttempts } from './lib/login-attempts.mjs';
-import { writeLimiter } from './middleware/write-limit.mjs';
+import { writeLimiter, publicFormLimiter } from './middleware/write-limit.mjs';
 import { currentUser } from './middleware/auth.mjs';
 import {
   HEADER_PRIMARY,
@@ -22,6 +22,7 @@ import { OPERATOR } from './lib/legal.mjs';
 import { ValidationError } from './lib/validate.mjs';
 
 import mountPublic from './routes/public.mjs';
+import mountRegister from './routes/register.mjs';
 import mountRating from './routes/rating.mjs';
 import mountAuth from './routes/auth.mjs';
 import mountAdmin from './routes/admin.mjs';
@@ -140,11 +141,14 @@ export function createApp(config) {
     next();
   });
 
-  const ctx = { db, config, attempts, limitWrites, store };
+  const limitRegister = publicFormLimiter(db, config.register);
+
+  const ctx = { db, config, attempts, limitWrites, limitRegister, store };
 
   mountAuth(app, ctx);
   mountAdmin(app, ctx);
   mountRating(app, ctx);
+  mountRegister(app, ctx);
   mountPublic(app, ctx);
 
   /**

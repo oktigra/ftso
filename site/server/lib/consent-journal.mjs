@@ -20,17 +20,27 @@ export const CONSENT_EVENTS = ['granted', 'revoked'];
  * Событие журнала. Редакцию НЕ принимаем параметром: она всегда текущая из
  * legal.mjs, иначе в журнал можно записать согласие на текст, которого не было.
  */
-export function recordConsent(db, { playerId = null, subjectRef = null, kind, event, source = 'web', ip = null }) {
+export function recordConsent(db, {
+  playerId = null,
+  registrationId = null,
+  subjectRef = null,
+  kind,
+  event,
+  source = 'web',
+  ip = null,
+  basis = null,
+  documentDate = null,
+}) {
   if (!CONSENT_KINDS.includes(kind)) throw new Error(`неизвестный вид согласия: ${kind}`);
   if (!CONSENT_EVENTS.includes(event)) throw new Error(`неизвестное событие согласия: ${event}`);
   // Для бумажного согласия IP бессмысленен — не пишем мусор в ПДн-запись.
   const storedIp = source === 'offline' ? null : ip;
   const info = db
     .prepare(
-      `INSERT INTO consents (player_id, subject_ref, kind, event, legal_version, source, ip)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO consents (player_id, registration_id, subject_ref, kind, event, legal_version, source, ip, basis, document_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(playerId, subjectRef, kind, event, LEGAL_VERSION, source, storedIp);
+    .run(playerId, registrationId, subjectRef, kind, event, LEGAL_VERSION, source, storedIp, basis, documentDate);
   return Number(info.lastInsertRowid);
 }
 
@@ -39,14 +49,24 @@ export function recordConsent(db, { playerId = null, subjectRef = null, kind, ev
  * редакцией. Согласие на распространение необязательно: отказ от публикации
  * не мешает обработке и участию в соревнованиях.
  */
-export function recordRegistrationConsents(db, { playerId = null, subjectRef = null, distribution, source = 'web', ip = null }) {
+export function recordRegistrationConsents(db, {
+  playerId = null,
+  registrationId = null,
+  subjectRef = null,
+  distribution,
+  source = 'web',
+  ip = null,
+  basis = null,
+  documentDate = null,
+}) {
+  const base = { playerId, registrationId, subjectRef, source, ip, basis, documentDate };
   const tx = db.transaction(() => {
     const ids = {
-      processing: recordConsent(db, { playerId, subjectRef, kind: 'processing', event: 'granted', source, ip }),
+      processing: recordConsent(db, { ...base, kind: 'processing', event: 'granted' }),
       distribution: null,
     };
     if (distribution) {
-      ids.distribution = recordConsent(db, { playerId, subjectRef, kind: 'distribution', event: 'granted', source, ip });
+      ids.distribution = recordConsent(db, { ...base, kind: 'distribution', event: 'granted' });
     }
     if (playerId !== null) syncPlayerPublicFlag(db, playerId);
     return ids;
@@ -85,7 +105,7 @@ export function syncPlayerPublicFlag(db, playerId) {
  * транзакцией. Отзыв (ч. 12-13 ст. 10.1) обязан снять публикацию немедленно:
  * закон даёт на прекращение 3 рабочих дня, а здесь это происходит сразу.
  */
-export function setDistributionConsent(db, playerId, granted, { source = 'web', ip = null } = {}) {
+export function setDistributionConsent(db, playerId, granted, { source = 'web', ip = null, basis = null, documentDate = null } = {}) {
   const tx = db.transaction(() => {
     recordConsent(db, {
       playerId,
@@ -93,6 +113,9 @@ export function setDistributionConsent(db, playerId, granted, { source = 'web', 
       event: granted ? 'granted' : 'revoked',
       source,
       ip,
+      // Основание нужно ВЫДАЧЕ. У отзыва основания нет — есть воля субъекта.
+      basis: granted ? basis : null,
+      documentDate: granted ? documentDate : null,
     });
     return syncPlayerPublicFlag(db, playerId);
   });
@@ -103,7 +126,7 @@ export function setDistributionConsent(db, playerId, granted, { source = 'web', 
 export function consentHistory(db, playerId, limit = 50) {
   return db
     .prepare(
-      `SELECT id, kind, event, legal_version, source, ip, at
+      `SELECT id, kind, event, legal_version, source, ip, basis, document_date, at
          FROM consents WHERE player_id = ? ORDER BY id DESC LIMIT ?`,
     )
     .all(playerId, limit);
@@ -150,22 +173,4 @@ export function purgeExpired(db, retentionDays) {
   return tx();
 }
 
-/**
- * Автоочистка при старте и раз в сутки. unref() — таймер не держит процесс
- * живым и не мешает тестам; чистка идёт в том же процессе, потому что
- * better-sqlite3 синхронный и второй писатель дал бы «database is locked».
- */
-export function scheduleConsentPurge(db, retentionDays, { intervalMs = 24 * 60 * 60 * 1000 } = {}) {
-  const run = () => {
-    try {
-      const removed = purgeExpired(db, retentionDays);
-      if (removed) console.log(`[журнал согласий] автоочистка: удалено записей — ${removed}`);
-    } catch (err) {
-      console.error('[журнал согласий] автоочистка не удалась', err);
-    }
-  };
-  run();
-  const timer = setInterval(run, intervalMs);
-  timer.unref();
-  return timer;
-}
+// Планировщик автоочистки — общий для всех сроков хранения, см. lib/retention.mjs.

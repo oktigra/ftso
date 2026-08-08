@@ -1,0 +1,153 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Заявки на регистрацию</h1>
+  <%- include('_shell') %>
+
+  <div class="panel">
+    <h2>На рассмотрении (<%= pending.length %>)</h2>
+    <% if (!pending.length) { %>
+      <p class="muted">Новых заявок нет.</p>
+    <% } else { %>
+      <% pending.forEach(function (r) { %>
+        <div class="reg-item">
+          <div class="reg-head">
+            <strong><%= r.full_name %></strong>
+            <span class="muted"><%= r.city %> · <%= sexRu[r.sex] || r.sex %><%= r.age_group ? ' · ' + r.age_group : '' %></span>
+          </div>
+          <p class="muted reg-meta">
+            <%= r.email %> · подана <%= r.created_at %> ·
+            публикация в рейтинге: <strong><%= r.allowsPublication ? 'разрешена' : 'НЕ разрешена' %></strong>
+          </p>
+
+          <% if (r.publicationConflict) { %>
+            <%
+            /* Заявитель публикацию не разрешил, а найденный тёзка публикуется.
+               Само не решается: тот же человек — публикацию надо снять; однофамилец —
+               трогать чужую карточку нельзя. Одобрение НЕ меняет чужой флаг молча. */
+            %>
+            <div class="reg-warn" role="alert">
+              <p><strong>Расхождение по публикации.</strong> Заявитель не дал согласия на публикацию,
+                 а найденный игрок с таким ФИО сейчас публикуется.</p>
+              <p class="muted">
+                Если это один человек — одобрите с привязкой и снимите публикацию в карточке игрока
+                (это запишется отзывом согласия). Если однофамилец — заводите нового,
+                чужую карточку не трогайте.
+              </p>
+            </div>
+          <% } %>
+
+          <% if (r.matches.length) { %>
+            <%
+            /* ВОЗМОЖНОЕ СОВПАДЕНИЕ — подсказка, не приговор. Полные тёзки бывают,
+               и склеивать двух людей в одного нельзя: рейтинг исказится обоим. */
+            %>
+            <div class="reg-warn" role="note">
+              <p><strong>Возможное совпадение.</strong> Игрок с таким ФИО уже есть:</p>
+              <ul>
+                <% r.matches.forEach(function (m) { %>
+                  <li>
+                    #<%= m.id %> — <%= m.full_name %>, <%= m.city %>,
+                    <%= sexRu[m.sex] || m.sex %><%= m.age_group ? ', ' + m.age_group : '' %>
+                    <%= m.is_public ? '· публикуется' : '· скрыт' %>
+                  </li>
+                <% }); %>
+              </ul>
+              <p class="muted">
+                Это тот же человек — привяжите к существующему. Однофамилец — заводите нового.
+              </p>
+            </div>
+          <% } %>
+
+          <div class="reg-actions">
+            <form method="post" action="/admin/registrations/<%= r.id %>/approve" class="inline-form">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <div class="field">
+                <label for="link-<%= r.id %>">Одобрить как</label>
+                <select id="link-<%= r.id %>" name="link_player_id">
+                  <option value="">нового игрока</option>
+                  <% r.matches.forEach(function (m) { %>
+                    <option value="<%= m.id %>">привязать к #<%= m.id %> <%= m.full_name %></option>
+                  <% }); %>
+                </select>
+              </div>
+              <button class="btn btn--primary btn--small" type="submit">Одобрить</button>
+            </form>
+
+            <form method="post" action="/admin/registrations/<%= r.id %>/reject" class="inline-form">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <div class="field">
+                <label for="reason-<%= r.id %>">Причина отказа</label>
+                <input id="reason-<%= r.id %>" name="reason" maxlength="300" placeholder="необязательно, но её увидит заявитель">
+              </div>
+              <button class="btn btn--danger btn--small" type="submit">Отклонить</button>
+            </form>
+          </div>
+        </div>
+      <% }); %>
+    <% } %>
+  </div>
+
+  <div class="panel">
+    <h2>Почта заявителям</h2>
+    <%
+    /* FALLBACK «не молча»: если письма не уходят, это должно быть ВИДНО здесь,
+       а не выясняться через месяц от человека, не получившего ответ. */
+    %>
+    <p>
+      В очереди: <strong><%= mail.queued %></strong> ·
+      отправлено: <strong><%= mail.sent %></strong> ·
+      не удалось: <strong><%= mail.failed %></strong>
+    </p>
+    <% if (mail.queued || mail.failed) { %>
+      <div class="reg-warn" role="alert">
+        <p><strong>Письма не доставлены.</strong> Заявители не получили уведомление — сообщите им иначе
+           (телефон, почта вручную), пока отправка не налажена.</p>
+      </div>
+      <form method="post" action="/admin/registrations/mail/retry" class="inline-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn btn--secondary btn--small" type="submit">Попробовать отправить снова</button>
+      </form>
+    <% } %>
+    <% if (mailLog.length) { %>
+      <ul class="log-list">
+        <% mailLog.forEach(function (m) { %>
+          <li>
+            <code><%= m.status %></code> — <%= m.to_email %> · <%= m.subject %>
+            <% if (m.last_error) { %><br><span class="muted">ошибка: <%= m.last_error %></span><% } %>
+          </li>
+        <% }); %>
+      </ul>
+    <% } %>
+  </div>
+
+  <div class="panel">
+    <h2>Рассмотренные</h2>
+    <% if (!decided.length) { %>
+      <p class="muted">Пока нет.</p>
+    <% } else { %>
+      <div class="table-scroll">
+        <table class="admin-table">
+          <thead><tr><th>ID</th><th>ФИО</th><th>Решение</th><th>Когда</th><th>Причина</th><th>Игрок</th></tr></thead>
+          <tbody>
+            <% decided.forEach(function (r) { %>
+              <tr>
+                <td><%= r.id %></td>
+                <td><%= r.full_name %></td>
+                <td><%= r.status === 'approved' ? 'одобрена' : 'отклонена' %></td>
+                <td><%= r.decided_at || '—' %></td>
+                <td><%= r.reject_reason || '—' %></td>
+                <td><%= r.player_id ? '#' + r.player_id : '—' %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </div>
+</div>
+</main>
+
+<%- include('../partials/footer') %>

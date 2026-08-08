@@ -85,6 +85,15 @@ export function loadConfig({ requireSecrets = true } = {}) {
       keepSnapshots: Number(process.env.RATING_KEEP_SNAPSHOTS || 24),
       maxParticipants: Number(process.env.TOURNAMENT_MAX_PARTICIPANTS || 256),
     },
+    register: {
+      // Публичная форма без входа: 5 заявок с адреса в час. Живому человеку
+      // хватает с запасом, скрипту — нет.
+      maxPerWindow: Number(process.env.REGISTER_MAX_PER_WINDOW || 5),
+      windowMinutes: Number(process.env.REGISTER_WINDOW_MINUTES || 60),
+      // RETENTION заявок: отклонённые и брошенные на модерации чистятся через
+      // год. Одобренные живут вместе с игроком — они объясняют основание.
+      retentionDays: Number(process.env.REGISTRATION_RETENTION_DAYS || 365),
+    },
     consent: {
       // RETENTION журнала согласий. Считается ОТ ОТЗЫВА: действующее согласие
       // не чистится никогда — оно и есть основание обработки. 1095 дней = 3 года,

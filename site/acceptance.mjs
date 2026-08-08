@@ -1171,20 +1171,37 @@ await check('публикация из админки идёт ЧЕРЕЗ жур
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const page = await http('/admin/players', { jar });
   const _csrf = tokenFrom(page.text);
+  // ОСНОВАНИЕ ОБЯЗАТЕЛЬНО: публикация ФИО человека, заведённого секретарём,
+  // не может держаться на одной галочке в админке.
+  const noBasis = await http('/admin/players', {
+    method: 'POST',
+    form: { _csrf, full_name: 'Тест Безоснований', city: 'Смоленск', sex: 'M', is_public: '1' },
+    jar,
+  });
+  eq(noBasis.status, 302, 'ответ на попытку опубликовать без основания');
+  const orphan = db.prepare('SELECT is_public FROM players WHERE full_name = ?').get('Тест Безоснований');
+  assert(!orphan || orphan.is_public === 0, 'игрок опубликован без правового основания');
+  db.prepare('DELETE FROM players WHERE full_name = ?').run('Тест Безоснований');
+
   const r = await http('/admin/players', {
     method: 'POST',
-    form: { _csrf, full_name: 'Тест Секретарёв', city: 'Смоленск', sex: 'M', age_group: '19-34', is_public: '1' },
+    form: {
+      _csrf, full_name: 'Тест Секретарёв', city: 'Смоленск', sex: 'M', age_group: '19-34', is_public: '1',
+      consent_basis: 'бумажное согласие', consent_document_date: '2026-07-01',
+    },
     jar,
   });
   eq(r.status, 302, 'создание игрока');
   const created = db.prepare('SELECT id, is_public FROM players WHERE full_name = ?').get('Тест Секретарёв');
   eq(created.is_public, 1, 'флаг публикуемости выставлен');
-  const rows = db.prepare('SELECT kind, event, source, ip FROM consents WHERE player_id = ?').all(created.id);
+  const rows = db.prepare('SELECT kind, event, source, ip, basis, document_date FROM consents WHERE player_id = ?').all(created.id);
   eq(rows.length, 1, 'ровно одна запись — о распространении');
   eq(rows[0].kind, 'distribution', 'вид записи');
   eq(rows[0].event, 'granted', 'событие');
   eq(rows[0].source, 'offline', 'источник — бумажное согласие');
   eq(rows[0].ip, null, 'для офлайн-согласия IP не пишется');
+  eq(rows[0].basis, 'бумажное согласие', 'основание публикации не сохранено');
+  eq(rows[0].document_date, '2026-07-01', 'дата бумажного согласия не сохранена');
 
   // Снятие отметки = ОТЗЫВ, тоже событием.
   const upd = await http(`/admin/players/${created.id}/update`, {
@@ -1192,6 +1209,7 @@ await check('публикация из админки идёт ЧЕРЕЗ жур
     form: { _csrf, full_name: 'Тест Секретарёв', city: 'Смоленск', sex: 'M', age_group: '19-34', is_public: '0' },
     jar,
   });
+  // Отзыв основания не требует — это воля субъекта, задерживать её нечем.
   eq(upd.status, 302, 'обновление игрока');
   eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(created.id).is_public, 0, 'флаг снят');
   const last = db.prepare('SELECT event FROM consents WHERE player_id = ? ORDER BY id DESC LIMIT 1').get(created.id);
@@ -1199,11 +1217,204 @@ await check('публикация из админки идёт ЧЕРЕЗ жур
 
   journal.eraseConsents(db, created.id);
   db.prepare('DELETE FROM players WHERE id = ?').run(created.id);
-  return 'отметка секретаря пишется событием journal (source=offline, без IP); снятие = отзыв';
+  return 'без основания публикация не включается; отметка пишется событием (source=offline, основание + дата документа, без IP); снятие = отзыв';
 });
 
 // ===========================================================================
-section('12. Браузер: тема, CSP, адаптив, шрифты, XSS');
+section('12. Публичная регистрация и модерация');
+
+const regs = await import('./server/lib/registrations.mjs');
+
+/** Подать заявку формой: GET за токеном -> POST. Возвращает ответ и банку. */
+async function submitRegistration(form, jar = new Jar()) {
+  const page = await http('/register', { jar });
+  const _csrf = tokenFrom(page.text);
+  const res = await http('/register', { method: 'POST', form: { _csrf, ...form }, jar });
+  return { res, jar, _csrf };
+}
+
+await check('форма только POST, GET с ПДн в адресе не принимается', async () => {
+  const viaGet = await http('/register?full_name=Иван&email=ivan@example.com');
+  // GET отдаёт ФОРМУ, а не создаёт заявку: данные из строки запроса игнорируются.
+  eq(viaGet.status, 200, 'GET /register должен отдавать форму');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM registrations WHERE email = 'ivan@example.com'").get().n, 0,
+    'GET создал заявку — ПДн ушли бы в логи и историю браузера');
+  assert(viaGet.text.includes('method="post"'), 'форма должна отправляться методом POST');
+  return 'GET отдаёт форму и ничего не пишет; отправка только POST';
+});
+
+await check('без согласия на обработку заявка не принимается, ввод не теряется', async () => {
+  const { res } = await submitRegistration({
+    full_name: 'Пётр Отказов', city: 'Смоленск', sex: 'M', email: 'otkaz@example.com',
+  });
+  eq(res.status, 400, 'заявка без согласия должна отклоняться');
+  assert(res.text.includes('Без согласия на обработку'), 'нет объяснения причины');
+  assert(res.text.includes('value="Пётр Отказов"'), 'черновик потерян — ввод должен вернуться в форму');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM registrations WHERE email = 'otkaz@example.com'").get().n, 0,
+    'заявка без согласия попала в БД');
+  return 'HTTP 400, причина названа, поля вернулись заполненными, в БД пусто';
+});
+
+await check('honeypot отсекает бота молча', async () => {
+  const { res } = await submitRegistration({
+    full_name: 'Бот Ботов', city: 'Смоленск', sex: 'M', email: 'bot@example.com',
+    consent_processing: '1', website: 'http://spam.example',
+  });
+  eq(res.status, 302, 'бот должен получить обычный редирект, а не отказ');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM registrations WHERE email = 'bot@example.com'").get().n, 0,
+    'заявка бота записана');
+  return 'заполненная приманка -> редирект как при успехе, в БД ничего';
+});
+
+await check('заявка пишет ДВА раздельных согласия и письмо в очередь', async () => {
+  const { res } = await submitRegistration({
+    full_name: 'Новый Заявитель', city: 'Ярцево', sex: 'M', age_group: '19-34',
+    email: 'zayavitel@example.com', consent_processing: '1', consent_distribution: '1',
+  });
+  eq(res.status, 302, 'подача заявки');
+  const reg = db.prepare("SELECT * FROM registrations WHERE email = 'zayavitel@example.com'").get();
+  eq(reg.status, 'pending', 'заявка должна ждать модерации');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM players WHERE full_name = ?').get('Новый Заявитель').n, 0,
+    'форма НЕ должна писать в players напрямую — только через модерацию');
+  const cons = db.prepare('SELECT kind, event, legal_version, source, ip FROM consents WHERE registration_id = ? ORDER BY id').all(reg.id);
+  eq(cons.length, 2, 'записей согласия');
+  eq(cons[0].kind, 'processing', 'первое — обработка');
+  eq(cons[1].kind, 'distribution', 'второе — распространение');
+  eq(cons[0].legal_version, cons[1].legal_version, 'редакция общая');
+  eq(cons[0].source, 'web', 'источник — форма сайта');
+  assert(cons[0].ip, 'IP согласия, данного через сайт, должен фиксироваться');
+  const mail = db.prepare("SELECT * FROM mail_outbox WHERE to_email = 'zayavitel@example.com'").get();
+  assert(mail, 'письмо о приёме заявки не поставлено в очередь');
+  // SMTP не настроен -> письмо НЕ пропадает молча, а висит с честной ошибкой.
+  assert(mail.status !== 'sent', 'без транспорта письмо не может считаться отправленным');
+  assert(String(mail.last_error || '').includes('транспорт'), 'причина неотправки не записана');
+  const status = await http(`/register/status/${reg.status_token}`);
+  eq(status.status, 200, 'страница статуса по токену');
+  assert(status.text.includes('на рассмотрении'), 'страница статуса не показывает статус');
+  return 'заявка -> pending, два согласия с общей редакцией и IP, письмо в очереди с причиной, статус по токену открыт';
+});
+
+await check('чужой и подобранный токен статуса не открывается', async () => {
+  const r = await http('/register/status/подобранныйтокен123');
+  eq(r.status, 404, 'неизвестный токен должен давать 404');
+  return 'неизвестный токен -> 404, перебором заявку не нащупать';
+});
+
+await check('совпадение ФИО помечается модератору, а не сливается само', async () => {
+  const existing = db.prepare('SELECT full_name FROM players WHERE full_name = ?').get('Артём Ковалёв');
+  assert(existing, 'в сиде нет игрока для проверки совпадения');
+  // Тот же человек, написанный иначе: другой регистр и лишние пробелы.
+  const matches = regs.findNameMatches(db, '  артём   ковалёв ');
+  eq(matches.length, 1, 'нормализация ФИО не поймала того же человека');
+  // «Ёлкин» и «Елкин» — тоже один человек.
+  eq(regs.normalizeName('Ёлкин Пётр'), regs.normalizeName('Елкин Петр'), 'ё/е должны сходиться');
+
+  const { res } = await submitRegistration({
+    full_name: 'Артём Ковалёв', city: 'Смоленск', sex: 'M',
+    email: 'dubl@example.com', consent_processing: '1',
+  });
+  eq(res.status, 302, 'подача заявки-дубликата');
+  const reg = db.prepare("SELECT * FROM registrations WHERE email = 'dubl@example.com'").get();
+  eq(db.prepare('SELECT COUNT(*) AS n FROM players WHERE full_name = ?').get('Артём Ковалёв').n, 1,
+    'дубликат игрока создан автоматически — этого делать нельзя');
+
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/registrations', { jar });
+  assert(page.text.includes('Возможное совпадение'), 'модератору не показано возможное совпадение');
+  assert(page.text.includes('Расхождение по публикации'), 'не показано расхождение по согласию на публикацию');
+
+  // Одобряем ПРИВЯЗКОЙ к существующему — второй карточки не появляется.
+  const _csrf = tokenFrom(page.text);
+  const player = db.prepare('SELECT id FROM players WHERE full_name = ?').get('Артём Ковалёв');
+  const appr = await http(`/admin/registrations/${reg.id}/approve`, {
+    method: 'POST', form: { _csrf, link_player_id: String(player.id) }, jar,
+  });
+  eq(appr.status, 302, 'одобрение с привязкой');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM players WHERE full_name = ?').get('Артём Ковалёв').n, 1,
+    'привязка к существующему создала второго игрока');
+  const after = db.prepare('SELECT status, player_id FROM registrations WHERE id = ?').get(reg.id);
+  eq(after.status, 'approved', 'статус заявки');
+  eq(after.player_id, player.id, 'заявка привязана не к тому игроку');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE registration_id = ? AND player_id = ?').get(reg.id, player.id).n, 1,
+    'согласие заявки не привязано к игроку');
+  return 'тёзка помечен подсказкой, ё/е и регистр нормализованы, привязка не плодит второго игрока';
+});
+
+await check('одобрение заводит игрока и уведомляет, отказ объясняется', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const reg = db.prepare("SELECT * FROM registrations WHERE email = 'zayavitel@example.com'").get();
+  const page = await http('/admin/registrations', { jar });
+  const _csrf = tokenFrom(page.text);
+  const appr = await http(`/admin/registrations/${reg.id}/approve`, { method: 'POST', form: { _csrf }, jar });
+  eq(appr.status, 302, 'одобрение новой заявки');
+  const created = db.prepare('SELECT id, is_public FROM players WHERE full_name = ?').get('Новый Заявитель');
+  assert(created, 'игрок не заведён при одобрении');
+  eq(created.is_public, 1, 'согласие на публикацию было дано — игрок должен публиковаться');
+  const mails = db.prepare("SELECT kind FROM mail_outbox WHERE to_email = 'zayavitel@example.com' ORDER BY id").all();
+  assert(mails.some((m) => m.kind === 'registration.approved'), 'письмо об одобрении не поставлено в очередь');
+
+  // Отказ: причина сохраняется и видна заявителю на его странице статуса.
+  const { res } = await submitRegistration({
+    full_name: 'Отклонённый Заявитель', city: 'Вязьма', sex: 'F',
+    email: 'otkloneno@example.com', consent_processing: '1',
+  });
+  eq(res.status, 302, 'подача заявки для отказа');
+  const bad = db.prepare("SELECT * FROM registrations WHERE email = 'otkloneno@example.com'").get();
+  const rej = await http(`/admin/registrations/${bad.id}/reject`, {
+    method: 'POST', form: { _csrf, reason: 'Нет подтверждения участия в соревнованиях' }, jar,
+  });
+  eq(rej.status, 302, 'отклонение заявки');
+  const status = await http(`/register/status/${bad.status_token}`);
+  assert(status.text.includes('отклонена'), 'заявителю не показан статус отказа');
+  assert(status.text.includes('Нет подтверждения участия'), 'заявителю не показана причина отказа');
+  assert(
+    db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE to_email = 'otkloneno@example.com' AND kind = 'registration.rejected'").get().n === 1,
+    'письмо об отказе не поставлено в очередь',
+  );
+  return 'одобрение заводит игрока и публикует по согласию; отказ с причиной виден заявителю, оба уведомления в очереди';
+});
+
+await check('rate-limit на /register срабатывает', async () => {
+  const jar = new Jar();
+  const page = await http('/register', { jar });
+  const _csrf = tokenFrom(page.text);
+  let limited = 0;
+  let ok = 0;
+  // Счётчик обнуляем ПЕРЕД замером: иначе он уже израсходован прошлыми
+  // проверками и «всё отбито» прошло бы даже у лимитера, который режет всегда.
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  // Лимит 5 в час на адрес; шлём заведомо больше.
+  for (let i = 0; i < 8; i++) {
+    const r = await http('/register', {
+      method: 'POST',
+      form: {
+        _csrf, full_name: `Поток Заявкин ${i}`, city: 'Смоленск', sex: 'M',
+        email: `flood${i}@example.com`, consent_processing: '1',
+      },
+      jar,
+    });
+    if (r.status === 429) limited += 1;
+    else if (r.status === 302) ok += 1;
+  }
+  assert(ok > 0, `лимитер режет всё подряд: принято ${ok} — живой человек не подаст заявку`);
+  assert(limited > 0, `лимит не сработал: принято ${ok}, отказов 429 — ${limited}`);
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  db.prepare("DELETE FROM registrations WHERE email LIKE 'flood%@example.com'").run();
+  return `принято ${ok}, отбито лимитом ${limited}`;
+});
+
+await check('retention заявок: отклонённые чистятся, одобренные живут', async () => {
+  const before = db.prepare("SELECT COUNT(*) AS n FROM registrations WHERE status = 'approved'").get().n;
+  db.prepare("UPDATE registrations SET decided_at = datetime('now','-400 days') WHERE status = 'rejected'").run();
+  const removed = regs.purgeRegistrations(db, 365);
+  assert(removed > 0, 'старые отклонённые заявки не вычищены');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM registrations WHERE status = 'approved'").get().n, before,
+    'одобренные заявки не должны чиститься — они объясняют основание');
+  return `удалено просроченных отклонённых: ${removed}; одобренные (${before}) на месте`;
+});
+
+// ===========================================================================
+section('13. Браузер: тема, CSP, адаптив, шрифты, XSS');
 
 let browserNote = '';
 try {
@@ -1327,11 +1538,25 @@ try {
     return `в ячейке текст «${asText.text}», тегов script 0, alert не сработал`;
   });
 
-  await check('портальные кнопки — заглушки, ЛК/заявок/оплаты в сборке нет', async () => {
+  await check('регистрация живая, остальные портальные кнопки — заглушки', async () => {
     const page = await browser.newPage();
     await page.goto(inst.base + '/', { waitUntil: 'domcontentloaded' });
+    // «Регистрация» и «Регистрация игрока» ОЖИВЛЕНЫ и ведут на /register.
+    // Личный кабинет, заявка на турнир и приём документов от секретарей — всё
+    // ещё «#»: это отдельные пункты, их функционала в сборке нет.
+    const live = await page.evaluate(() => {
+      const names = ['Регистрация', 'Регистрация игрока'];
+      return [...document.querySelectorAll('a')]
+        .filter((a) => names.includes(a.textContent.trim()))
+        .map((a) => ({ t: a.textContent.trim(), href: a.getAttribute('href') }));
+    });
+    assert(live.length >= 2, `живых ссылок регистрации найдено ${live.length}, ожидалось не меньше 2`);
+    for (const l of live) eq(l.href, '/register', `«${l.t}» должна вести на форму регистрации`);
+    const regPage = await http('/register');
+    eq(regPage.status, 200, 'страница регистрации');
+
     const portal = await page.evaluate(() => {
-      const names = ['Регистрация', 'Создать личный кабинет', 'Регистрация игрока', 'Провести турнир', 'Личный кабинет', 'Заявка на турнир', 'Секретарям турниров'];
+      const names = ['Создать личный кабинет', 'Провести турнир', 'Личный кабинет', 'Заявка на турнир', 'Секретарям турниров'];
       const out = [];
       for (const a of document.querySelectorAll('a')) {
         const t = a.textContent.trim();
@@ -1344,14 +1569,14 @@ try {
     );
     await page.close();
 
-    assert(portal.length >= 6, `портальных ссылок найдено ${portal.length}, ожидалось не меньше 6`);
+    assert(portal.length >= 4, `портальных ссылок найдено ${portal.length}, ожидалось не меньше 4`);
     for (const p of portal) eq(p.href, '#', `«${p.t}» должна оставаться заглушкой`);
     for (const l of legal) assert(l.href.startsWith('/'), `правовая ссылка «${l.t}» должна вести на реальную страницу, а не «${l.href}»`);
     for (const l of legal) {
       const r = await http(l.href);
       eq(r.status, 200, `правовая страница ${l.href}`);
     }
-    return `${portal.length} портальных ссылок = «#»; правовые ведут на ${legal.map((l) => l.href).join(', ')} (обе 200)`;
+    return `${live.length} ссылки регистрации -> /register (200); ${portal.length} портальных = «#»; правовые ведут на ${legal.map((l) => l.href).join(', ')} (обе 200)`;
   });
 
   await browser.close();

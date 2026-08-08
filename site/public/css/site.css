@@ -365,7 +365,36 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 .legal-body h3{font-size:1.02rem; margin-top:.25rem;}
 .legal-body ul{margin:0; padding-left:1.35rem; display:flex; flex-direction:column; gap:.5rem;}
 .legal-body li{padding-left:.15rem;}
+/* --- публичные формы (регистрация) --- */
+.form-panel{max-width:44rem;}
+.stacked-form{display:flex; flex-direction:column; gap:1.1rem;}
+.stacked-form .field{display:flex; flex-direction:column; gap:.35rem;}
+.stacked-form input[type=text], .stacked-form input[type=email], .stacked-form select{
+  width:100%; padding:.6rem .75rem; border:1px solid var(--border); border-radius:.6rem;
+  background:var(--surface); color:var(--text); font:inherit;}
+.stacked-form input:focus-visible, .stacked-form select:focus-visible{outline:2px solid var(--primary); outline-offset:1px;}
+.field-hint{font-size:.85rem; color:var(--muted); margin:0;}
+.req{color:var(--primary);}
+.form-errors{border:1px solid var(--primary); border-radius:.75rem; padding:.9rem 1rem; margin-bottom:1.2rem;}
+.form-errors ul{margin:.5rem 0 0; padding-left:1.2rem;}
+/* Приманка для ботов: убрана из потока и с клавиатуры, но существует в разметке. */
+.hp-field{position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden;}
+.consent-box{border:1px solid var(--border); border-radius:.75rem; padding:1rem; display:flex; flex-direction:column; gap:.85rem;}
+.consent-box legend{padding:0 .4rem; font-weight:600;}
+.check{display:flex; gap:.6rem; align-items:flex-start;}
+.check input{margin-top:.25rem; flex:0 0 auto; width:1.05rem; height:1.05rem;}
+.check label{font-size:.93rem; line-height:1.45;}
+/* --- модерация заявок --- */
+.reg-item{border-top:1px solid var(--border); padding:1rem 0; display:flex; flex-direction:column; gap:.5rem;}
+.reg-item:first-of-type{border-top:0;}
+.reg-head{display:flex; gap:.75rem; align-items:baseline; flex-wrap:wrap;}
+.reg-meta{margin:0; font-size:.88rem;}
+.reg-warn{border-left:3px solid var(--primary); padding:.5rem 0 .5rem .85rem;}
+.reg-warn p{margin:0 0 .35rem;}
+.reg-warn ul{margin:0; padding-left:1.2rem;}
+.reg-actions{display:flex; gap:1.5rem; flex-wrap:wrap; align-items:flex-end;}
 .consent-note{display:block; font-size:.78rem; margin-top:.25rem;}
+.consent-proof{margin-top:.3rem; font-size:.82rem;}
 .player--anonymized{color:var(--muted); font-style:italic;}
 .legal-statement{border-left:3px solid var(--primary); padding:.15rem 0 .15rem 1rem; margin:0;}
 .legal-dl{margin:0; display:grid; grid-template-columns:minmax(9rem,auto) 1fr; gap:.5rem 1rem;}

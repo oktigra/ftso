@@ -27,6 +27,11 @@ export function migrate() {
   // существующие игроки становятся НЕпубличными, пока согласие на
   // распространение не подтверждено — умолчание в пользу субъекта, а не витрины.
   addColumnIfMissing(db, 'players', 'is_public', 'INTEGER NOT NULL DEFAULT 0');
+  // Привязка согласия к заявке: согласие даётся, когда игрока ещё нет.
+  addColumnIfMissing(db, 'consents', 'registration_id', 'INTEGER REFERENCES registrations(id)');
+  // Правовое основание и дата бумажного согласия — для внесённых секретарём.
+  addColumnIfMissing(db, 'consents', 'basis', 'TEXT');
+  addColumnIfMissing(db, 'consents', 'document_date', 'TEXT');
   return db;
 }
 

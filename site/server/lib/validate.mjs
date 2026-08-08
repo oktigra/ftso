@@ -94,6 +94,36 @@ export function publicFlag(body) {
   return oneOf(String(body.is_public), 'Публикация', ['0', '1']) === '1';
 }
 
+/**
+ * E-mail. Проверка НАРОЧНО нестрогая: полный разбор RFC 5322 регуляркой — это
+ * известная ловушка, а живые адреса он всё равно режет. Смысл проверки — не
+ * пропустить очевидный мусор; настоящая проверка адреса — доставленное письмо.
+ */
+export function email(value, field = 'E-mail', { required = true } = {}) {
+  const v = str(value, field, { min: required ? 5 : 0, max: 160, required });
+  if (!v) return v;
+  if (!/^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/.test(v)) {
+    throw new ValidationError(`${field}: адрес выглядит неверно`);
+  }
+  return v.toLowerCase();
+}
+
+/**
+ * Поля публичной заявки. МИНИМИЗАЦИЯ (ч. 5 ст. 5): обязательны только ФИО,
+ * город, пол и почта — то, без чего заявку не рассмотреть и не ответить.
+ * Возрастная группа необязательна (её уточнит секретарь), телефона и даты
+ * рождения в форме нет вовсе.
+ */
+export function registrationInput(body) {
+  return {
+    full_name: str(body.full_name, 'ФИО', { max: 120 }),
+    city: str(body.city, 'Город', { max: 80 }),
+    sex: oneOf(body.sex, 'Пол', SEXES),
+    age_group: oneOf(body.age_group, 'Возрастная группа', AGE_GROUPS, { required: false }),
+    email: email(body.email),
+  };
+}
+
 export function tournamentInput(body) {
   return {
     name: str(body.name, 'Название', { max: 160 }),

@@ -34,12 +34,20 @@
           <option value="1">публикуется</option>
         </select>
       </div>
+      <div class="field"><label for="p-basis">Основание публикации</label>
+        <input id="p-basis" name="consent_basis" maxlength="200" placeholder="например: бумажное согласие">
+      </div>
+      <div class="field"><label for="p-basis-date">Дата согласия</label>
+        <input id="p-basis-date" name="consent_document_date" placeholder="ГГГГ-ММ-ДД">
+      </div>
       <button class="btn btn--primary" type="submit">Добавить</button>
     </form>
     <p class="muted">
       «Публикуется» ставится, только если получено согласие на распространение
       персональных данных (ст. 10.1 152-ФЗ). Отметка пишется в журнал согласий
       событием с датой; снятие отметки — это отзыв согласия.
+      Для игрока, заводимого вручную, ОБЯЗАТЕЛЬНЫ основание и дата документа:
+      сама галочка правовым основанием не является. При «скрыт» поля не нужны.
     </p>
   </div>
 
@@ -88,7 +96,20 @@
                   <% if (p.consent.distribution === 'granted') { %>согласие есть
                   <% } else if (p.consent.distribution === 'revoked') { %>согласие отозвано
                   <% } else { %>согласия нет<% } %>
+                  <% if (p.proof && p.proof.basis) { %>
+                    · <%= p.proof.basis %><%= p.proof.document_date ? ' от ' + p.proof.document_date : '' %>
+                  <% } %>
                 </span>
+                <%
+                /* Поля основания нужны, только когда публикацию ВКЛЮЧАЮТ.
+                   Пустыми они безвредны: при «скрыт» сервер их не читает. */
+                %>
+                <input form="edit-player-<%= p.id %>" name="consent_basis" maxlength="200"
+                       class="consent-proof" placeholder="основание публикации"
+                       value="<%= p.proof && p.proof.basis ? p.proof.basis : '' %>">
+                <input form="edit-player-<%= p.id %>" name="consent_document_date"
+                       class="consent-proof" placeholder="ГГГГ-ММ-ДД"
+                       value="<%= p.proof && p.proof.document_date ? p.proof.document_date : '' %>">
               </td>
               <td class="inline-form">
                 <button class="btn btn--secondary btn--small" type="submit" form="edit-player-<%= p.id %>">Сохранить</button>

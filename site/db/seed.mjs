@@ -65,7 +65,13 @@ const P = PLAYERS.map((p) => Number(insPlayer.run(...p).lastInsertRowid));
 // Флаг is_public не пишется напрямую: он производный от журнала согласий,
 // поэтому сид идёт тем же путём, что и секретарь в админке.
 for (const id of P) {
-  recordRegistrationConsents(db, { playerId: id, distribution: true, source: 'offline' });
+  recordRegistrationConsents(db, {
+    playerId: id,
+    distribution: true,
+    source: 'offline',
+    basis: 'бумажное согласие (выдуманные данные сида)',
+    documentDate: daysAgo(320),
+  });
 }
 
 const TOURNAMENTS = [

@@ -68,6 +68,35 @@ CREATE TABLE IF NOT EXISTS rating_cache (
 );
 CREATE INDEX IF NOT EXISTS idx_rating_cache_id ON rating_cache (id DESC);
 
+-- ЗАЯВКИ НА РЕГИСТРАЦИЮ. Публичная форма кладёт сюда, в players игрок попадает
+-- ТОЛЬКО после модерации: иначе любой прохожий печатает себя в публичный рейтинг.
+--
+-- МИНИМИЗАЦИЯ (ч. 5 ст. 5 152-ФЗ): собираем ФИО, город, пол, e-mail —
+-- и всё. Возрастная группа необязательна, телефона и даты рождения нет вовсе.
+-- E-mail обязателен: это единственный канал сообщить решение модератора.
+--
+-- status_token — секрет ссылки на страницу статуса. Заявитель не заводит пароль
+-- (пароли будут в личном кабинете), а статус смотреть должен: длинный
+-- случайный токен в адресе — доступ по факту владения ссылкой, не по перебору id.
+CREATE TABLE IF NOT EXISTS registrations (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name     TEXT NOT NULL CHECK (length(trim(full_name)) BETWEEN 1 AND 120),
+  city          TEXT NOT NULL CHECK (length(trim(city))      BETWEEN 1 AND 80),
+  sex           TEXT NOT NULL CHECK (sex IN ('M','F')),
+  age_group     TEXT,
+  email         TEXT NOT NULL CHECK (length(trim(email)) BETWEEN 5 AND 160),
+  status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  status_token  TEXT NOT NULL UNIQUE,
+  -- заполняется при одобрении: новый игрок либо привязка к существующему
+  player_id     INTEGER REFERENCES players(id) ON DELETE CASCADE,
+  decided_by    INTEGER REFERENCES users(id)   ON DELETE SET NULL,
+  decided_at    TEXT,
+  reject_reason TEXT,
+  ip            TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_registrations_status ON registrations (status, id DESC);
+
 -- ЖУРНАЛ СОГЛАСИЙ (152-ФЗ). Доказательство того, ЧТО и КОГДА принял субъект.
 -- Согласий ДВА и они раздельные (ч. 6 ст. 10.1): 'processing' — обработка (ст. 9),
 -- 'distribution' — распространение, то есть публикация в открытом доступе.
@@ -83,6 +112,9 @@ CREATE INDEX IF NOT EXISTS idx_rating_cache_id ON rating_cache (id DESC);
 CREATE TABLE IF NOT EXISTS consents (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   player_id     INTEGER REFERENCES players(id) ON DELETE CASCADE,
+  -- Согласие даётся В МОМЕНТ ПОДАЧИ заявки, когда игрока ещё нет. Пока заявка
+  -- на модерации, запись висит на ней; при одобрении к ней доливается player_id.
+  registration_id INTEGER REFERENCES registrations(id) ON DELETE CASCADE,
   subject_ref   TEXT,
   kind          TEXT NOT NULL CHECK (kind  IN ('processing','distribution')),
   event         TEXT NOT NULL CHECK (event IN ('granted','revoked')),
@@ -92,6 +124,11 @@ CREATE TABLE IF NOT EXISTS consents (
   -- 'web' — отметка в форме на сайте, 'offline' — бумажное согласие, внесённое
   -- секретарём. Для 'offline' ip осмысленно пуст.
   source        TEXT NOT NULL DEFAULT 'web' CHECK (source IN ('web','offline')),
+  -- Для ОФЛАЙН-согласия, внесённого секретарём: чем именно подтверждено право
+  -- публиковать ФИО и какой датой подписана бумага. Для заводимых вручную
+  -- игроков «галочка в админке» основанием не является — им нужен документ.
+  basis         TEXT,
+  document_date TEXT,
   ip            TEXT,
   at            TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -99,6 +136,24 @@ CREATE TABLE IF NOT EXISTS consents (
 CREATE INDEX IF NOT EXISTS idx_consents_player_kind ON consents (player_id, kind, id DESC);
 -- Автоочистка ходит по дате.
 CREATE INDEX IF NOT EXISTS idx_consents_at ON consents (at);
+
+-- ИСХОДЯЩАЯ ПОЧТА. Письмо сперва ЛОЖИТСЯ В ОЧЕРЕДЬ и только потом отправляется:
+-- иначе сбой SMTP означал бы «заявка принята, но человеку никто не сообщил», и
+-- узнать об этом было бы неоткуда. Непосланное видно в админке — это и есть
+-- fallback «не молча».
+CREATE TABLE IF NOT EXISTS mail_outbox (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  to_email   TEXT NOT NULL,
+  subject    TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  status     TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','sent','failed')),
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  last_error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  sent_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mail_outbox_status ON mail_outbox (status, id);
 
 -- Журнал действий: кто, что, когда. action = JSON {type, object_id, diff}.
 CREATE TABLE IF NOT EXISTS action_log (

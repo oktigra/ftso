@@ -1,0 +1,66 @@
+<%
+/* СТРАНИЦА СТАТУСА заявки. Доступ по секретной ссылке из адреса.
+   Показываем МИНИМУМ: имя, статус и решение. Ни почты, ни IP, ни служебных
+   отметок — ссылка может уехать в чужие руки, и цена утечки должна быть нулевой. */
+%>
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Участникам</span>
+    <h1>Статус заявки</h1>
+  </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel">
+      <% if (!registration) { %>
+        <p class="lead">Заявка отправлена.</p>
+        <p class="muted">Ссылка на статус заявки отправлена на указанную почту.</p>
+      <% } else { %>
+        <p class="lead">
+          Заявка на имя «<%= registration.full_name %>» — <strong><%= statusText %></strong>.
+        </p>
+
+        <% if (registration.status === 'pending') { %>
+          <p class="muted">
+            Заявка передана секретарю Федерации. Решение придёт письмом на указанную вами почту,
+            здесь оно тоже появится — сохраните эту ссылку.
+          </p>
+        <% } else if (registration.status === 'approved') { %>
+          <p class="muted">
+            Вы включены в рейтинг Федерации. Если вы дали согласие на публикацию, ваши результаты
+            видны в <a href="/rating">открытом рейтинге</a>; если нет — вы участвуете в рейтинге,
+            но в таблице на месте фамилии стоит «Скрыто по заявлению».
+          </p>
+        <% } else { %>
+          <p class="muted">
+            <% if (registration.reject_reason) { %>
+              Причина: <%= registration.reject_reason %>
+            <% } else { %>
+              Причина не указана.
+            <% } %>
+          </p>
+          <p class="muted">
+            Если считаете отказ ошибкой — напишите на
+            <a href="mailto:<%= op.email %>"><%= op.email %></a> или позвоните
+            <a href="tel:<%= op.phoneHref %>"><%= op.phone %></a>.
+          </p>
+        <% } %>
+
+        <p class="muted">
+          Отозвать согласие или потребовать удаления данных можно в любой момент — письмом на
+          <a href="mailto:<%= op.email %>"><%= op.email %></a>. Порядок описан в
+          <a href="/privacy">Политике обработки персональных данных</a>.
+        </p>
+      <% } %>
+      <p class="table-foot"><a class="link-more" href="/">На главную <span aria-hidden="true">→</span></a></p>
+    </div>
+  </div>
+</section>
+</main>
+
+<%- include('partials/footer') %>
