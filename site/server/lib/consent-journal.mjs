@@ -13,16 +13,52 @@
 // автоочистка (purgeExpired) — см. CONSENT_RETENTION_DAYS.
 import { LEGAL_VERSION } from './legal.mjs';
 
-export const CONSENT_KINDS = ['processing', 'distribution'];
+// 'representative_processing' — согласие ЗАКОННОГО ПРЕДСТАВИТЕЛЯ на обработку
+// ЕГО СОБСТВЕННЫХ данных (ФИО, родство, e-mail). Это согласие ДРУГОГО субъекта,
+// не ребёнка: у представителя свои права на доступ и удаление, и слепить его
+// согласие с согласием за ребёнка значило бы лишить его этих прав.
+export const GUARDIAN_KIND = 'representative_processing';
+export const CONSENT_KINDS = ['processing', 'distribution', GUARDIAN_KIND];
 export const CONSENT_EVENTS = ['granted', 'revoked'];
+
+/**
+ * ВОРОТА УДАЛЕНИЯ. Журнал согласий неизменяем на уровне СУБД (триггеры в
+ * schema.sql): UPDATE запрещён совсем, DELETE — пока ворота закрыты. Закон,
+ * однако, требует удалять: право на забвение (ст. 21) и срок хранения самих
+ * записей. Обе операции законны, обе идут ЧЕРЕЗ ЭТУ ФУНКЦИЮ и только через неё.
+ *
+ * Ворота открыты ровно на время транзакции: упало внутри — транзакция
+ * откатилась, ворота закрыты вместе с ней. Один процесс и синхронный
+ * better-sqlite3 (см. db/connect.mjs) гарантируют, что «на время транзакции»
+ * не означает «на время, пока рядом кто-то ещё пишет».
+ */
+export function withConsentErasure(db, fn) {
+  const open = db.prepare('UPDATE consents_gate SET erasure_open = 1 WHERE id = 1');
+  const close = db.prepare('UPDATE consents_gate SET erasure_open = 0 WHERE id = 1');
+  return db.transaction(() => {
+    open.run();
+    try {
+      return fn();
+    } finally {
+      close.run();
+    }
+  })();
+}
 
 /**
  * Событие журнала. Редакцию НЕ принимаем параметром: она всегда текущая из
  * legal.mjs, иначе в журнал можно записать согласие на текст, которого не было.
+ *
+ * ЕДИНСТВЕННОЕ исключение — coveredVersion при ОТЗЫВЕ: отзыв гасит конкретное
+ * ранее данное согласие и обязан назвать ту редакцию, которую оно покрывало.
+ * Записать отзыв текущей редакцией значило бы утверждать, что человек принимал
+ * текст, которого в момент выдачи не существовало. Для 'granted' параметр
+ * игнорируется — придумать себе редакцию выдача не может.
  */
 export function recordConsent(db, {
   playerId = null,
   registrationId = null,
+  guardianId = null,
   subjectRef = null,
   kind,
   event,
@@ -30,18 +66,49 @@ export function recordConsent(db, {
   ip = null,
   basis = null,
   documentDate = null,
+  coveredVersion = null,
 }) {
   if (!CONSENT_KINDS.includes(kind)) throw new Error(`неизвестный вид согласия: ${kind}`);
   if (!CONSENT_EVENTS.includes(event)) throw new Error(`неизвестное событие согласия: ${event}`);
+  const version = event === 'revoked' && coveredVersion ? coveredVersion : LEGAL_VERSION;
   // Для бумажного согласия IP бессмысленен — не пишем мусор в ПДн-запись.
   const storedIp = source === 'offline' ? null : ip;
   const info = db
     .prepare(
-      `INSERT INTO consents (player_id, registration_id, subject_ref, kind, event, legal_version, source, ip, basis, document_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO consents (player_id, registration_id, guardian_id, subject_ref, kind, event, legal_version, source, ip, basis, document_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(playerId, registrationId, subjectRef, kind, event, LEGAL_VERSION, source, storedIp, basis, documentDate);
+    .run(playerId, registrationId, guardianId, subjectRef, kind, event, version, source, storedIp, basis, documentDate);
   return Number(info.lastInsertRowid);
+}
+
+/** Последняя ДЕЙСТВУЮЩАЯ (granted) запись по субъекту и виду — вместе с её редакцией. */
+export function lastGranted(db, { playerId = null, guardianId = null, kind }) {
+  const sql = guardianId
+    ? 'SELECT * FROM consents WHERE guardian_id = ? AND kind = ? ORDER BY id DESC LIMIT 1'
+    : 'SELECT * FROM consents WHERE player_id = ? AND kind = ? ORDER BY id DESC LIMIT 1';
+  const row = db.prepare(sql).get(guardianId || playerId, kind);
+  return row && row.event === 'granted' ? row : null;
+}
+
+/**
+ * ОТЗЫВ ранее данного согласия НОВОЙ строкой, несущей редакцию отзываемого
+ * текста. Если действующего согласия нет — отзывать нечего, и пустая запись
+ * «отозвано то, чего не было» в журнал не попадает.
+ */
+export function revokeCovered(db, { playerId = null, guardianId = null, kind, subjectRef = null, source = 'web', ip = null }) {
+  const granted = lastGranted(db, { playerId, guardianId, kind });
+  if (!granted) return null;
+  return recordConsent(db, {
+    playerId,
+    guardianId,
+    subjectRef: subjectRef || granted.subject_ref,
+    kind,
+    event: 'revoked',
+    source,
+    ip,
+    coveredVersion: granted.legal_version,
+  });
 }
 
 /**
@@ -58,15 +125,33 @@ export function recordRegistrationConsents(db, {
   ip = null,
   basis = null,
   documentDate = null,
+  // Согласие представителя на ЕГО СОБСТВЕННЫЕ данные — ТРЕТЬЯ, отдельная запись
+  // с ДРУГИМ субъектом. Пишется той же транзакцией: обработка данных ребёнка и
+  // хранение данных представителя начинаются одновременно, и основание у
+  // каждой должно быть зафиксировано в тот же момент.
+  guardianSubjectRef = null,
 }) {
   const base = { playerId, registrationId, subjectRef, source, ip, basis, documentDate };
   const tx = db.transaction(() => {
     const ids = {
       processing: recordConsent(db, { ...base, kind: 'processing', event: 'granted' }),
       distribution: null,
+      guardian: null,
     };
     if (distribution) {
       ids.distribution = recordConsent(db, { ...base, kind: 'distribution', event: 'granted' });
+    }
+    if (guardianSubjectRef) {
+      ids.guardian = recordConsent(db, {
+        ...base,
+        // player_id НЕ проставляется: субъект этой записи — представитель, а не
+        // ребёнок. Привязка к записи представителя доливается при одобрении
+        // заявки, когда guardians уже заведён.
+        playerId: null,
+        subjectRef: guardianSubjectRef,
+        kind: GUARDIAN_KIND,
+        event: 'granted',
+      });
     }
     if (playerId !== null) syncPlayerPublicFlag(db, playerId);
     return ids;
@@ -138,7 +223,8 @@ export function consentHistory(db, playerId, limit = 50) {
  * кабинете — это ОБЕЗЛИЧИВАНИЕ строки, а не DELETE, и каскад там не сработает.
  */
 export function eraseConsents(db, playerId) {
-  return db.prepare('DELETE FROM consents WHERE player_id = ?').run(playerId).changes;
+  return withConsentErasure(db, () =>
+    db.prepare('DELETE FROM consents WHERE player_id = ?').run(playerId).changes);
 }
 
 /**
@@ -150,7 +236,7 @@ export function eraseConsents(db, playerId) {
  */
 export function purgeExpired(db, retentionDays) {
   const cutoff = `-${Number(retentionDays)} days`;
-  const tx = db.transaction(() => {
+  return withConsentErasure(db, () => {
     // Виды согласий, где последнее событие — отзыв, и он старше срока.
     const stale = db
       .prepare(
@@ -165,12 +251,17 @@ export function purgeExpired(db, retentionDays) {
     const delByPair = db.prepare('DELETE FROM consents WHERE player_id = ? AND kind = ?');
     let removed = 0;
     for (const row of stale) removed += delByPair.run(row.player_id, row.kind).changes;
+    // Записи, не привязанные ни к кому: заявка не дошла до модерации.
+    // Согласия ПРЕДСТАВИТЕЛЯ (guardian_id) сюда не попадают, хотя player_id у
+    // них тоже пуст: у них свой срок и свой отсчёт — от снятия представителя,
+    // а не от даты записи (см. purgeGuardians в lib/guardians.mjs).
     removed += db
-      .prepare("DELETE FROM consents WHERE player_id IS NULL AND at <= datetime('now', ?)")
+      .prepare(
+        "DELETE FROM consents WHERE player_id IS NULL AND guardian_id IS NULL AND at <= datetime('now', ?)",
+      )
       .run(cutoff).changes;
     return removed;
   });
-  return tx();
 }
 
 // Планировщик автоочистки — общий для всех сроков хранения, см. lib/retention.mjs.

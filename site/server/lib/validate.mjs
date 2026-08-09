@@ -71,6 +71,60 @@ export function isoDate(value, field) {
   return v;
 }
 
+/**
+ * СОВЕРШЕННОЛЕТИЕ. Порог вынесен константой: он встречается в валидации формы,
+ * в провижининге аккаунта и в фоновой проверке перехода, и разъехавшиеся числа
+ * означали бы, что где-то ребёнок остаётся без представителя, а где-то взрослый
+ * не может распорядиться своими данными.
+ */
+export const ADULT_AGE = 18;
+
+/** Сегодняшняя дата по UTC в формате ГГГГ-ММ-ДД. */
+export function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * ПОЛНЫХ ЛЕТ на дату. Считается по календарю, а не делением дней на 365.25:
+ * в день восемнадцатилетия человек уже совершеннолетний, а 29 февраля не должно
+ * давать «плюс год» раньше срока.
+ */
+export function ageOn(birthDateIso, onDateIso = today()) {
+  const [by, bm, bd] = String(birthDateIso).split('-').map(Number);
+  const [ny, nm, nd] = String(onDateIso).split('-').map(Number);
+  let age = ny - by;
+  if (nm < bm || (nm === bm && nd < bd)) age -= 1;
+  return age;
+}
+
+export const isMinor = (birthDateIso, onDateIso = today()) => ageOn(birthDateIso, onDateIso) < ADULT_AGE;
+
+/**
+ * ДАТА РОЖДЕНИЯ. Кроме формата проверяются две границы здравого смысла: дата
+ * не в будущем и не старше 120 лет. Обе — не придирка: на будущей дате возраст
+ * получится отрицательным, и «несовершеннолетним» окажется кто угодно.
+ */
+export function birthDate(value, field = 'Дата рождения') {
+  const v = isoDate(value, field);
+  const now = today();
+  if (v > now) throw new ValidationError(`${field}: дата в будущем`);
+  if (ageOn(v, now) > 120) throw new ValidationError(`${field}: проверьте год — получается больше 120 лет`);
+  return v;
+}
+
+/**
+ * ЗАКОННЫЙ ПРЕДСТАВИТЕЛЬ. Состав минимален и весь нужен по делу: ФИО и родство —
+ * чтобы понимать, КТО и НА КАКОМ ОСНОВАНИИ даёт согласие за ребёнка, e-mail —
+ * единственный канал связи и логин кабинета, пока действует гейт.
+ */
+export function guardianInput(body) {
+  return {
+    full_name: str(body.guardian_full_name, 'ФИО законного представителя', { max: 120 }),
+    relation: str(body.guardian_relation, 'Степень родства (кем приходится)', { min: 3, max: 60 }),
+    email: email(body.guardian_email, 'E-mail законного представителя'),
+  };
+}
+
 export function playerInput(body) {
   return {
     full_name: str(body.full_name, 'ФИО', { max: 120 }),
@@ -110,18 +164,42 @@ export function email(value, field = 'E-mail', { required = true } = {}) {
 
 /**
  * Поля публичной заявки. МИНИМИЗАЦИЯ (ч. 5 ст. 5): обязательны только ФИО,
- * город, пол и почта — то, без чего заявку не рассмотреть и не ответить.
- * Возрастная группа необязательна (её уточнит секретарь), телефона и даты
- * рождения в форме нет вовсе.
+ * город, пол, дата рождения и почта — то, без чего заявку не рассмотреть,
+ * не ответить и не понять, кто вправе дать согласие. Возрастная группа
+ * необязательна (её уточнит секретарь), телефона в форме нет вовсе.
+ *
+ * ДАТА РОЖДЕНИЯ появилась не ради статистики: за лицо младше 18 согласие даёт
+ * законный представитель (ч. 1 ст. 9 152-ФЗ), и без даты неизвестно, чьё
+ * согласие вообще является основанием обработки. В публичный вывод она не идёт.
+ *
+ * ПОЧТА НЕСОВЕРШЕННОЛЕТНЕГО НЕ СОБИРАЕТСЯ ВОВСЕ: пока действует гейт, контакт
+ * и логин кабинета — почта представителя. Свой адрес человек указывает при
+ * переходе в 18. Заполненное поле почты у минора — не «лишние данные, которые
+ * можно тихо выбросить», а расхождение с тем, что человек ожидает: поэтому
+ * отвечаем понятной ошибкой, а не молчаливым игнорированием ввода.
  */
 export function registrationInput(body) {
-  return {
+  const base = {
     full_name: str(body.full_name, 'ФИО', { max: 120 }),
     city: str(body.city, 'Город', { max: 80 }),
     sex: oneOf(body.sex, 'Пол', SEXES),
     age_group: oneOf(body.age_group, 'Возрастная группа', AGE_GROUPS, { required: false }),
-    email: email(body.email),
+    birth_date: birthDate(body.birth_date),
   };
+  if (!isMinor(base.birth_date)) {
+    return { ...base, email: email(body.email), guardian: null };
+  }
+  if (str(body.email, 'E-mail', { required: false, max: 160 })) {
+    throw new ValidationError(
+      'До 18 лет контактом и логином кабинета служит почта законного представителя — ' +
+        'поле «Электронная почта участника» оставьте пустым.',
+    );
+  }
+  const guardian = guardianInput(body);
+  // registrations.email — адрес, по которому уходит решение по заявке и ссылка
+  // установки пароля. Для минора это адрес представителя, и другого адреса на
+  // заявке нет: иначе половина писем ушла бы «в никуда».
+  return { ...base, email: guardian.email, guardian };
 }
 
 /**

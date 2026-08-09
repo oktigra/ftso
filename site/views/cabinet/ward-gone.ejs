@@ -1,0 +1,32 @@
+<%
+/* Связь представителя с участником сняли, пока он сидел в кабинете (замена
+   представителя или переход в 18). Проверка идёт на КАЖДОМ запросе, поэтому
+   действие обрывается сразу, а не на следующий вход. */
+%>
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Законный представитель</span>
+    <h1>Доступ к кабинету участника прекращён</h1>
+  </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel">
+      <p class="lead">Вы больше не числитесь действующим законным представителем участника <%= fullName %>.</p>
+      <p class="muted">
+        Так бывает в двух случаях: участнику исполнилось 18 лет либо Федерация зарегистрировала
+        замену представителя. Если это ошибка — напишите на
+        <a href="mailto:<%= op.email %>"><%= op.email %></a>.
+      </p>
+      <p class="table-foot">
+        <a class="link-more" href="/cabinet/wards">К списку участников <span aria-hidden="true">→</span></a>
+      </p>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

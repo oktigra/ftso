@@ -6,6 +6,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { hashPassword, verifyPassword } from './password.mjs';
 import { ValidationError } from './validate.mjs';
+import { activeGuardianFor } from './guardians.mjs';
 
 export const PASSWORD_MIN = 10;
 const PASSWORD_MAX = 200;
@@ -51,8 +52,14 @@ export function checkPasswordPolicy(password, { email = '', fullName = '' } = {}
   return pw;
 }
 
+/**
+ * Аккаунт по адресу. Пустой адрес НЕ ищем: у детей под гейтом почта пуста, и
+ * запрос с пустой строкой не должен возвращать «первого попавшегося ребёнка».
+ */
 export function accountByEmail(db, email) {
-  return db.prepare('SELECT * FROM player_accounts WHERE email = ?').get(String(email || '').toLowerCase());
+  const address = String(email || '').toLowerCase();
+  if (!address) return undefined;
+  return db.prepare('SELECT * FROM player_accounts WHERE email = ?').get(address);
 }
 
 export function accountByPlayer(db, playerId) {
@@ -98,15 +105,46 @@ export function setPassword(db, accountId, password) {
   tx();
 }
 
-/** Создание аккаунта при одобрении заявки. Пароль игрок задаёт сам по ссылке. */
-export function createAccount(db, { playerId, email }) {
+/**
+ * Создание аккаунта при одобрении заявки. Пароль игрок задаёт сам по ссылке.
+ *
+ * consentBasis:
+ *   'self'           — субъект отвечает за себя (совершеннолетний);
+ *   'representative' — за несовершеннолетнего согласие дал законный
+ *                      представитель; аккаунт принадлежит РЕБЁНКУ, а логином и
+ *                      контактом служит почта ПРЕДСТАВИТЕЛЯ, пока держится гейт.
+ */
+export function createAccount(db, { playerId, email = null, consentBasis = 'self' }) {
   const existing = accountByPlayer(db, playerId);
   if (existing) return existing;
+  // Почта ПУСТА, пока держится гейт: своего входа у ребёнка нет, входит
+  // представитель своим логином. Пустое поле не нарушает UNIQUE, поэтому двое
+  // детей одного представителя заводятся спокойно.
+  const address = email ? String(email).toLowerCase() : null;
+  if (address) {
+    const taken = accountByEmail(db, address);
+    if (taken) {
+      const err = new Error(`Адрес ${address} уже служит логином кабинета игрока #${taken.player_id}.`);
+      err.code = 'ACCOUNT_EMAIL_TAKEN';
+      throw err;
+    }
+  }
   const info = db
-    .prepare('INSERT INTO player_accounts (player_id, email) VALUES (?, ?)')
-    .run(playerId, String(email).toLowerCase());
+    .prepare('INSERT INTO player_accounts (player_id, email, consent_basis) VALUES (?, ?, ?)')
+    .run(playerId, address, consentBasis);
   return db.prepare('SELECT * FROM player_accounts WHERE id = ?').get(Number(info.lastInsertRowid));
 }
+
+/**
+ * ОСНОВАНИЕ, на котором держится аккаунт. NULL == 'self': аккаунты, заведённые
+ * ДО появления слоя представителей, взрослые по определению — флоу
+ * представителя тогда не существовало, и задним числом объявлять их детскими
+ * значило бы придумывать факты о людях.
+ */
+export const basisOf = (account) => (account && account.consent_basis) || 'self';
+export const isRepresented = (account) => basisOf(account) === 'representative';
+export const isAwaitingSelf = (account) => basisOf(account) === 'awaiting_self';
+export const isFrozen = (account) => Boolean(account && account.frozen_at) && isAwaitingSelf(account);
 
 export function checkLogin(db, email, password) {
   const account = accountByEmail(db, email);
@@ -114,16 +152,34 @@ export function checkLogin(db, email, password) {
   return verifyPassword(password, account.password_hash) ? account : null;
 }
 
-/** Профиль для кабинета: сам игрок + его аккаунт. */
+/**
+ * Профиль для кабинета: сам игрок + его аккаунт.
+ *
+ * ДАТЫ РОЖДЕНИЯ ЗДЕСЬ НЕТ И НЕ ДОЛЖНО БЫТЬ. Она внутреннее поле: нужна фоновой
+ * проверке совершеннолетия и провижинингу, а этот объект уходит в шаблон
+ * кабинета целиком. Достаточно вычисленного состояния гейта — оно и показывается.
+ */
 export function cabinetProfile(db, playerId) {
-  return db
+  const row = db
     .prepare(
       `SELECT p.id, p.full_name, p.city, p.sex, p.age_group, p.is_public, p.anonymized_at,
-              p.photo_upload_id, a.email
+              p.photo_upload_id, a.email, a.consent_basis, a.frozen_at, a.transition_started_at
          FROM players p LEFT JOIN player_accounts a ON a.player_id = p.id
         WHERE p.id = ?`,
     )
     .get(playerId);
+  if (!row) return row;
+  const guardian = isRepresented(row) ? activeGuardianFor(db, playerId) : null;
+  return {
+    ...row,
+    basis: basisOf(row),
+    // В шаблон уходит только то, что кабинет показывает: кто представитель и кем
+    // приходится. Пароль и токены представителя тут делать нечего.
+    guardian: guardian
+      ? { full_name: guardian.full_name, relation: guardian.relation, email: guardian.email }
+      : null,
+    frozen: isFrozen(row),
+  };
 }
 
 /**

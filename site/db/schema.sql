@@ -30,6 +30,14 @@ CREATE TABLE IF NOT EXISTS players (
   is_public INTEGER NOT NULL DEFAULT 0 CHECK (is_public IN (0,1)),
   -- Фото профиля (личный кабинет). Файл живёт в uploads, вне webroot.
   photo_upload_id INTEGER REFERENCES uploads(id) ON DELETE SET NULL,
+  -- ДАТА РОЖДЕНИЯ — СТРОГО ВНУТРЕННЕЕ ПОЛЕ. Нужна ровно для одного: определить,
+  -- несовершеннолетний ли субъект (за него согласие даёт законный представитель,
+  -- ч. 1 ст. 9 152-ФЗ) и когда гейт представителя снимается. В публичный вывод
+  -- (рейтинг, карточка турнира, снимок standings_json) и в сериализованные
+  -- ответы кабинета НЕ попадает — см. проверку в acceptance.mjs.
+  birth_date TEXT
+    CHECK (birth_date IS NULL OR (birth_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+                                  AND birth_date IS strftime('%Y-%m-%d', birth_date))),
   -- ОБЕЗЛИЧЕНА ПО СТ. 21. Строка игрока остаётся, но личных данных в ней больше
   -- нет: ФИО затёрто, город и группа очищены, аккаунт и фото удалены.
   -- Строку нельзя было удалить целиком — на неё ссылаются матчи, а они влияют
@@ -92,6 +100,16 @@ CREATE TABLE IF NOT EXISTS registrations (
   sex           TEXT NOT NULL CHECK (sex IN ('M','F')),
   age_group     TEXT,
   email         TEXT NOT NULL CHECK (length(trim(email)) BETWEEN 5 AND 160),
+  -- Дата рождения обязательна с введения слоя несовершеннолетних: без неё нельзя
+  -- решить, кто даёт согласие — сам субъект или его законный представитель.
+  -- У заявок, поданных ДО этого, поле пустое (см. db/migrate.mjs).
+  birth_date    TEXT,
+  -- ЗАКОННЫЙ ПРЕДСТАВИТЕЛЬ заявителя младше 18. Живёт на заявке до модерации:
+  -- игрока ещё нет, вешать представителя не на что. При одобрении переезжает
+  -- в guardians одной транзакцией с созданием аккаунта.
+  guardian_full_name TEXT,
+  guardian_relation  TEXT,
+  guardian_email     TEXT,
   status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
   status_token  TEXT NOT NULL UNIQUE,
   -- заполняется при одобрении: новый игрок либо привязка к существующему
@@ -122,8 +140,14 @@ CREATE TABLE IF NOT EXISTS consents (
   -- Согласие даётся В МОМЕНТ ПОДАЧИ заявки, когда игрока ещё нет. Пока заявка
   -- на модерации, запись висит на ней; при одобрении к ней доливается player_id.
   registration_id INTEGER REFERENCES registrations(id) ON DELETE CASCADE,
+  -- ПРЕДСТАВИТЕЛЬ КАК САМОСТОЯТЕЛЬНЫЙ СУБЪЕКТ. Согласие представителя на
+  -- обработку ЕГО СОБСТВЕННЫХ данных (ФИО, родство, e-mail) — это отдельное
+  -- согласие отдельного субъекта, а не часть согласия за ребёнка. Поэтому у
+  -- него свой kind ('representative_processing') и своя привязка: subject_ref
+  -- указывает на представителя, guardian_id — на его запись.
+  guardian_id   INTEGER REFERENCES guardians(id) ON DELETE CASCADE,
   subject_ref   TEXT,
-  kind          TEXT NOT NULL CHECK (kind  IN ('processing','distribution')),
+  kind          TEXT NOT NULL CHECK (kind  IN ('processing','distribution','representative_processing')),
   event         TEXT NOT NULL CHECK (event IN ('granted','revoked')),
   -- РЕДАКЦИЯ принятого текста (server/lib/legal.mjs). Согласие без указания
   -- редакции юридически пусто: через год не доказать, что именно приняли.
@@ -143,6 +167,81 @@ CREATE TABLE IF NOT EXISTS consents (
 CREATE INDEX IF NOT EXISTS idx_consents_player_kind ON consents (player_id, kind, id DESC);
 -- Автоочистка ходит по дате.
 CREATE INDEX IF NOT EXISTS idx_consents_at ON consents (at);
+
+-- НЕИЗМЕНЯЕМОСТЬ ЖУРНАЛА НА УРОВНЕ СУБД.
+--
+-- Append-only журнал, который держится только на дисциплине кода, перестаёт
+-- быть доказательством: одна забытая UPDATE — и запись согласия «всегда была
+-- такой». Поэтому запрет стоит в самой БД, триггерами, и обойти его из
+-- приложения нельзя.
+--
+-- Но удалять записи ИНОГДА ОБЯЗАНЫ: право на забвение (ст. 21) и срок хранения
+-- журнала — это не «правка», а исполнение закона. Разрешённое удаление
+-- открывает ВОРОТА consents_gate ровно на время своей транзакции
+-- (см. withConsentErasure в server/lib/consent-journal.mjs). Любое удаление
+-- мимо этой функции — включая каскад от players/registrations/guardians —
+-- отвергается СУБД.
+CREATE TABLE IF NOT EXISTS consents_gate (
+  id           INTEGER PRIMARY KEY CHECK (id = 1),
+  erasure_open INTEGER NOT NULL DEFAULT 0 CHECK (erasure_open IN (0,1))
+);
+INSERT OR IGNORE INTO consents_gate (id, erasure_open) VALUES (1, 0);
+-- Сами триггеры — и индекс по guardian_id — живут в ОТДЕЛЬНОМ файле
+-- db/after-upgrade.sql и накатываются ПОСЛЕ всех правок колонок: они ссылаются
+-- на consents.guardian_id, а в базе, поднятой с прежней схемы, этой колонки на
+-- момент применения schema.sql ещё нет (см. db/migrate.mjs).
+
+-- ЗАКОННЫЕ ПРЕДСТАВИТЕЛИ несовершеннолетних участников.
+--
+-- Представитель — не владелец кабинета и не второй профиль ребёнка, а
+-- ВХОДНАЯ СУЩНОСТЬ СО СВОИМ ЛОГИНОМ: кабинет принадлежит ребёнку, представитель
+-- в него входит и действует от его имени, пока держится гейт. В 18 гейт
+-- снимается, аккаунт «взрослеет», передачи владения не происходит — владелец
+-- не менялся.
+--
+-- ОДНА ЗАПИСЬ НА РЕАЛЬНОГО ЧЕЛОВЕКА, а не на пару «родитель+ребёнок». У матери
+-- двоих юниоров один логин и один пароль, дети — в списке подопечных. Иначе
+-- почта представителя пришлось бы дублировать в двух кабинетах, а она уникальна:
+-- второй ребёнок просто не завёлся бы.
+CREATE TABLE IF NOT EXISTS guardians (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name     TEXT NOT NULL CHECK (length(trim(full_name)) BETWEEN 1 AND 120),
+  -- Логин представителя. UNIQUE среди представителей: это его вход.
+  email         TEXT NOT NULL UNIQUE CHECK (length(trim(email)) BETWEEN 5 AND 160),
+  password_hash TEXT CHECK (password_hash IS NULL OR password_hash LIKE 'scrypt$%'),
+  reset_token         TEXT,
+  reset_expires_at    TEXT,
+  password_changed_at TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  -- Проставляется, когда у представителя не осталось действующих подопечных
+  -- (все выросли или заменены). Запись НЕ удаляется сразу: она объясняет, на
+  -- каком основании данные детей обрабатывались раньше. Отсюда идёт отсчёт
+  -- срока хранения — GUARDIAN_RETENTION_DAYS.
+  revoked_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_guardians_reset ON guardians (reset_token);
+CREATE INDEX IF NOT EXISTS idx_guardians_revoked ON guardians (revoked_at);
+
+-- СВЯЗКА «представитель — подопечный». Отдельной таблицей, а не полем на
+-- аккаунте, по двум причинам: у одного представителя несколько детей, а степень
+-- родства принадлежит именно ПАРЕ (одному ребёнку он отец, другому — опекун).
+--
+-- Связь не удаляется при снятии, а гасится revoked_at: замена представителя
+-- (развод, лишение прав, смерть) не должна стирать историю того, кто давал
+-- согласие за ребёнка раньше.
+CREATE TABLE IF NOT EXISTS guardian_wards (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guardian_id INTEGER NOT NULL REFERENCES guardians(id) ON DELETE CASCADE,
+  player_id   INTEGER NOT NULL REFERENCES players(id)   ON DELETE CASCADE,
+  relation    TEXT NOT NULL CHECK (length(trim(relation)) BETWEEN 1 AND 60),
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  revoked_at  TEXT
+);
+-- НЕ БОЛЕЕ ОДНОГО ДЕЙСТВУЮЩЕГО представителя на ребёнка — на уровне СУБД, а не
+-- проверкой в коде: два действующих представителя означают два конкурирующих
+-- источника согласия за одного ребёнка.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_guardian_wards_active ON guardian_wards (player_id) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_guardian_wards_guardian ON guardian_wards (guardian_id, revoked_at);
 
 -- ЗАГРУЖЕННЫЕ ФАЙЛЫ — общая таблица на все аплоады (документы турниров,
 -- галерея, /documents). Сам файл лежит ВНЕ webroot под случайным именем;
@@ -209,12 +308,48 @@ CREATE TABLE IF NOT EXISTS tournament_request_files (
 CREATE TABLE IF NOT EXISTS player_accounts (
   id                  INTEGER PRIMARY KEY AUTOINCREMENT,
   player_id           INTEGER NOT NULL UNIQUE REFERENCES players(id) ON DELETE CASCADE,
-  email               TEXT NOT NULL UNIQUE,
+  -- ПОЧТА ПУСТА, ПОКА ДЕЙСТВУЕТ ГЕЙТ ПРЕДСТАВИТЕЛЯ. Свою почту ребёнок по
+  -- закону заводит с 14 лет, а до 14 — только через представителя, поэтому
+  -- требовать её нельзя: входит представитель, своим логином (таблица
+  -- guardians). Пустое поле — не «недозаполненный аккаунт», а состояние: у
+  -- ребёнка НЕТ отдельного входа, пока за него отвечает представитель.
+  -- UNIQUE при этом не мешает: в SQLite NULL уникальности не нарушает, и у
+  -- матери двоих юниоров оба кабинета спокойно существуют без почты.
+  -- Свой адрес человек указывает при переходе в 18 — он и становится логином.
+  email               TEXT UNIQUE,
   password_hash       TEXT CHECK (password_hash IS NULL OR password_hash LIKE 'scrypt$%'),
   -- Токен установки/сброса пароля: одноразовый, с истечением.
   reset_token         TEXT,
   reset_expires_at    TEXT,
   password_changed_at TEXT,
+  -- ЧЕЙ СОГЛАСИЕМ ДЕРЖИТСЯ АККАУНТ:
+  --   'representative' — за несовершеннолетнего согласие дал законный
+  --                      представитель, он же контакт и логин кабинета;
+  --   'awaiting_self'  — 18 наступило, представительское согласие больше не
+  --                      основание, собственное ещё не дано (гейт перехода);
+  --   'self'           — субъект отвечает за себя сам.
+  -- NULL — аккаунт заведён ДО введения этого слоя: флоу представителя тогда не
+  -- существовало, такой аккаунт ВЕЗДЕ трактуется как 'self' и в минорный
+  -- жизненный цикл не попадает. Поэтому в запросах пишется ЯВНОЕ
+  -- `= 'representative'` / `IN ('representative','awaiting_self')`, и НИКОГДА
+  -- `<> 'self'`: NULL <> 'self' в SQL не истина, и такое условие тихо теряло бы
+  -- строки — либо, наоборот, затягивало бы взрослых в чужой сценарий.
+  consent_basis       TEXT CHECK (consent_basis IS NULL
+                                  OR consent_basis IN ('representative','awaiting_self','self')),
+  -- Отметки перехода в 18. Нужны, чтобы фоновая проверка была ИДЕМПОТЕНТНОЙ:
+  -- письмо в день 0, напоминание на +14 и заморозка на +30 должны случиться
+  -- по одному разу, а не на каждом проходе таймера.
+  transition_started_at  TEXT,
+  transition_reminded_at TEXT,
+  -- ХЭШ ТОКЕНА экрана перехода. Своего входа у вчерашнего ребёнка нет (почта
+  -- пуста, пароля не было), а представитель в 18 уже не вправе действовать за
+  -- него — значит, попасть на экран перехода можно только по личной ссылке.
+  -- Срока годности у неё намеренно НЕТ: протухшая ссылка означала бы человека,
+  -- запертого снаружи собственных данных. Гасится завершением перехода.
+  transition_token       TEXT,
+  -- ЗАМОРОЗКА (+30 дней без завершения перехода): кабинет только на чтение,
+  -- значимые действия недоступны. Данные при этом НЕ удаляются.
+  frozen_at              TEXT,
   created_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_player_accounts_reset ON player_accounts (reset_token);

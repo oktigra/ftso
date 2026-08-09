@@ -400,6 +400,26 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 .consent-proof{margin-top:.3rem; font-size:.82rem;}
 .cabinet-steps{margin:0; padding-left:1.35rem; display:flex; flex-direction:column; gap:.5rem;}
 
+/* --- несовершеннолетние и законный представитель --- */
+/* Отметка «за участника отвечает представитель» — не украшение: она объясняет,
+   почему у кабинета другой набор действий и другой контакт. */
+.badge-line{display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; margin:.5rem 0 0;}
+.badge--minor{background:var(--accent); color:#fff;}
+/* Список подопечных: строка = участник + кнопка «открыть его кабинет». */
+.cabinet-wards{list-style:none; margin:1rem 0 0; padding:0; display:flex; flex-direction:column;}
+.ward-item{
+  border-top:1px solid var(--border); padding:.85rem 0;
+  display:flex; flex-wrap:wrap; gap:.75rem; align-items:center; justify-content:space-between;
+}
+.ward-item:first-child{border-top:0;}
+.ward-item .muted{display:block; font-size:.85rem;}
+/* Колонка представителя в таблице игроков: форма замены раскрывается по месту,
+   чтобы не уводить секретаря на отдельный экран ради трёх полей. */
+.guardian-cell{min-width:14rem; font-size:.85rem;}
+.guardian-cell details{margin-top:.4rem;}
+.guardian-cell summary{cursor:pointer; color:var(--primary);}
+.guardian-cell .stacked-form{margin-top:.5rem; gap:.5rem;}
+
 /* --- доступность и адаптив (единый проход) --- */
 
 /* Заголовок таблицы для скринридера: виден программе чтения, не занимает места.

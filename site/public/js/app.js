@@ -142,6 +142,39 @@
     });
   }
 
+
+  // --- форма регистрации: блок законного представителя ----------------------
+  //
+  // ПРОГРЕССИВНОЕ УЛУЧШЕНИЕ, а не условие работы формы: без JS видны оба блока,
+  // и заявка всё равно проходит — обязательность решает СЕРВЕР по дате рождения
+  // (см. server/lib/validate.mjs). Здесь только убираем со страницы то, что
+  // конкретному заявителю заполнять не нужно.
+  var birth = document.getElementById('r-birth');
+  if (birth) {
+    var blocks = document.querySelectorAll('[data-minor]');
+    var syncMinor = function () {
+      var v = birth.value;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+        // Дата не введена или неполна — показываем всё: угадывать не наше дело.
+        Array.prototype.forEach.call(blocks, function (el) { el.hidden = false; });
+        return;
+      }
+      var p = v.split('-');
+      var now = new Date();
+      var age = now.getFullYear() - Number(p[0]);
+      var m = now.getMonth() + 1 - Number(p[1]);
+      if (m < 0 || (m === 0 && now.getDate() < Number(p[2]))) age -= 1;
+      var minor = age < 18;
+      Array.prototype.forEach.call(blocks, function (el) {
+        var want = el.getAttribute('data-minor');
+        el.hidden = want === 'minor' ? !minor : minor;
+      });
+    };
+    birth.addEventListener('change', syncMinor);
+    birth.addEventListener('blur', syncMinor);
+    syncMinor();
+  }
+
   // Строки таблицы турниров — кликабельны целиком (в макете row как ссылка).
   Array.prototype.forEach.call(document.querySelectorAll('tr[data-href]'), function (row) {
     row.addEventListener('click', function (e) {

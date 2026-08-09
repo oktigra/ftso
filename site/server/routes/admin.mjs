@@ -44,6 +44,18 @@ import { sendUpload, uploadById } from '../lib/uploads.mjs';
 import { attachRequestFiles } from '../lib/content.mjs';
 import { createAccount, issueResetToken } from '../lib/player-accounts.mjs';
 import {
+  activeGuardianFor,
+  attachGuardian,
+  guardianByEmail,
+  guardianHistoryFor,
+  issueGuardianResetToken,
+  recordGuardianConsent,
+  revokeWard,
+} from '../lib/guardians.mjs';
+import { revokeGuardianSessions, revokePlayerSessions } from '../lib/erasure.mjs';
+import { withConsentErasure } from '../lib/consent-journal.mjs';
+import { guardianInput, isMinor, ageOn } from '../lib/validate.mjs';
+import {
   queueMail,
   flushOutbox,
   outboxSummary,
@@ -51,6 +63,9 @@ import {
   mailApproved,
   mailRejected,
   mailCabinetInvite,
+  mailGuardianInvite,
+  mailGuardianWardAdded,
+  mailGuardianChanged,
   mailTournamentApproved,
   mailTournamentRejected,
 } from '../lib/mailer.mjs';
@@ -139,6 +154,11 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // игрок не публикуется, а не гадать по флагу.
       players: players.map((p) => ({
         ...p,
+        // Несовершеннолетие — ВЫЧИСЛЯЕМАЯ отметка, а не показ даты рождения:
+        // секретарю нужно знать, нужен ли представитель, а не сама дата.
+        minor: Boolean(p.birth_date) && isMinor(p.birth_date),
+        guardian: activeGuardianFor(db, p.id) || null,
+        guardianHistory: guardianHistoryFor(db, p.id),
         consent: consentState(db, p.id),
         // ОТМЕТКА В КАРТОЧКЕ: чем и от какой даты подтверждена публикация.
         proof: db
@@ -223,9 +243,104 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // каскадом — удаление игрока в личном кабинете будет ОБЕЗЛИЧИВАНИЕМ
       // строки, а не DELETE, и каскад там не сработает.
       const wiped = eraseConsents(db, id);
-      db.prepare('DELETE FROM players WHERE id = ?').run(id);
+      // Ворота журнала открываем на всё удаление: каскад от players уносит и
+      // заявки, а вместе с ними — согласия, данные при подаче. Журнал закрыт на
+      // удаление триггером СУБД, и это законное исключение, а не обход.
+      withConsentErasure(db, () => db.prepare('DELETE FROM players WHERE id = ?').run(id));
       logAction(db, req.session.user.id, 'player.delete', id, { consents_erased: wiped });
       flash(req, res, 'ok', 'Игрок удалён.', '/admin/players');
+    }),
+  );
+
+  /**
+   * ЗАМЕНА ЗАКОННОГО ПРЕДСТАВИТЕЛЯ — развод, лишение родительских прав, смерть,
+   * отзыв представителем согласия на обработку СВОИХ данных.
+   *
+   * Через админку, а не самообслуживанием, по существу дела: основание замены —
+   * документ (решение суда, свидетельство, заявление), и проверяет его человек.
+   * Поэтому здесь, как и у публикации ФИО вручную, ОБЯЗАТЕЛЬНЫ основание и дата
+   * документа: «в админке нажали кнопку» правовым основанием не является.
+   *
+   * Запись ИГРОКА не пересоздаётся: меняется представитель, а не участник.
+   * Второго действующего представителя не появится — частичный уникальный
+   * индекс не даст.
+   */
+  app.post(
+    '/admin/players/:id/guardian',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const player = db.prepare('SELECT * FROM players WHERE id = ?').get(id);
+      if (!player) throw new ValidationError('Игрок не найден');
+      if (player.anonymized_at) throw new ValidationError('Данные этого игрока удалены');
+      if (!player.birth_date || !isMinor(player.birth_date)) {
+        throw new ValidationError(
+          'Законный представитель назначается только несовершеннолетнему участнику. ' +
+            'Проверьте дату рождения в карточке.',
+        );
+      }
+      const data = guardianInput(req.body);
+      // Чем подтверждены полномочия и какой датой. Формулировки свои: «основание
+      // публикации» здесь читалось бы не о том.
+      const proof = {
+        basis: str(req.body.guardian_basis, 'Документ, подтверждающий полномочия', { max: 200 }),
+        documentDate: isoDate(req.body.guardian_document_date, 'Дата документа'),
+      };
+      const previous = activeGuardianFor(db, id);
+
+      const out = db.transaction(() => {
+        // Старая связь гасится ПЕРВОЙ: частичный уникальный индекс не допустит
+        // второго действующего представителя, и порядок здесь не косметика.
+        if (previous) revokeWard(db, id, { source: 'offline' });
+        const { guardian } = attachGuardian(db, id, data);
+        recordGuardianConsent(db, guardian, {
+          source: 'offline',
+          basis: proof.basis,
+          documentDate: proof.documentDate,
+        });
+        // Основание аккаунта ставим явно: игрока могли завести руками, и без
+        // этой отметки гейт (в том числе снятие в 18) не сработает. Взрослого
+        // сюда не занесёт — выше проверен возраст по дате рождения.
+        db.prepare("UPDATE player_accounts SET consent_basis = 'representative' WHERE player_id = ?").run(id);
+        return guardian;
+      })();
+
+      // СЕССИИ СНЯТОГО представителя гасим сразу: доработать сеанс в кабинете
+      // ребёнка он не должен — полномочий больше нет.
+      let revoked = 0;
+      if (previous) {
+        revoked = revokeGuardianSessions(db, previous.id) + revokePlayerSessions(db, id, null);
+      }
+
+      if (!out.password_hash) {
+        const token = issueGuardianResetToken(db, out.id);
+        const letter = mailGuardianChanged({
+          fullName: player.full_name,
+          setUrl: `${req.protocol}://${req.get('host')}/cabinet/reset/g/${token}`,
+        });
+        queueMail(db, { to: out.email, kind: 'cabinet.guardian.changed', ...letter });
+      } else {
+        const note = mailGuardianWardAdded({ childName: player.full_name });
+        queueMail(db, { to: out.email, kind: 'cabinet.guardian.ward', ...note });
+      }
+      flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
+
+      logAction(db, req.session.user.id, 'guardian.replace', id, {
+        previous_guardian_id: previous ? previous.id : null,
+        guardian_id: out.id,
+        sessions_revoked: revoked,
+        ...proof,
+      });
+      flash(
+        req,
+        res,
+        'ok',
+        previous
+          ? `Законный представитель заменён: ${out.full_name}. Доступ прежнего прекращён.`
+          : `Законный представитель назначен: ${out.full_name}.`,
+        '/admin/players',
+      );
     }),
   );
 
@@ -240,10 +355,16 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       pending: pendingRegistrations(db).map((r) => {
         const allowsPublication = registrationAllowsPublication(db, r.id);
         const matches = findNameMatches(db, r.full_name);
+        const minor = Boolean(r.birth_date) && isMinor(r.birth_date);
         return {
           ...r,
           matches,
           allowsPublication,
+          minor,
+          age: r.birth_date ? ageOn(r.birth_date) : null,
+          // Представитель уже заведён — значит, это второй ребёнок: новый логин
+          // не появится, участник добавится к существующему доступу.
+          guardianKnown: minor && Boolean(guardianByEmail(db, r.guardian_email)),
           // КОНФЛИКТ ВОЛИ: заявитель публикацию НЕ разрешил, а найденный тёзка
           // сейчас публикуется. Само это не решается: если это тот же человек,
           // публикацию надо снять; если однофамилец — трогать нельзя. Решает
@@ -277,20 +398,57 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const reg = out.registration;
       const letter = mailApproved({ fullName: reg.full_name, statusUrl: statusUrlFor(req, reg.status_token) });
       queueMail(db, { to: reg.email, kind: 'registration.approved', ...letter });
+
       // ЛИЧНЫЙ КАБИНЕТ открывается здесь же: аккаунт создаётся без пароля, а
-      // пароль игрок задаёт сам по одноразовой ссылке. Пароль за человека мы
-      // не придумываем и по почте не отправляем.
-      const account = createAccount(db, { playerId: out.playerId, email: reg.email });
-      if (!account.password_hash) {
+      // пароль задаётся по одноразовой ссылке. Пароль за человека мы не
+      // придумываем и по почте не отправляем.
+      //
+      // ДЛЯ НЕСОВЕРШЕННОЛЕТНЕГО кабинет заводится на РЕБЁНКА, но БЕЗ почты и
+      // без пароля: входит представитель своим логином. Ссылка установки
+      // пароля уходит ЕМУ и только если пароля у него ещё нет — второй ребёнок
+      // той же матери не заводит второй логин и не сбрасывает ей пароль.
+      const host = `${req.protocol}://${req.get('host')}`;
+      let account;
+      try {
+        account = createAccount(db, {
+          playerId: out.playerId,
+          email: out.guardian ? null : reg.email,
+          consentBasis: out.guardian ? 'representative' : 'self',
+        });
+      } catch (err) {
+        if (err.code === 'ACCOUNT_EMAIL_TAKEN') throw new ValidationError(err.message);
+        throw err;
+      }
+
+      if (out.guardian) {
+        // Приглашение — только НОВОМУ представителю. Второй ребёнок той же
+        // матери не должен перевыпускать ей токен: это убило бы ссылку из
+        // первого письма, по которой она, может быть, как раз идёт.
+        if (out.guardianCreated) {
+          const token = issueGuardianResetToken(db, out.guardian.id);
+          const invite = mailGuardianInvite({
+            childName: reg.full_name,
+            setUrl: `${host}/cabinet/reset/g/${token}`,
+          });
+          queueMail(db, { to: out.guardian.email, kind: 'cabinet.guardian.invite', ...invite });
+        } else {
+          const note = mailGuardianWardAdded({ childName: reg.full_name });
+          queueMail(db, { to: out.guardian.email, kind: 'cabinet.guardian.ward', ...note });
+        }
+      } else if (!account.password_hash) {
         const token = issueResetToken(db, account.id);
-        const setUrl = `${req.protocol}://${req.get('host')}/cabinet/reset/${token}`;
-        const invite = mailCabinetInvite({ fullName: reg.full_name, setUrl });
+        const invite = mailCabinetInvite({
+          fullName: reg.full_name,
+          setUrl: `${host}/cabinet/reset/${token}`,
+        });
         queueMail(db, { to: account.email, kind: 'cabinet.invite', ...invite });
       }
       flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
       logAction(db, req.session.user.id, 'registration.approve', id, {
         player_id: out.playerId,
         created_player: out.created,
+        minor: Boolean(out.guardian),
+        guardian_created: out.guardianCreated,
       });
       flash(
         req,

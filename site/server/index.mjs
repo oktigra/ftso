@@ -7,6 +7,8 @@ import { scheduleDailyPurge } from './lib/retention.mjs';
 import { purgeExpired } from './lib/consent-journal.mjs';
 import { purgeRegistrations } from './lib/registrations.mjs';
 import { purgeRequests } from './lib/tournament-requests.mjs';
+import { purgeGuardians } from './lib/guardians.mjs';
+import { runAdulthoodCheck } from './lib/adulthood.mjs';
 import { setTransport, configureMailer, scheduleMailFlush } from './lib/mailer.mjs';
 import { createSmtpTransport, smtpConfigured } from './lib/smtp.mjs';
 
@@ -56,6 +58,25 @@ scheduleDailyPurge('заявки на регистрацию', () => purgeRegist
 scheduleDailyPurge('заявки на турниры', () =>
   purgeRequests(db, config.tournamentRequest.retentionDays, config.upload.dir),
 );
+// Данные представителя живут ПОСЛЕ снятия: они подтверждают правомерность
+// обработки данных ребёнка за прошлые годы. Чистятся вместе с записями его
+// согласий по GUARDIAN_RETENTION_DAYS.
+scheduleDailyPurge('данные законных представителей', () =>
+  purgeGuardians(db, config.guardian.retentionDays),
+);
+
+// ПЕРЕХОД УЧАСТНИКОВ В 18 ЛЕТ. Тем же суточным планировщиком и намеренно НЕ в
+// обработчике запроса: гейт представителя снимается фоном, а живые сессии при
+// этом не трогаются — переход не должен случаться посреди чужого сеанса.
+// Проверка ДОГОНЯЮЩАЯ: она ищет всех, кому уже исполнилось 18, а не только
+// тех, у кого день рождения сегодня, поэтому простой сервера ничего не теряет.
+scheduleDailyPurge('переход участников в 18 лет', () => {
+  const report = runAdulthoodCheck(db, { baseUrl: config.siteUrl });
+  if (report.unreachable) {
+    console.warn(`[переход в 18] некому сообщить: ${report.unreachable} — секретарь уведомлён`);
+  }
+  return report.promoted + report.reminded + report.frozen;
+});
 
 const app = createApp(config);
 const server = app.listen(config.port, config.host, () => {

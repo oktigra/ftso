@@ -1,0 +1,78 @@
+<%
+/* СПИСОК ПОДОПЕЧНЫХ — первое, что видит законный представитель после входа.
+   Он существует ровно потому, что представитель ОДИН, а детей у него может быть
+   несколько: один логин, несколько кабинетов, и выбор делает человек, а не
+   система за него. */
+%>
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Законный представитель</span>
+    <h1>Участники</h1>
+    <p class="muted"><%= guardian.full_name %> · <%= guardian.email %></p>
+  </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container stack">
+    <% if (cabinetFlash) { %>
+      <div class="flash flash--<%= cabinetFlash.kind %>" role="status"><%= cabinetFlash.text %></div>
+    <% } %>
+
+    <div class="panel">
+      <% if (!wards.length) { %>
+        <p class="lead">Действующих участников за вами не числится.</p>
+        <p class="muted">
+          Так бывает, когда участник достиг 18 лет и распоряжается своими данными сам либо
+          представитель был заменён. Вопросы — на
+          <a href="mailto:<%= op.email %>"><%= op.email %></a>.
+        </p>
+      <% } else { %>
+        <p class="muted">
+          Кабинет принадлежит участнику. Вы входите в него как законный представитель и
+          действуете от его имени, пока ему не исполнится 18 лет.
+        </p>
+        <ul class="cabinet-wards">
+          <% wards.forEach(function (w) { %>
+            <li class="ward-item">
+              <div>
+                <strong><%= w.full_name %></strong>
+                <span class="muted"><%= w.city %> · <%= w.relation %></span>
+              </div>
+              <form method="post" action="/cabinet/wards/select" class="inline-form">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="player_id" value="<%= w.player_id %>">
+                <button class="btn btn--secondary btn--small" type="submit">Открыть кабинет</button>
+              </form>
+            </li>
+          <% }); %>
+        </ul>
+      <% } %>
+    </div>
+
+    <div class="panel">
+      <h2>Ваши данные как представителя</h2>
+      <p class="muted">
+        Федерация обрабатывает ваши фамилию, имя, отчество, степень родства и адрес почты —
+        на основании вашего собственного согласия. Эти сведения подтверждают, что согласие за
+        участника дано законно; подробнее — в
+        <a href="/privacy">Политике обработки персональных данных</a>.
+      </p>
+      <p class="muted">
+        Отозвать согласие на обработку СВОИХ данных, пока вы остаётесь действующим
+        представителем, нельзя: без них вы не можете быть представителем. Отзыв оформляется
+        как замена представителя — напишите на
+        <a href="mailto:<%= op.email %>"><%= op.email %></a>.
+      </p>
+    </div>
+
+    <form method="post" action="/cabinet/logout" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="btn btn--secondary btn--small" type="submit">Выйти</button>
+    </form>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

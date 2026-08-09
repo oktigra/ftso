@@ -23,6 +23,8 @@
 // и матчи — то, без чего рейтинг соперников поедет.
 import { ERASED_LABEL } from './rating-service.mjs';
 import { deleteUpload } from './uploads.mjs';
+import { withConsentErasure } from './consent-journal.mjs';
+import { eraseGuardianLinks } from './guardians.mjs';
 
 const REDACTED = '[удалено]';
 // Город NOT NULL с CHECK на длину — пустую строку схема не примет, поэтому
@@ -140,7 +142,20 @@ export function erasePlayer(db, playerId, { uploadDir, actorUserId = null } = {}
     .prepare('SELECT DISTINCT email FROM registrations WHERE player_id = ?')
     .all(playerId)
     .map((r) => r.email);
-  for (const mail of registrationEmails) if (!secrets.includes(mail)) secrets.push(mail);
+  // ПОЧТА ПРЕДСТАВИТЕЛЯ — тоже след субъекта в письмах и журналах, но только
+  // если этот ребёнок у представителя ПОСЛЕДНИЙ: пока он отвечает за второго,
+  // его адрес остаётся действующим контактом, и вычищать его нельзя.
+  const guardianEmails = db
+    .prepare(
+      `SELECT g.email FROM guardian_wards w JOIN guardians g ON g.id = w.guardian_id
+        WHERE w.player_id = ?
+          AND (SELECT COUNT(*) FROM guardian_wards o WHERE o.guardian_id = g.id) = 1`,
+    )
+    .all(playerId)
+    .map((r) => r.email);
+  for (const mail of registrationEmails.concat(guardianEmails)) {
+    if (!secrets.includes(mail)) secrets.push(mail);
+  }
 
   const photoId = player.photo_upload_id;
   const report = { playerId, matchesKept: 0, resultsKept: 0 };
@@ -153,10 +168,13 @@ export function erasePlayer(db, playerId, { uploadDir, actorUserId = null } = {}
 
     // 1. Личные поля в строке игрока — затираем. Пол оставляем: без имени,
     //    города и группы он никого не определяет, а схема требует M/F.
+    //    ДАТА РОЖДЕНИЯ стирается вместе с остальным: она такие же персональные
+    //    данные, а после обезличивания вычислять по ней нечего — минорный
+    //    жизненный цикл для удалённого игрока закончился.
     db.prepare(
       `UPDATE players
           SET full_name = ?, city = ?, age_group = NULL, photo_upload_id = NULL,
-              is_public = 0, anonymized_at = datetime('now')
+              birth_date = NULL, is_public = 0, anonymized_at = datetime('now')
         WHERE id = ?`,
     ).run(ERASED_LABEL, ERASED_CITY, playerId);
 
@@ -164,12 +182,26 @@ export function erasePlayer(db, playerId, { uploadDir, actorUserId = null } = {}
     report.accountRemoved = db.prepare('DELETE FROM player_accounts WHERE player_id = ?').run(playerId).changes;
 
     // 3. Записи согласий (ст. 21) и заявки — там лежат ФИО и почта.
-    report.consentsRemoved = db.prepare('DELETE FROM consents WHERE player_id = ?').run(playerId).changes;
-    report.registrationsRemoved = db.prepare('DELETE FROM registrations WHERE player_id = ?').run(playerId).changes;
+    //    Журнал закрыт на удаление триггером СУБД, и открыть ворота — часть
+    //    исполнения обращения, а не обход собственной защиты.
+    report.consentsRemoved = withConsentErasure(db, () =>
+      db.prepare('DELETE FROM consents WHERE player_id = ?').run(playerId).changes);
+    report.registrationsRemoved = withConsentErasure(db, () =>
+      db.prepare('DELETE FROM registrations WHERE player_id = ?').run(playerId).changes);
+
+    // 3a. ЗАКОННЫЙ ПРЕДСТАВИТЕЛЬ. Связь с ребёнком уходит всегда; сам
+    //     представитель — только если этот ребёнок был у него последним.
+    //     Пока он отвечает за второго, его данные остаются ОСНОВАНИЕМ обработки
+    //     данных того ребёнка, и удалить их значило бы оставить второго без
+    //     основания — то есть нарушить закон, исполняя закон.
+    report.guardiansRemoved = eraseGuardianLinks(db, playerId);
 
     // 4. Очередь писем: в телах писем стоят имя и адрес.
     let mailRemoved = 0;
-    for (const mail of registrationEmails.concat(account ? [account.email] : [])) {
+    const mailboxes = registrationEmails
+      .concat(guardianEmails)
+      .concat(account && account.email ? [account.email] : []);
+    for (const mail of mailboxes) {
       mailRemoved += db.prepare('DELETE FROM mail_outbox WHERE to_email = ?').run(mail).changes;
     }
     report.mailRemoved = mailRemoved;
@@ -232,4 +264,16 @@ export function revokePlayerSessions(db, playerId, keepSid = null) {
   return db
     .prepare('DELETE FROM sessions WHERE sid IS NOT ? AND data LIKE ?')
     .run(keepSid, `%"playerId":${Number(playerId)}%`).changes;
+}
+
+/**
+ * Отзыв сессий ЗАКОННОГО ПРЕДСТАВИТЕЛЯ. Нужен при замене представителя: тот,
+ * кого только что сняли, не должен доработать сеанс в кабинете ребёнка.
+ * Отдельно от revokePlayerSessions, потому что снятый представитель мог не
+ * выбрать ребёнка вовсе — его сессия висит на списке подопечных.
+ */
+export function revokeGuardianSessions(db, guardianId) {
+  return db
+    .prepare('DELETE FROM sessions WHERE data LIKE ?')
+    .run(`%"guardianId":${Number(guardianId)}%`).changes;
 }

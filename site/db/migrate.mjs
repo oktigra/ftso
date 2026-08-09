@@ -20,9 +20,105 @@ function addColumnIfMissing(db, table, column, definition) {
   return true;
 }
 
+/**
+ * ЖУРНАЛ СОГЛАСИЙ обзавёлся третьим видом записи ('representative_processing' —
+ * согласие законного представителя на обработку ЕГО СОБСТВЕННЫХ данных) и
+ * привязкой к представителю. Вид перечислен в CHECK, а CHECK в SQLite не
+ * правится через ALTER — таблицу приходится пересобирать.
+ *
+ * Идёт ПОСЛЕ schema.sql: новая таблица ссылается внешним ключом на guardians,
+ * и без неё SQLite не даст даже перелить строки. Но ДО триггеров неизменяемости:
+ * их тело читает consents.guardian_id, которой на старой базе ещё нет.
+ * Пересборка идёт ОДНОЙ транзакцией: оборванная миграция не должна оставить
+ * базу без журнала согласий.
+ */
+function upgradeConsents(db) {
+  const table = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'consents'")
+    .get();
+  // Таблицы нет вовсе (чистая база) либо она уже нового образца — работы нет.
+  if (!table) return false;
+  if (table.sql.includes('representative_processing')) return false;
+
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE consents_upgraded (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id     INTEGER REFERENCES players(id) ON DELETE CASCADE,
+        registration_id INTEGER REFERENCES registrations(id) ON DELETE CASCADE,
+        guardian_id   INTEGER REFERENCES guardians(id) ON DELETE CASCADE,
+        subject_ref   TEXT,
+        kind          TEXT NOT NULL CHECK (kind  IN ('processing','distribution','representative_processing')),
+        event         TEXT NOT NULL CHECK (event IN ('granted','revoked')),
+        legal_version TEXT NOT NULL,
+        source        TEXT NOT NULL DEFAULT 'web' CHECK (source IN ('web','offline')),
+        basis         TEXT,
+        document_date TEXT,
+        ip            TEXT,
+        at            TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO consents_upgraded
+             (id, player_id, registration_id, subject_ref, kind, event, legal_version, source, basis, document_date, ip, at)
+      SELECT  id, player_id, registration_id, subject_ref, kind, event, legal_version, source, basis, document_date, ip, at
+        FROM consents;
+      DROP TABLE consents;
+      ALTER TABLE consents_upgraded RENAME TO consents;
+    `);
+  })();
+  return true;
+}
+
+/**
+ * ПОЧТА АККАУНТА СТАЛА НЕОБЯЗАТЕЛЬНОЙ. Пока за ребёнка отвечает законный
+ * представитель, своего входа у ребёнка нет вовсе: логин и пароль — у
+ * представителя (таблица guardians), а player_accounts.email пуст. NOT NULL в
+ * SQLite снимается только пересборкой таблицы.
+ *
+ * UNIQUE сохраняется: NULL уникальности не нарушает, поэтому двое детей одного
+ * представителя уживаются, а взрослые по-прежнему не могут занять чужой адрес.
+ */
+function upgradePlayerAccounts(db) {
+  const has = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='player_accounts'").get();
+  if (!has) return false;
+  const emailCol = db.prepare('PRAGMA table_info(player_accounts)').all().find((c) => c.name === 'email');
+  if (!emailCol || emailCol.notnull === 0) return false;
+
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE player_accounts_upgraded (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        player_id           INTEGER NOT NULL UNIQUE REFERENCES players(id) ON DELETE CASCADE,
+        email               TEXT UNIQUE,
+        password_hash       TEXT CHECK (password_hash IS NULL OR password_hash LIKE 'scrypt$%'),
+        reset_token         TEXT,
+        reset_expires_at    TEXT,
+        password_changed_at TEXT,
+        created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO player_accounts_upgraded
+             (id, player_id, email, password_hash, reset_token, reset_expires_at, password_changed_at, created_at)
+      SELECT  id, player_id, email, password_hash, reset_token, reset_expires_at, password_changed_at, created_at
+        FROM player_accounts;
+      DROP TABLE player_accounts;
+      ALTER TABLE player_accounts_upgraded RENAME TO player_accounts;
+    `);
+  })();
+  return true;
+}
+
 export function migrate() {
   const db = getDb();
+  // ПОРЯДОК ВАЖЕН И НЕ СЛУЧАЕН:
+  //  1) schema.sql — таблицы и индексы (в том числе guardians, на которых
+  //     держится внешний ключ пересобираемого журнала согласий);
+  //  2) пересборка таблиц, которым не хватает CHECK/NOT NULL — ALTER их не правит;
+  //  3) доливка недостающих колонок;
+  //  4) after-upgrade.sql — триггеры неизменяемости журнала и индекс по
+  //     представителю: они ссылаются на consents.guardian_id, поэтому раньше
+  //     шага 2 просто не создадутся («no such column»).
   db.exec(readFileSync(resolve(HERE, 'schema.sql'), 'utf8'));
+  const rebuilt = upgradeConsents(db);
+  const accountsRebuilt = upgradePlayerAccounts(db);
   // Флаг публикуемости для баз, созданных до журнала согласий. Дефолт 0:
   // существующие игроки становятся НЕпубличными, пока согласие на
   // распространение не подтверждено — умолчание в пользу субъекта, а не витрины.
@@ -35,6 +131,31 @@ export function migrate() {
   // Личный кабинет: фото профиля и отметка обезличивания по ст. 21.
   addColumnIfMissing(db, 'players', 'photo_upload_id', 'INTEGER REFERENCES uploads(id)');
   addColumnIfMissing(db, 'players', 'anonymized_at', 'TEXT');
+
+  // --- слой несовершеннолетних и законного представителя -------------------
+  //
+  // Всё доливается ДОПИСЫВАЮЩЕ и с пустым значением по умолчанию. Аккаунты,
+  // заведённые ДО этой миграции, получают consent_basis = NULL и остаются
+  // взрослыми ('self'): флоу представителя тогда не существовало, и затягивать
+  // их в минорный жизненный цикл было бы выдумыванием фактов о людях.
+  addColumnIfMissing(db, 'players', 'birth_date', 'TEXT');
+  addColumnIfMissing(db, 'registrations', 'birth_date', 'TEXT');
+  addColumnIfMissing(db, 'registrations', 'guardian_full_name', 'TEXT');
+  addColumnIfMissing(db, 'registrations', 'guardian_relation', 'TEXT');
+  addColumnIfMissing(db, 'registrations', 'guardian_email', 'TEXT');
+  addColumnIfMissing(
+    db,
+    'player_accounts',
+    'consent_basis',
+    "TEXT CHECK (consent_basis IS NULL OR consent_basis IN ('representative','awaiting_self','self'))",
+  );
+  addColumnIfMissing(db, 'player_accounts', 'transition_started_at', 'TEXT');
+  addColumnIfMissing(db, 'player_accounts', 'transition_reminded_at', 'TEXT');
+  addColumnIfMissing(db, 'player_accounts', 'transition_token', 'TEXT');
+  addColumnIfMissing(db, 'player_accounts', 'frozen_at', 'TEXT');
+  db.exec(readFileSync(resolve(HERE, 'after-upgrade.sql'), 'utf8'));
+  if (rebuilt) console.log('[migrate] журнал согласий пересобран: добавлены вид «представитель» и привязка guardian_id');
+  if (accountsRebuilt) console.log('[migrate] аккаунты игроков пересобраны: почта стала необязательной (вход детей — через представителя)');
   return db;
 }
 

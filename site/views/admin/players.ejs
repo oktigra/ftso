@@ -61,7 +61,7 @@
     %>
     <div class="table-scroll">
       <table class="admin-table admin-table--edit">
-        <thead><tr><th>ID</th><th>ФИО</th><th>Город</th><th>Пол</th><th>Группа</th><th>Публикация</th><th>Действия</th></tr></thead>
+        <thead><tr><th>ID</th><th>ФИО</th><th>Город</th><th>Пол</th><th>Группа</th><th>Публикация</th><th>Представитель</th><th>Действия</th></tr></thead>
         <tbody>
           <% players.forEach(function (p) { %>
             <tr>
@@ -110,6 +110,63 @@
                 <input form="edit-player-<%= p.id %>" name="consent_document_date"
                        class="consent-proof" placeholder="ГГГГ-ММ-ДД"
                        value="<%= p.proof && p.proof.document_date ? p.proof.document_date : '' %>">
+              </td>
+              <%
+              /* ЗАКОННЫЙ ПРЕДСТАВИТЕЛЬ. Показывается только там, где он по
+                 смыслу возможен: у несовершеннолетнего участника. Для
+                 совершеннолетних колонка пуста — не «пустая форма на всякий
+                 случай», а отсутствие самого понятия. */
+              %>
+              <td class="guardian-cell">
+                <% if (p.minor) { %>
+                  <% if (p.guardian) { %>
+                    <span class="muted">
+                      <%= p.guardian.full_name %> (<%= p.guardian.relation %>)<br>
+                      <%= p.guardian.email %>
+                    </span>
+                  <% } else { %>
+                    <span class="muted">не назначен</span>
+                  <% } %>
+                  <details>
+                    <summary><%= p.guardian ? 'Заменить' : 'Назначить' %></summary>
+                    <form method="post" action="/admin/players/<%= p.id %>/guardian" class="stacked-form">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <div class="field">
+                        <label for="g-name-<%= p.id %>">ФИО представителя</label>
+                        <input id="g-name-<%= p.id %>" name="guardian_full_name" maxlength="120" required>
+                      </div>
+                      <div class="field">
+                        <label for="g-rel-<%= p.id %>">Кем приходится</label>
+                        <input id="g-rel-<%= p.id %>" name="guardian_relation" maxlength="60" required
+                               placeholder="мать, отец, опекун">
+                      </div>
+                      <div class="field">
+                        <label for="g-mail-<%= p.id %>">Почта представителя</label>
+                        <input id="g-mail-<%= p.id %>" name="guardian_email" type="email" maxlength="160" required>
+                      </div>
+                      <div class="field">
+                        <label for="g-basis-<%= p.id %>">Документ, подтверждающий полномочия</label>
+                        <input id="g-basis-<%= p.id %>" name="guardian_basis" maxlength="200" required
+                               placeholder="свидетельство о рождении, решение суда, акт опеки">
+                      </div>
+                      <div class="field">
+                        <label for="g-date-<%= p.id %>">Дата документа</label>
+                        <input id="g-date-<%= p.id %>" name="guardian_document_date" placeholder="ГГГГ-ММ-ДД" required>
+                      </div>
+                      <button class="btn btn--secondary btn--small" type="submit">Сохранить представителя</button>
+                    </form>
+                    <% if (p.guardianHistory && p.guardianHistory.length > 1) { %>
+                      <p class="muted">Прежние представители:</p>
+                      <ul class="log-list">
+                        <% p.guardianHistory.filter(function (h) { return h.revoked_at; }).forEach(function (h) { %>
+                          <li><%= h.full_name %> (<%= h.relation %>) — снят <%= h.revoked_at %></li>
+                        <% }); %>
+                      </ul>
+                    <% } %>
+                  </details>
+                <% } else { %>
+                  <span class="muted">—</span>
+                <% } %>
               </td>
               <td class="inline-form">
                 <button class="btn btn--secondary btn--small" type="submit" form="edit-player-<%= p.id %>">Сохранить</button>
