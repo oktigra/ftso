@@ -17,7 +17,6 @@
 // и e-mail обрабатываются на основании ЕГО СОБСТВЕННОГО согласия (отдельная
 // отметка в форме), и у него есть свои права по ст. 14 и 21 152-ФЗ.
 import { randomBytes, createHash } from 'node:crypto';
-import { hashPassword, verifyPassword } from './password.mjs';
 import { GUARDIAN_KIND, recordConsent, revokeCovered, withConsentErasure } from './consent-journal.mjs';
 import { adoptPassword } from './identity.mjs';
 
@@ -41,24 +40,6 @@ export function activeGuardianFor(db, playerId) {
         WHERE w.player_id = ? AND w.revoked_at IS NULL`,
     )
     .get(playerId);
-}
-
-/**
- * ПОДОПЕЧНЫЕ представителя — то, что он видит после входа. Обезличенные по
- * ст. 21 не показываются: их данных больше нет, показывать нечего.
- */
-export function wardsOf(db, guardianId) {
-  return db
-    .prepare(
-      `SELECT w.id AS ward_id, w.relation, p.id AS player_id, p.full_name, p.city, p.birth_date,
-              a.consent_basis, a.frozen_at
-         FROM guardian_wards w
-         JOIN players p ON p.id = w.player_id
-         LEFT JOIN player_accounts a ON a.player_id = p.id
-        WHERE w.guardian_id = ? AND w.revoked_at IS NULL AND p.anonymized_at IS NULL
-        ORDER BY p.full_name`,
-    )
-    .all(guardianId);
 }
 
 /** История представителей ребёнка — для карточки в админке (новые сверху). */
@@ -158,11 +139,11 @@ export function recordGuardianConsent(db, guardian, { source = 'web', ip = null,
   });
 }
 
-// --- вход представителя ---------------------------------------------------
+// --- установка пароля представителя ---------------------------------------
 //
-// Механика та же, что у игроков (см. lib/player-accounts.mjs): пароль хранится
-// scrypt-хэшем, в БД лежит ХЭШ токена сброса, ссылка одноразовая и с истечением.
-// Второго способа хранить пароли в проекте не появляется.
+// Здесь остаётся только ВЫДАЧА и ПРОВЕРКА ТОКЕНА: в БД лежит хэш токена, ссылка
+// одноразовая и с истечением — механика та же, что у игроков. Сам пароль ставит
+// lib/identity.mjs сразу на все роли адреса.
 
 export function issueGuardianResetToken(db, guardianId, { hours = 24 } = {}) {
   const token = randomBytes(32).toString('base64url');
@@ -180,25 +161,11 @@ export function guardianByResetToken(db, token) {
     .get(hashed);
 }
 
-export function setGuardianPassword(db, guardianId, password) {
-  db.prepare(
-    `UPDATE guardians
-        SET password_hash = ?, reset_token = NULL, reset_expires_at = NULL,
-            password_changed_at = datetime('now')
-      WHERE id = ?`,
-  ).run(hashPassword(password), guardianId);
-}
-
-/**
- * Проверка входа представителя. Снятый представитель (revoked_at) внутрь не
- * попадает: подопечных у него нет, а логин без единого подопечного — это дверь
- * в пустоту, которую незачем держать открытой.
- */
-export function checkGuardianLogin(db, email, password) {
-  const g = guardianByEmail(db, email);
-  if (!g || !g.password_hash || g.revoked_at) return null;
-  return verifyPassword(password, g.password_hash) ? g : null;
-}
+// ПАРОЛЬ И ПРОВЕРКА ВХОДА ЖИВУТ НЕ ЗДЕСЬ, а в lib/identity.mjs: пароль
+// принадлежит ЧЕЛОВЕКУ, а не роли, и у представителя, который сам играет, он
+// общий с его кабинетом участника. Отдельные setGuardianPassword и
+// checkGuardianLogin были бы вторым путём аутентификации — тем самым, который
+// однажды забудут обновить и который разъедется с общим.
 
 /**
  * СРОК ХРАНЕНИЯ ДАННЫХ ПРЕДСТАВИТЕЛЯ. В 18 они НЕ удаляются: это доказательство

@@ -2597,7 +2597,7 @@ await check('ВТОРОЙ ребёнок того же представител�
   const all = db.prepare('SELECT COUNT(*) AS n FROM guardians WHERE email = ?').get(MINOR.guardianEmail).n;
   eq(all, 1, 'на одного представителя должна быть ОДНА запись');
   const sibling = db.prepare('SELECT * FROM players WHERE full_name = ?').get(SIBLING.name);
-  const wards = guardians.wardsOf(db, guardians.guardianByEmail(db, MINOR.guardianEmail).id);
+  const wards = identity.cabinetsOf(db, { guardian: guardians.guardianByEmail(db, MINOR.guardianEmail) });
   eq(wards.length, 2, 'у представителя должно быть двое подопечных');
   const acc = accounts.accountByPlayer(db, sibling.id);
   eq(acc.email, null, 'второй кабинет тоже без почты');
@@ -2885,7 +2885,7 @@ await check('представитель второго ребёнка остаё
   const g = guardians.guardianByEmail(db, MINOR.guardianEmail);
   assert(g, 'запись представителя исчезла после перехода первого ребёнка');
   eq(g.revoked_at, null, 'представитель снят, хотя второй ребёнок ещё за ним');
-  const wards = guardians.wardsOf(db, g.id);
+  const wards = identity.cabinetsOf(db, { guardian: g });
   eq(wards.length, 1, 'у представителя должен остаться один подопечный');
   return 'снятие одного подопечного не тронуло ни представителя, ни второго ребёнка';
 });

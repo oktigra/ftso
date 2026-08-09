@@ -4,7 +4,7 @@
 // Хэширование берётся готовое (lib/password.mjs, scrypt) — второй способ
 // хранения паролей в проекте не появляется.
 import { randomBytes, createHash } from 'node:crypto';
-import { hashPassword, verifyPassword } from './password.mjs';
+import { hashPassword } from './password.mjs';
 import { ValidationError } from './validate.mjs';
 import { activeGuardianFor } from './guardians.mjs';
 import { adoptPassword } from './identity.mjs';
@@ -150,11 +150,10 @@ export const isRepresented = (account) => basisOf(account) === 'representative';
 export const isAwaitingSelf = (account) => basisOf(account) === 'awaiting_self';
 export const isFrozen = (account) => Boolean(account && account.frozen_at) && isAwaitingSelf(account);
 
-export function checkLogin(db, email, password) {
-  const account = accountByEmail(db, email);
-  if (!account || !account.password_hash) return null;
-  return verifyPassword(password, account.password_hash) ? account : null;
-}
+// ВХОДА «ТОЛЬКО КАК УЧАСТНИК» БОЛЬШЕ НЕТ. Проверка пароля живёт в одном месте —
+// lib/identity.mjs, checkPersonLogin: адрес опознаёт человека целиком, со всеми
+// его ролями. Отдельная функция здесь была бы вторым путём аутентификации, а
+// второй путь в аутентификации — это путь, который однажды забудут обновить.
 
 /**
  * Профиль для кабинета: сам игрок + его аккаунт.

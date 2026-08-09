@@ -22,7 +22,6 @@ import { str, email as emailField, ValidationError } from '../lib/validate.mjs';
 import { parseMultipart } from '../lib/multipart.mjs';
 import { storeUpload, deleteUpload, uploadById, sendUpload } from '../lib/uploads.mjs';
 import {
-  checkLogin,
   checkPasswordPolicy,
   setPassword,
   issueResetToken,
@@ -31,19 +30,14 @@ import {
   accountByPlayer,
   cabinetProfile,
   playerHistory,
-  isRepresented,
   isAwaitingSelf,
   isFrozen,
   PASSWORD_MIN,
 } from '../lib/player-accounts.mjs';
 import {
-  checkGuardianLogin,
-  guardianByEmail,
   guardianById,
   guardianByResetToken,
   issueGuardianResetToken,
-  setGuardianPassword,
-  wardsOf,
   activeGuardianFor,
 } from '../lib/guardians.mjs';
 import {
