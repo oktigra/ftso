@@ -17,6 +17,9 @@
           <% sexes.forEach(function (s) { %><option value="<%= s %>"><%= s === 'M' ? 'муж.' : 'жен.' %></option><% }); %>
         </select>
       </div>
+      <div class="field"><label for="p-birth">Дата рождения</label>
+        <input id="p-birth" name="birth_date" type="date" aria-describedby="p-birth-hint">
+      </div>
       <div class="field"><label for="p-age">Возрастная группа</label>
         <select id="p-age" name="age_group">
           <option value="">не указана</option>
@@ -43,6 +46,12 @@
       <button class="btn btn--primary" type="submit">Добавить</button>
     </form>
     <p class="muted">
+      Дата рождения нужна для одного: за участника младше 18 лет согласие даёт
+      законный представитель (ч. 1 ст. 9 152-ФЗ), и по ней же снимается гейт в 18.
+      Она видна ТОЛЬКО здесь, в административной части: в рейтинг, на витрину и в
+      кабинет игрока не выводится. Пустое поле при сохранении означает «не менять».
+    </p>
+    <p class="muted">
       «Публикуется» ставится, только если получено согласие на распространение
       персональных данных (ст. 10.1 152-ФЗ). Отметка пишется в журнал согласий
       событием с датой; снятие отметки — это отзыв согласия.
@@ -61,7 +70,7 @@
     %>
     <div class="table-scroll">
       <table class="admin-table admin-table--edit">
-        <thead><tr><th>ID</th><th>ФИО</th><th>Город</th><th>Пол</th><th>Группа</th><th>Публикация</th><th>Представитель</th><th>Действия</th></tr></thead>
+        <thead><tr><th>ID</th><th>ФИО</th><th>Город</th><th>Пол</th><th>Дата рождения</th><th>Группа</th><th>Публикация</th><th>Представитель</th><th>Действия</th></tr></thead>
         <tbody>
           <% players.forEach(function (p) { %>
             <tr>
@@ -74,6 +83,22 @@
                     <option value="<%= s %>"<%= p.sex === s ? ' selected' : '' %>><%= s === 'M' ? 'муж.' : 'жен.' %></option>
                   <% }); %>
                 </select>
+              </td>
+              <%
+              /* ДАТА РОЖДЕНИЯ — только здесь, за логином секретаря. Нужна, чтобы
+                 проверить возраст и разобрать спорную заявку; правится, потому
+                 что опечатка в ней делает взрослого ребёнком и наоборот.
+                 В рейтинг, витрину и кабинет игрока она не выводится НИГДЕ —
+                 там только возрастная группа (см. приёмку, раздел 18). */
+              %>
+              <td>
+                <input form="edit-player-<%= p.id %>" name="birth_date" type="date"
+                       value="<%= p.birth_date || '' %>" class="birth-input">
+                <% if (p.minor) { %>
+                  <span class="muted consent-note">несовершеннолетний</span>
+                <% } else if (!p.birth_date) { %>
+                  <span class="muted consent-note">не указана</span>
+                <% } %>
               </td>
               <td>
                 <select form="edit-player-<%= p.id %>" name="age_group">

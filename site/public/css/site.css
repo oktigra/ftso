@@ -415,6 +415,7 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 .ward-item .muted{display:block; font-size:.85rem;}
 /* Колонка представителя в таблице игроков: форма замены раскрывается по месту,
    чтобы не уводить секретаря на отдельный экран ради трёх полей. */
+.birth-input{min-width:9.5rem;}
 .guardian-cell{min-width:14rem; font-size:.85rem;}
 .guardian-cell details{margin-top:.4rem;}
 .guardian-cell summary{cursor:pointer; color:var(--primary);}

@@ -131,6 +131,11 @@ export function playerInput(body) {
     city: str(body.city, 'Город', { max: 80 }),
     sex: oneOf(body.sex, 'Пол', SEXES),
     age_group: oneOf(body.age_group, 'Возрастная группа', AGE_GROUPS, { required: false }),
+    // Дата рождения правится ТОЛЬКО секретарём и ТОЛЬКО в админке. Пустое поле
+    // означает «не менять», а не «стереть»: у несовершеннолетнего по ней
+    // считается снятие гейта, и случайно очищенная дата тихо выключила бы
+    // переход в 18. Стирается она в одном месте — при обезличивании по ст. 21.
+    birth_date: body.birth_date ? birthDate(body.birth_date) : null,
   };
 }
 

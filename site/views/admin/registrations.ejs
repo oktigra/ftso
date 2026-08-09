@@ -19,6 +19,7 @@
           </div>
           <p class="muted reg-meta">
             <%= r.email %> · подана <%= r.created_at %> ·
+            дата рождения <%= r.birth_date || 'не указана' %><%= r.age !== null ? ' (' + r.age + ' лет)' : '' %> ·
             публикация в рейтинге: <strong><%= r.allowsPublication ? 'разрешена' : 'НЕ разрешена' %></strong>
           </p>
 

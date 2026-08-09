@@ -182,8 +182,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const data = playerInput(req.body);
       const publish = publicFlag(req.body);
       const info = db
-        .prepare('INSERT INTO players (full_name, city, sex, age_group) VALUES (?, ?, ?, ?)')
-        .run(data.full_name, data.city, data.sex, data.age_group);
+        .prepare('INSERT INTO players (full_name, city, sex, age_group, birth_date) VALUES (?, ?, ?, ?, ?)')
+        .run(data.full_name, data.city, data.sex, data.age_group, data.birth_date);
       const id = Number(info.lastInsertRowid);
       // Публикация включается ТОЛЬКО событием журнала: секретарь отмечает, что
       // бумажное согласие на распространение получено. Прямой записи в is_public
@@ -208,9 +208,14 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const publish = publicFlag(req.body);
       const before = db.prepare('SELECT is_public FROM players WHERE id = ?').get(id);
       if (!before) throw new ValidationError('Игрок не найден');
+      // COALESCE, а не присваивание: пустое поле формы значит «не менять».
+      // Затереть дату рождения случайным сохранением карточки нельзя — по ней
+      // работает снятие гейта представителя.
       const info = db
-        .prepare('UPDATE players SET full_name = ?, city = ?, sex = ?, age_group = ? WHERE id = ?')
-        .run(data.full_name, data.city, data.sex, data.age_group, id);
+        .prepare(
+          'UPDATE players SET full_name = ?, city = ?, sex = ?, age_group = ?, birth_date = COALESCE(?, birth_date) WHERE id = ?',
+        )
+        .run(data.full_name, data.city, data.sex, data.age_group, data.birth_date, id);
       if (!info.changes) throw new ValidationError('Игрок не найден');
       // Смена публикации = событие журнала (выдача или ОТЗЫВ согласия на
       // распространение), а не правка флага. Отзыв по ч. 12-13 ст. 10.1 обязан

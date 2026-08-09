@@ -2675,7 +2675,18 @@ await check('дата рождения НЕ утекает: ни в витрин
   // И в самом снимке рейтинга её тоже нет — снимок переживает игрока.
   const snap = db.prepare('SELECT standings_json FROM rating_cache ORDER BY id DESC LIMIT 1').get();
   assert(!snap.standings_json.includes(MINOR.birth), 'дата рождения попала в снимок рейтинга');
-  return `${paths.length} ответов и снимок рейтинга: даты рождения нет нигде`;
+
+  // А В АДМИНКЕ — ВИДНА И ПРАВИТСЯ: секретарю она нужна, чтобы проверить возраст
+  // и разобрать спорную заявку. Это ровно одно место на весь сайт.
+  const admin = await login(ADMIN.user, ADMIN.pass);
+  const card = await http('/admin/players', { jar: admin.jar });
+  eq(card.status, 200, 'карточка игроков в админке');
+  assert(card.text.includes(MINOR.birth), 'секретарь не видит дату рождения — нечем проверить возраст');
+  assert(/name="birth_date"/.test(card.text), 'дату рождения нельзя исправить: опечатка станет неисправимой');
+  // Аноним в админку не попадает — дата за логином, а не «просто на странице».
+  const anon = await http('/admin/players');
+  eq(anon.status, 302, 'админка без входа должна уводить на /login');
+  return `${paths.length} публичных ответов и снимок без даты рождения; в админке за логином — видна и правится`;
 });
 
 await check('представитель распоряжается публикацией данных ребёнка', async () => {
