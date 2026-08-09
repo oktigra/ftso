@@ -96,7 +96,9 @@ export function lastGranted(db, { playerId = null, guardianId = null, kind }) {
  * текста. Если действующего согласия нет — отзывать нечего, и пустая запись
  * «отозвано то, чего не было» в журнал не попадает.
  */
-export function revokeCovered(db, { playerId = null, guardianId = null, kind, subjectRef = null, source = 'web', ip = null }) {
+export function revokeCovered(db, {
+  playerId = null, guardianId = null, kind, subjectRef = null, source = 'web', ip = null, basis = null,
+}) {
   const granted = lastGranted(db, { playerId, guardianId, kind });
   if (!granted) return null;
   return recordConsent(db, {
@@ -107,6 +109,11 @@ export function revokeCovered(db, { playerId = null, guardianId = null, kind, su
     event: 'revoked',
     source,
     ip,
+    // У отзыва ПО ВОЛЕ СУБЪЕКТА основания нет — есть воля. Но согласие может
+    // прекратиться и само: представительское перестаёт действовать в день
+    // совершеннолетия. Такой отзыв обязан назвать причину, иначе через год
+    // запись читается как «человек передумал», а он ничего не делал.
+    basis,
     coveredVersion: granted.legal_version,
   });
 }

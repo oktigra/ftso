@@ -50,6 +50,12 @@ import {
 export const REMINDER_DAYS = 14;
 export const FREEZE_DAYS = 30;
 
+// Почему публикация прекращается — прямо в записи журнала. «Отозвано» без
+// причины через год читалось бы как «человек передумал», а он ничего не делал:
+// согласие представителя просто перестало действовать.
+export const ADULTHOOD_LAPSE_BASIS =
+  'прекращение действия согласия законного представителя: субъекту исполнилось 18 лет (ч. 1 ст. 9 152-ФЗ)';
+
 const hashToken = (token) => createHash('sha256').update(String(token || '')).digest('hex');
 
 /**
@@ -86,7 +92,7 @@ const CONTACT_SQL = `
  * не может войти.
  */
 export function runAdulthoodCheck(db, { baseUrl, now = today() } = {}) {
-  const report = { promoted: 0, reminded: 0, frozen: 0, unreachable: 0 };
+  const report = { promoted: 0, unpublished: 0, reminded: 0, frozen: 0, unreachable: 0 };
 
   /** Письмо человеку; некуда писать — это отдельная беда, и о ней узнаёт секретарь. */
   const notify = (acc, kind, letter) => {
@@ -122,6 +128,29 @@ export function runAdulthoodCheck(db, { baseUrl, now = today() } = {}) {
             SET consent_basis = 'awaiting_self', transition_started_at = datetime('now')
           WHERE id = ? AND consent_basis = 'representative'`,
       ).run(acc.id);
+
+      // ПУБЛИКАЦИЯ ПРЕКРАЩАЕТСЯ В ТОТ ЖЕ МОМЕНТ, без отсрочки. Согласие на
+      // распространение давал представитель, а с наступлением 18 лет оно
+      // перестало быть основанием — значит, оснований показывать ФИО в открытом
+      // рейтинге больше нет ни одного дня. Ждать 30 дней заморозки было бы
+      // обработкой без основания ровно эти 30 дней.
+      //
+      // Движок рейтинга при этом НЕ трогается: снимается только флаг
+      // публикуемости, производный от журнала. Место и очки сохраняются, в
+      // таблице на месте фамилии — «Скрыто по заявлению», рейтинг соперников не
+      // шевелится. Вернуть публикацию человек может одним кликом на экране
+      // перехода — собственным согласием, мгновенно.
+      const lapsed = revokeCovered(db, {
+        playerId: acc.player_id,
+        kind: 'distribution',
+        source: 'web',
+        basis: ADULTHOOD_LAPSE_BASIS,
+      });
+      if (lapsed) {
+        syncPlayerPublicFlag(db, acc.player_id);
+        report.unpublished += 1;
+      }
+
       const token = issueTransitionToken(db, acc.id);
       notify(acc, 'cabinet.adult.start', mailAdultTransition({
         fullName: acc.full_name,

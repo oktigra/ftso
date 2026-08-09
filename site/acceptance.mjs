@@ -3012,6 +3012,97 @@ await check('существующие аккаунты (consent_basis NULL) в �
   return `детект прошёл (${report.promoted} переведено), старый аккаунт не тронут и читается как «self»`;
 });
 
+await check('публикация снимается В МОМЕНТ 18-летия, без отсрочки и без правки движка', async () => {
+  // Свой подопытный: минор с действующим согласием на распространение.
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  const NAME = 'Публиков Роман Игоревич';
+  await submitRegistration({
+    full_name: NAME, city: 'Смоленск', sex: 'M', birth_date: birthFor(17),
+    guardian_full_name: 'Публикова Инна Олеговна', guardian_relation: 'мать',
+    guardian_email: 'publication-guardian@example.com',
+    consent_guardian_child: '1', consent_guardian_self: '1', consent_distribution: '1',
+  });
+  const reg = db.prepare('SELECT * FROM registrations WHERE full_name = ?').get(NAME);
+  await approveByAdmin(reg.id);
+  const pid = db.prepare('SELECT id FROM players WHERE full_name = ?').get(NAME).id;
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(pid).is_public, 1,
+    'до 18 участник публикуется по согласию представителя');
+
+  // Даём результат, чтобы игрок попал в таблицу и было что скрывать.
+  const t = db.prepare('SELECT id FROM tournaments ORDER BY id LIMIT 1').get();
+  db.prepare('INSERT OR IGNORE INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)').run(t.id, pid, 6);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  const before = currentStandings(db);
+  const rowBefore = before.players.find((p) => p.playerId === pid);
+  assert(rowBefore && rowBefore.playerName === NAME, 'до 18 фамилия видна в открытом рейтинге');
+
+  // Совершеннолетие — ровно сегодня.
+  db.prepare('UPDATE players SET birth_date = ? WHERE id = ?').run(birthFor(18), pid);
+  const report = adulthood.runAdulthoodCheck(db, { baseUrl: inst.base });
+  assert(report.unpublished >= 1, 'публикация не снята при переходе');
+
+  // ФЛАГ снят СРАЗУ, без ожидания заморозки.
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(pid).is_public, 0,
+    'флаг публикуемости не снят в момент 18-летия');
+  eq(db.prepare('SELECT frozen_at FROM player_accounts WHERE player_id = ?').get(pid).frozen_at, null,
+    'заморозки быть не должно — снятие публикации от неё не зависит');
+
+  // В журнале — отзыв С НАЗВАННОЙ ПРИЧИНОЙ и с той редакцией, что покрывало согласие.
+  const last = db.prepare(
+    "SELECT event, basis, legal_version FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1",
+  ).get(pid);
+  eq(last.event, 'revoked', 'прекращение публикации не записано событием журнала');
+  assert(/исполнилось 18/.test(last.basis || ''), 'в записи не названа причина прекращения');
+
+  // ВИТРИНА: фамилия скрыта, а место и очки — те же, что считает движок.
+  const after = currentStandings(db);
+  const rowAfter = after.players.find((p) => p.playerId === pid);
+  assert(rowAfter, 'участник исчез из таблицы — места соперников поедут');
+  eq(rowAfter.playerName, 'Скрыто по заявлению', 'фамилия всё ещё публикуется');
+  eq(rowAfter.anonymized, 'hidden', 'причина скрытия не «скрыт»');
+  eq(rowAfter.rank, rowBefore.rank, 'место изменилось — движок не должен был шевельнуться');
+  eq(rowAfter.ratingPoints, rowBefore.ratingPoints, 'очки изменились — движок не должен был шевельнуться');
+
+  // И в СВЕЖЕМ пересчёте движок даёт то же самое: трогали только фильтр публикации.
+  const engine = computeStandings(collectEngineInput(db));
+  const engineRow = engine.players.find((p) => p.playerId === pid);
+  eq(engineRow.rank, rowBefore.rank, 'расчёт движка изменился после снятия публикации');
+  return `флаг снят в день 18-летия (заморозки нет), отзыв в журнале с причиной, место ${rowAfter.rank} и очки сохранены`;
+});
+
+await check('подтверждение согласия возвращает публикацию мгновенно', async () => {
+  const pid = db.prepare("SELECT id FROM players WHERE full_name = 'Публиков Роман Игоревич'").get().id;
+  const acc = accounts.accountByPlayer(db, pid);
+  const token = adulthood.issueTransitionToken(db, acc.id);
+  resetCabinetLimit();
+  const jar = new Jar();
+  const screen = await http(`/cabinet/adult/${token}`, { jar });
+  eq(screen.status, 200, 'экран перехода');
+  assert(/приостановлена/i.test(screen.text), 'человеку не сказали, что публикация приостановлена');
+
+  const done = await http(`/cabinet/adult/${token}`, {
+    method: 'POST',
+    form: {
+      _csrf: tokenFrom(screen.text), email: 'roman-publikov@example.com',
+      password: 'мой-корт-моё-имя-2026', password2: 'мой-корт-моё-имя-2026',
+      consent_processing: '1', consent_distribution: '1',
+    },
+    jar,
+  });
+  eq(done.status, 302, 'завершение перехода');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(pid).is_public, 1,
+    'публикация не вернулась сразу после собственного согласия');
+  const last = db.prepare(
+    "SELECT event, legal_version FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1",
+  ).get(pid);
+  eq(last.event, 'granted', 'собственное согласие на распространение не записано');
+  eq(last.legal_version, LEGAL_VERSION, 'собственное согласие записано не текущей редакцией');
+  const shown = currentStandings(db);
+  eq(shown.players.find((p) => p.playerId === pid).playerName, 'Публиков Роман Игоревич',
+    'фамилия не вернулась в открытый рейтинг');
+  return 'один клик подтверждения — публикация вернулась той же секундой, новой строкой журнала';
+});
+
 await check('родитель, который сам играет: ОДИН вход на обе роли', async () => {
   // Сначала он появляется как УЧАСТНИК: обычная заявка, обычный кабинет.
   db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
