@@ -19,6 +19,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { hashPassword, verifyPassword } from './password.mjs';
 import { GUARDIAN_KIND, recordConsent, revokeCovered, withConsentErasure } from './consent-journal.mjs';
+import { adoptPassword } from './identity.mjs';
 
 /** Как представитель записан в журнале согласий — он же субъект этих записей. */
 export const guardianSubjectRef = (g) => `${g.full_name} <${g.email}> (законный представитель)`;
@@ -106,7 +107,10 @@ export function attachGuardian(db, playerId, { full_name, relation, email }) {
   }
   db.prepare('INSERT INTO guardian_wards (guardian_id, player_id, relation) VALUES (?, ?, ?)')
     .run(guardian.id, playerId, relation);
-  return { guardian, created };
+  // РОДИТЕЛЬ, КОТОРЫЙ САМ ИГРАЕТ. Если под этим адресом уже есть кабинет
+  // участника с паролем — второй пароль человеку не нужен: вход у него один.
+  adoptPassword(db, address);
+  return { guardian: guardianById(db, guardian.id), created };
 }
 
 /**

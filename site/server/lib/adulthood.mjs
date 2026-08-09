@@ -35,6 +35,7 @@ import {
   isAwaitingSelf,
 } from './player-accounts.mjs';
 import { revokeWard } from './guardians.mjs';
+import { guardianOwns } from './identity.mjs';
 import { recordConsent, revokeCovered, syncPlayerPublicFlag } from './consent-journal.mjs';
 import { revokePlayerSessions } from './erasure.mjs';
 import {
@@ -256,6 +257,13 @@ export function completeTransition(db, accountId, { email, password, password2, 
   if (taken && taken.id !== account.id) {
     throw new ValidationError(
       'Этот адрес почты уже используется другим кабинетом. Укажите свой адрес — он станет вашим логином.',
+    );
+  }
+  // Почта представителя (в том числе своего же родителя) логином не годится:
+  // она даёт доступ к кабинетам его детей, а совершеннолетнему нужен СВОЙ вход.
+  if (guardianOwns(db, newEmail)) {
+    throw new ValidationError(
+      'Этот адрес используется для входа законного представителя. Укажите свой собственный адрес.',
     );
   }
   if (String(password) !== String(password2)) {

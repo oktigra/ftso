@@ -37,11 +37,23 @@
           Вы вошли как <strong>законный представитель</strong> и действуете от имени участника.
           Согласиями за участника распоряжаетесь вы — до его совершеннолетия.
         </p>
-        <% if (wardCount > 1) { %>
+        <% if (cabinetCount > 1) { %>
           <p class="table-foot">
-            <a class="link-more" href="/cabinet/wards">Выбрать другого участника <span aria-hidden="true">→</span></a>
+            <a class="link-more" href="/cabinet/wards">Другой кабинет <span aria-hidden="true">→</span></a>
           </p>
         <% } %>
+      </div>
+    <% } %>
+
+    <% if (!byGuardian && cabinetCount > 1) { %>
+      <div class="panel">
+        <p>
+          Открыт <strong>ваш собственный кабинет</strong>. Вы также законный представитель —
+          кабинеты детей рядом, в общем списке.
+        </p>
+        <p class="table-foot">
+          <a class="link-more" href="/cabinet/wards">Другой кабинет <span aria-hidden="true">→</span></a>
+        </p>
       </div>
     <% } %>
 

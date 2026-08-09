@@ -2404,6 +2404,7 @@ section('18. Несовершеннолетние и законный предс
 const guardians = await import('./server/lib/guardians.mjs');
 const adulthood = await import('./server/lib/adulthood.mjs');
 const validate = await import('./server/lib/validate.mjs');
+const identity = await import('./server/lib/identity.mjs');
 
 /** Дата рождения, дающая ровно N лет на сегодня. */
 function birthFor(age, shiftDays = 0) {
@@ -3011,6 +3012,143 @@ await check('существующие аккаунты (consent_basis NULL) в �
   return `детект прошёл (${report.promoted} переведено), старый аккаунт не тронут и читается как «self»`;
 });
 
+await check('родитель, который сам играет: ОДИН вход на обе роли', async () => {
+  // Сначала он появляется как УЧАСТНИК: обычная заявка, обычный кабинет.
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  const PARENT = 'Играев Роман Сергеевич';
+  const PARENT_MAIL = 'playing-parent@example.com';
+  const PARENT_PASS = 'ракетка-и-струны-2026';
+  await submitRegistration({
+    full_name: PARENT, city: 'Смоленск', sex: 'M', birth_date: '1988-03-12',
+    email: PARENT_MAIL, consent_processing: '1', consent_distribution: '1',
+  });
+  const reg = db.prepare('SELECT * FROM registrations WHERE email = ?').get(PARENT_MAIL);
+  await approveByAdmin(reg.id);
+  const invite = db
+    .prepare("SELECT body FROM mail_outbox WHERE to_email = ? AND kind = 'cabinet.invite' ORDER BY id DESC LIMIT 1")
+    .get(PARENT_MAIL);
+  const setUrl = `/cabinet/reset/${/\/cabinet\/reset\/([A-Za-z0-9_-]+)/.exec(invite.body)[1]}`;
+  resetCabinetLimit();
+  const setJar = new Jar();
+  const setPage = await http(setUrl, { jar: setJar });
+  await http(setUrl, {
+    method: 'POST',
+    form: { _csrf: tokenFrom(setPage.text), password: PARENT_PASS, password2: PARENT_PASS },
+    jar: setJar,
+  });
+
+  // Теперь он приводит РЕБЁНКА и становится законным представителем.
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  const KID = 'Играева Полина Романовна';
+  await submitRegistration({
+    full_name: KID, city: 'Смоленск', sex: 'F', birth_date: birthFor(9),
+    guardian_full_name: PARENT, guardian_relation: 'отец', guardian_email: PARENT_MAIL,
+    consent_guardian_child: '1', consent_guardian_self: '1',
+  });
+  const kidReg = db.prepare('SELECT * FROM registrations WHERE full_name = ?').get(KID);
+  await approveByAdmin(kidReg.id);
+
+  // ВТОРОГО ПАРОЛЯ НЕ ПОЯВИЛОСЬ: доступ представителя подхватил уже заданный.
+  const g = guardians.guardianByEmail(db, PARENT_MAIL);
+  const acc = accounts.accountByEmail(db, PARENT_MAIL);
+  assert(g && g.password_hash, 'у доступа представителя нет пароля — человеку пришлось бы заводить второй');
+  eq(g.password_hash, acc.password_hash, 'пароли ролей разъехались — вход перестал быть одним');
+  assert(!db.prepare("SELECT 1 AS x FROM mail_outbox WHERE to_email = ? AND kind = 'cabinet.guardian.invite'").get(PARENT_MAIL),
+    'человеку прислали приглашение задать второй пароль');
+
+  // ОДИН вход даёт ОБА кабинета.
+  resetCabinetLimit();
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  const enter = await http('/cabinet/login', {
+    method: 'POST', form: { _csrf: tokenFrom(page.text), email: PARENT_MAIL, password: PARENT_PASS }, jar,
+  });
+  eq(enter.status, 302, 'вход');
+  eq(enter.location, '/cabinet/wards', 'при двух ролях человек должен попасть к выбору кабинета');
+  const list = await http('/cabinet/wards', { jar });
+  eq(list.status, 200, 'список кабинетов');
+  assert(/Мой профиль/.test(list.text), 'нет раздела «Мой профиль»');
+  assert(/Мои дети/.test(list.text), 'нет раздела «Мои дети»');
+  assert(list.text.includes(PARENT) && list.text.includes(KID), 'в списке не оба кабинета');
+
+  // Свой кабинет.
+  const parentId = db.prepare('SELECT id FROM players WHERE full_name = ?').get(PARENT).id;
+  const kidId = db.prepare('SELECT id FROM players WHERE full_name = ?').get(KID).id;
+  const openOwn = await http('/cabinet/wards/select', {
+    method: 'POST', form: { _csrf: tokenFrom(list.text), player_id: String(parentId) }, jar,
+  });
+  eq(openOwn.status, 302, 'открытие своего кабинета');
+  const own = await http('/cabinet', { jar });
+  assert(own.text.includes(PARENT), 'открылся не свой кабинет');
+  assert(/собственный кабинет/i.test(own.text), 'не сказано, что открыт свой кабинет');
+  assert(own.text.includes('name="email"'), 'в своём кабинете нет поля почты');
+
+  // Кабинет ребёнка — той же сессией, без повторного входа.
+  const openKid = await http('/cabinet/wards/select', {
+    method: 'POST', form: { _csrf: tokenFrom(own.text), player_id: String(kidId) }, jar,
+  });
+  eq(openKid.status, 302, 'переключение на кабинет ребёнка');
+  const kid = await http('/cabinet', { jar });
+  assert(kid.text.includes(KID), 'открылся не кабинет ребёнка');
+  assert(/законный представитель/i.test(kid.text), 'кабинет ребёнка не помечен представительским');
+
+  // Смена пароля в одной роли меняет его для ОБЕИХ.
+  const NEW_PASS = 'корты-и-сетка-2027';
+  const change = await http('/cabinet/password', {
+    method: 'POST',
+    form: {
+      _csrf: tokenFrom(kid.text), current_password: PARENT_PASS,
+      new_password: NEW_PASS, new_password2: NEW_PASS,
+    },
+    jar,
+  });
+  eq(change.status, 302, 'смена пароля');
+  const after = { g: guardians.guardianByEmail(db, PARENT_MAIL), a: accounts.accountByEmail(db, PARENT_MAIL) };
+  eq(after.g.password_hash, after.a.password_hash, 'после смены пароли ролей разъехались');
+  assert(after.a.password_hash !== acc.password_hash, 'пароль не изменился вовсе');
+  resetCabinetLimit();
+  const jar2 = new Jar();
+  const page2 = await http('/cabinet/login', { jar: jar2 });
+  const relog = await http('/cabinet/login', {
+    method: 'POST', form: { _csrf: tokenFrom(page2.text), email: PARENT_MAIL, password: NEW_PASS }, jar: jar2,
+  });
+  eq(relog.status, 302, 'вход новым паролем');
+  eq(relog.location, '/cabinet/wards', 'обе роли по-прежнему на одном входе');
+  return 'один адрес — один пароль — два кабинета; смена пароля общая, переключение без повторного входа';
+});
+
+await check('чужую роль представителя сменой почты не захватить', async () => {
+  // Посторонний участник пытается сделать своим логином адрес представителя.
+  const outsider = db.prepare("SELECT id FROM players WHERE full_name = 'Артём Ковалёв'").get();
+  db.prepare('INSERT OR REPLACE INTO player_accounts (player_id, email, consent_basis, password_hash) VALUES (?, ?, ?, ?)')
+    .run(outsider.id, 'outsider@example.com', 'self', db.prepare('SELECT password_hash FROM player_accounts WHERE email = ?').get('playing-parent@example.com').password_hash);
+  resetCabinetLimit();
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  const enter = await http('/cabinet/login', {
+    method: 'POST',
+    form: { _csrf: tokenFrom(page.text), email: 'outsider@example.com', password: 'корты-и-сетка-2027' },
+    jar,
+  });
+  eq(enter.status, 302, 'вход постороннего');
+  const cab = await http('/cabinet', { jar });
+  // Адрес ЧИСТО представительский: у него нет кабинета участника, поэтому
+  // сработать должна именно защита роли, а не проверка «адрес занят кабинетом».
+  assert(!accounts.accountByEmail(db, MINOR.guardianEmail), 'подопытный адрес должен быть только представительским');
+  const grab = await http('/cabinet/profile', {
+    method: 'POST',
+    multipart: { fields: { _csrf: tokenFrom(cab.text), full_name: 'Артём Ковалёв', email: MINOR.guardianEmail } },
+    jar,
+  });
+  eq(grab.status, 302, 'ответ формы профиля');
+  const flash = await http('/cabinet', { jar });
+  assert(/законного представителя/i.test(flash.text), 'захват адреса представителя не отбит понятным сообщением');
+  eq(db.prepare('SELECT email FROM player_accounts WHERE player_id = ?').get(outsider.id).email, 'outsider@example.com',
+    'почта всё-таки сменилась — посторонний получил бы доступ к кабинетам чужих детей');
+  db.prepare('DELETE FROM player_accounts WHERE player_id = ?').run(outsider.id);
+  return 'смена почты на адрес представителя отклонена: пара ролей создаётся только модерацией';
+});
+
 await check('юр-тексты: категория представителей, cookie-тема и обработка по поручению', async () => {
   const privacy = await http('/privacy');
   eq(privacy.status, 200, 'GET /privacy анониму');
@@ -3228,6 +3366,76 @@ try {
     assert(tableScrolls, 'таблица не скроллится горизонтально');
     assert(noHScroll, 'страница уезжает вбок по горизонтали');
     return '390px: бургер работает, hero и новости в одну колонку, таблица скроллится, страница не уезжает вбок';
+  });
+
+  await check('новые экраны кабинета: адаптив и доступность за логином', async () => {
+    // Экраны представителя и перехода в 18 живут ЗА ВХОДОМ, поэтому в общий
+    // список A11Y_PAGES они не попадают: анониму там показывается «нет доступа».
+    // Заводим своего представителя с подопечным, входим формой в браузере и
+    // проверяем те же требования, что и на публичных страницах.
+    const BROWSER_MAIL = 'browser-guardian@example.com';
+    const BROWSER_PASS = 'смоленский-снег-2026';
+    const kidId = Number(db.prepare(
+      "INSERT INTO players (full_name, city, sex, birth_date) VALUES ('Браузеров Тихон Ильич','Смоленск','M','2014-02-02')",
+    ).run().lastInsertRowid);
+    db.prepare("INSERT INTO player_accounts (player_id, consent_basis) VALUES (?, 'representative')").run(kidId);
+    const { guardian: bg } = db.transaction(() => guardians.attachGuardian(db, kidId, {
+      full_name: 'Браузерова Ирина Львовна', relation: 'мать', email: BROWSER_MAIL,
+    }))();
+    identity.setPersonPassword(db, BROWSER_MAIL, BROWSER_PASS);
+    // Отдельный участник в состоянии перехода — для экрана согласия от себя.
+    const grownId = Number(db.prepare(
+      "INSERT INTO players (full_name, city, sex, birth_date) VALUES ('Взрослов Артур Павлович','Вязьма','M','2008-01-01')",
+    ).run().lastInsertRowid);
+    const grownAcc = Number(db.prepare(
+      "INSERT INTO player_accounts (player_id, consent_basis, transition_started_at) VALUES (?, 'awaiting_self', datetime('now'))",
+    ).run(grownId).lastInsertRowid);
+    const token = adulthood.issueTransitionToken(db, grownAcc);
+
+    const page = await browser.newPage();
+    await page.goto(inst.base + '/cabinet/login', { waitUntil: 'domcontentloaded' });
+    await page.fill('#c-email', BROWSER_MAIL);
+    await page.fill('#c-pass', BROWSER_PASS);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), page.click('button[type="submit"]')]);
+
+    const guarded = ['/cabinet/wards', '/cabinet', `/cabinet/adult/${token}`, '/cabinet/adult'];
+    const problems = [];
+    for (const path of guarded) {
+      await page.goto(inst.base + path, { waitUntil: 'domcontentloaded' });
+      eq(page.url().replace(inst.base, ''), path, `${path}: увело на другой адрес`);
+      const found = await page.evaluate(() => {
+        const out = [];
+        if (document.documentElement.lang !== 'ru') out.push('нет lang="ru"');
+        const h1 = document.querySelectorAll('h1');
+        if (h1.length !== 1) out.push(`заголовков h1: ${h1.length}`);
+        if (!document.querySelector('main')) out.push('нет <main>');
+        if (!document.querySelector('.skip-link')) out.push('нет ссылки «к содержимому»');
+        for (const el of document.querySelectorAll('input, select, textarea')) {
+          if (el.type === 'hidden') continue;
+          const byId = el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+          if (!byId && !el.closest('label') && !el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby')) {
+            out.push(`поле без метки: ${el.name || el.type}`);
+          }
+        }
+        for (const a of document.querySelectorAll('a')) {
+          const text = (a.textContent || '').trim();
+          if (!text && !a.getAttribute('aria-label')) out.push(`ссылка без текста: ${a.getAttribute('href')}`);
+        }
+        return out;
+      });
+      for (const item of found) problems.push(`${path}: ${item}`);
+
+      for (const width of [360, 768]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(inst.base + path, { waitUntil: 'domcontentloaded' });
+        const spill = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        if (spill > 1) problems.push(`${path} @${width}px: горизонтальный скролл +${spill}px`);
+      }
+      await page.setViewportSize({ width: 1280, height: 900 });
+    }
+    await page.close();
+    eq(problems.join('; '), '', `новые экраны: ${problems.join('; ')}`);
+    return `${guarded.length} экрана за логином: метки, один h1, skip-link на месте; 360 и 768 px без горизонтального скролла`;
   });
 
   await check('XSS из данных НЕ выполняется', async () => {

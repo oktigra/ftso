@@ -4,10 +4,17 @@
 // req.session.user): это разные субъекты с разными правами, и смешивать их в
 // одном поле означало бы, что ошибка в одной проверке открывает чужой раздел.
 //
-// ТРЕТИЙ ВХОД — ЗАКОННЫЙ ПРЕДСТАВИТЕЛЬ (req.session.guardian). Кабинет при этом
-// ОДИН И ТОТ ЖЕ: он принадлежит ребёнку, представитель в него входит своим
-// логином и действует от имени ребёнка, пока держится гейт. Отдельного
+// ВХОД ОДИН НА ЧЕЛОВЕКА, а ролей у него может быть две. Родитель, который сам
+// играет, — обычное дело в областном теннисе: он и участник рейтинга, и законный
+// представитель своего ребёнка, и почтовый ящик у него один. Поэтому адрес почты
+// опознаёт ЧЕЛОВЕКА (см. lib/identity.mjs), пароль у него один, а после входа он
+// выбирает КАБИНЕТ: свой собственный либо кабинет ребёнка.
+//
+// Кабинет ребёнка при этом ОДИН И ТОТ ЖЕ: он принадлежит ребёнку, представитель
+// в него входит и действует от его имени, пока держится гейт. Отдельного
 // «родительского кабинета» нет — был бы второй профиль на одного человека.
+// req.session.player — открыт свой кабинет, req.session.guardian — кабинет
+// подопечного; cabinetMode говорит, какой из них открыт, когда ролей две.
 //
 // Что игрок правит: ФИО, почту, фото. Что НЕ правит: рейтинг, очки, места —
 // они считаются движком по результатам, а не задаются владельцем профиля.
@@ -44,6 +51,14 @@ import {
   completeTransition,
   resendTransitionLink,
 } from '../lib/adulthood.mjs';
+import {
+  cabinetsOf,
+  checkPersonLogin,
+  guardianOwns,
+  personByEmail,
+  personExists,
+  setPersonPassword,
+} from '../lib/identity.mjs';
 import { erasePlayer, revokePlayerSessions } from '../lib/erasure.mjs';
 import { setDistributionConsent, consentState } from '../lib/consent-journal.mjs';
 import { queueMail, flushOutbox, mailPasswordReset, mailErased } from '../lib/mailer.mjs';
@@ -65,8 +80,11 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
     if (req.session.cabinetFlash) delete req.session.cabinetFlash;
     res.locals.op = OPERATOR;
     // Кто действует — знает каждый шаблон кабинета: у представителя другой
-    // заголовок, другие подписи и меньше доступного.
-    res.locals.actor = req.session.guardian ? 'guardian' : req.session.player ? 'player' : null;
+    // заголовок, другие подписи и меньше доступного. Когда ролей две, решает
+    // cabinetMode — какой кабинет человек открыл.
+    res.locals.actor = cabinetMode(req);
+    // Ссылка «другой кабинет» показывается, только если выбирать есть из чего.
+    res.locals.hasChoice = Boolean(req.session.player && req.session.guardian);
     next();
   });
 
@@ -79,9 +97,26 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
     res.status(403).render('cabinet/no-access', { title: 'Личный кабинет — ФТСО', ...extra });
 
   /**
+   * КАКОЙ КАБИНЕТ ОТКРЫТ. Когда у человека одна роль, вопроса нет. Когда две
+   * (сам играет и отвечает за ребёнка) — решает явный выбор, сделанный на
+   * странице «Мои кабинеты»; молча угадывать за человека, чей профиль он хотел
+   * открыть, нельзя.
+   */
+  function cabinetMode(req) {
+    const hasPlayer = Boolean(req.session.player);
+    const hasGuardian = Boolean(req.session.guardian);
+    if (!hasPlayer && !hasGuardian) return null;
+    if (req.session.cabinetMode === 'guardian' && hasGuardian) return 'guardian';
+    if (req.session.cabinetMode === 'player' && hasPlayer) return 'player';
+    if (hasPlayer && !hasGuardian) return 'player';
+    if (hasGuardian && !hasPlayer) return 'guardian';
+    return null;
+  }
+
+  /**
    * ЕДИНЫЙ ГЕЙТ КАБИНЕТА. Пускает либо самого игрока, либо его действующего
    * законного представителя — и в обоих случаях дальше работает ОДИН кабинет
-   * одного и того же ребёнка.
+   * одного и того же участника.
    *
    * ПЕРЕХОД В 18 проверяется ЗДЕСЬ ЖЕ и НИЧЕГО НЕ МЕНЯЕТ в БД: фоновая проверка
    * уже перевела аккаунт в 'awaiting_self', а представитель с этого момента не
@@ -89,16 +124,28 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
    * кабинет. Собственное согласие человек даёт сам, по личной ссылке.
    */
   function requireCabinet(req, res, next) {
-    const guardianSession = req.session.guardian;
-    const playerSession = req.session.player;
-    if (!guardianSession && !playerSession) return noAccess(res);
+    const mode = cabinetMode(req);
+    if (!mode) {
+      // Роли есть, но какая открыта — не решено: отправляем выбирать.
+      if (req.session.player || req.session.guardian) return res.redirect('/cabinet/wards');
+      return noAccess(res);
+    }
+    const guardianSession = mode === 'guardian' ? req.session.guardian : null;
+    const playerSession = mode === 'player' ? req.session.player : null;
 
     const playerId = guardianSession ? guardianSession.playerId : playerSession.playerId;
     if (!playerId) return res.redirect('/cabinet/wards');
 
     const profile = cabinetProfile(db, playerId);
-    // Данные удалены по ст. 21 — входить больше некуда, и сессию гасим.
+    // Данные удалены по ст. 21 — открывать нечего. Сессию гасим целиком только
+    // если других кабинетов у человека нет: у родителя, удалившего свой
+    // профиль, остаётся доступ представителя, и выкидывать его незачем.
     if (!profile || profile.anonymized_at) {
+      if (mode === 'player' && req.session.guardian) {
+        delete req.session.player;
+        req.session.cabinetMode = 'guardian';
+        return req.session.save(() => res.redirect('/cabinet/wards'));
+      }
       return req.session.destroy(() => noAccess(res, { erased: true }));
     }
 
@@ -137,9 +184,10 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
   });
 
   /**
-   * ОДНА форма входа на всех. Сперва проверяется аккаунт участника, затем —
-   * законного представителя: адреса живут в разных таблицах, и разводить два
-   * похожих экрана значило бы заставлять человека угадывать, какой из них его.
+   * ОДНА форма входа на всех и ОДИН вход на человека. Адрес почты опознаёт
+   * человека целиком: и его собственный кабинет, и кабинеты детей, за которых
+   * он отвечает. Разводить это на два экрана значило бы заставлять родителя,
+   * который сам играет, помнить, «каким из своих логинов» он сейчас входит.
    */
   app.post('/cabinet/login', limitCabinet, (req, res, next) => {
     const login = String(req.body.email || '').trim().toLowerCase().slice(0, 160);
@@ -149,43 +197,63 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
 
     if (!login || !password) return deny('Введите почту и пароль.', 400);
 
-    const account = checkLogin(db, login, password);
+    const person = checkPersonLogin(db, login, password);
+    if (!person) {
+      // Ответ по времени не должен отличать «адреса нет» от «пароль неверен».
+      if (!personExists(db, login)) burnDummyHash(password);
+      return deny('Неверная почта или пароль.');
+    }
+
+    // Собственный кабинет открывается, только если он есть и работает.
+    let account = person.account;
     if (account) {
       const profile = cabinetProfile(db, account.player_id);
-      if (!profile || profile.anonymized_at) return deny('Этот кабинет закрыт: данные удалены по заявлению.', 403);
-      // ГЕЙТ ПЕРЕХОДА: аккаунт, которому уже исполнилось 18, дальше пускается
-      // только через экран перехода. Ссылка на него личная и уже отправлена —
-      // здесь остаётся объяснить, где её взять.
-      if (isAwaitingSelf(account)) {
+      if (!profile || profile.anonymized_at) account = null;
+    }
+    // ГЕЙТ ПЕРЕХОДА: своему кабинету исполнилось 18, а согласия от себя ещё нет.
+    // Если других ролей у человека нет — дальше только через экран перехода;
+    // если он ещё и представитель, вход состоится, а свой кабинет будет ждать
+    // подтверждения в списке.
+    if (account && isAwaitingSelf(account)) {
+      if (!person.guardian) {
         return res.status(403).render('cabinet/adult-link', {
           title: 'Подтвердите согласие от себя — ФТСО',
           sent: false,
           frozen: isFrozen(account),
         });
       }
-      // Session fixation: ротируем идентификатор сессии ДО записи данных.
-      return req.session.regenerate((err) => {
-        if (err) return next(err);
+    }
+    if (!account && !person.guardian) {
+      return deny('Этот кабинет закрыт: данные удалены по заявлению.', 403);
+    }
+
+    // Session fixation: ротируем идентификатор сессии ДО записи данных.
+    return req.session.regenerate((err) => {
+      if (err) return next(err);
+      // playerId кладётся в ОБА объекта намеренно: отзыв сессий ищет подстроку
+      // "playerId":N, и сессия представителя обязана попадать под тот же поиск —
+      // иначе при удалении данных ребёнка она бы уцелела.
+      if (account && !isAwaitingSelf(account)) {
         req.session.player = { accountId: account.id, playerId: account.player_id };
-        req.session.save((saveErr) => (saveErr ? next(saveErr) : res.redirect('/cabinet')));
-      });
-    }
+      }
+      if (person.guardian) req.session.guardian = { guardianId: person.guardian.id, playerId: null };
 
-    const guardian = checkGuardianLogin(db, login, password);
-    if (guardian) {
-      return req.session.regenerate((err) => {
-        if (err) return next(err);
-        // playerId кладётся В ТОТ ЖЕ объект намеренно: отзыв сессий ищет
-        // подстроку "playerId":N, и сессия представителя обязана попадать под
-        // тот же поиск — иначе при удалении данных ребёнка она бы уцелела.
-        req.session.guardian = { guardianId: guardian.id, playerId: null };
-        req.session.save((saveErr) => (saveErr ? next(saveErr) : res.redirect('/cabinet/wards')));
-      });
-    }
-
-    // Ответ по времени не должен отличать «адреса нет» от «пароль неверен».
-    if (!accountByEmail(db, login) && !guardianByEmail(db, login)) burnDummyHash(password);
-    return deny('Неверная почта или пароль.');
+      const cabinets = cabinetsOf(db, { account, guardian: person.guardian });
+      const usable = cabinets.filter((c) => !c.awaitingSelf);
+      // Кабинет ровно один — открываем его сразу: выбор из одного варианта это
+      // не выбор, а лишний экран.
+      if (usable.length === 1 && cabinets.length === 1) {
+        const only = usable[0];
+        if (only.role === 'self') {
+          req.session.cabinetMode = 'player';
+        } else {
+          req.session.cabinetMode = 'guardian';
+          req.session.guardian.playerId = only.playerId;
+        }
+        return req.session.save((saveErr) => (saveErr ? next(saveErr) : res.redirect('/cabinet')));
+      }
+      return req.session.save((saveErr) => (saveErr ? next(saveErr) : res.redirect('/cabinet/wards')));
+    });
   });
 
   app.post('/cabinet/logout', limitWrites, (req, res, next) => {
@@ -196,30 +264,56 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
     });
   });
 
-  // --- подопечные представителя -------------------------------------------
+  // --- выбор кабинета ------------------------------------------------------
+  //
+  // Экран существует ровно потому, что у одного человека может быть несколько
+  // кабинетов: свой собственный и кабинеты детей, за которых он отвечает.
+  // Выбор делает человек, а не система за него.
+
+  /** Роли текущей сессии — из БД, а не из cookie: связь могли снять минуту назад. */
+  const sessionRoles = (req) => ({
+    account: req.session.player
+      ? db.prepare('SELECT * FROM player_accounts WHERE id = ?').get(req.session.player.accountId)
+      : null,
+    guardian: req.session.guardian ? guardianById(db, req.session.guardian.guardianId) : null,
+  });
+
   app.get('/cabinet/wards', (req, res) => {
-    const session = req.session.guardian;
-    if (!session) return noAccess(res);
-    const guardian = guardianById(db, session.guardianId);
-    if (!guardian || guardian.revoked_at) {
+    if (!req.session.player && !req.session.guardian) return noAccess(res);
+    const roles = sessionRoles(req);
+    if (roles.guardian && roles.guardian.revoked_at) roles.guardian = null;
+    const cabinets = cabinetsOf(db, roles);
+    if (!cabinets.length) {
       return req.session.destroy(() => noAccess(res, { guardianDone: true }));
     }
     res.render('cabinet/wards', {
-      title: 'Участники — личный кабинет ФТСО',
-      guardian,
-      wards: wardsOf(db, guardian.id),
+      title: 'Мои кабинеты — ФТСО',
+      person: roles.guardian || roles.account,
+      email: (roles.guardian && roles.guardian.email) || (roles.account && roles.account.email) || '',
+      guardianName: roles.guardian ? roles.guardian.full_name : null,
+      cabinets,
     });
   });
 
   app.post('/cabinet/wards/select', limitWrites, (req, res, next) => {
-    const session = req.session.guardian;
-    if (!session) return noAccess(res);
+    if (!req.session.player && !req.session.guardian) return noAccess(res);
     const playerId = Number(String(req.body.player_id || '').trim());
-    // Выбор проверяется по СВЯЗИ, а не по присланному числу: иначе чужой
+    const roles = sessionRoles(req);
+    // Выбор проверяется по РОЛЯМ, а не по присланному числу: иначе чужой
     // кабинет открывался бы подстановкой id в форму.
-    const allowed = wardsOf(db, session.guardianId).some((w) => w.player_id === playerId);
-    if (!allowed) return noAccess(res);
-    req.session.guardian.playerId = playerId;
+    const target = cabinetsOf(db, roles).find((c) => c.playerId === playerId);
+    if (!target) return noAccess(res);
+    // СВОЙ кабинет, которому исполнилось 18, открывать нечем: сперва собственное
+    // согласие. Кабинет ПОДОПЕЧНОГО в том же состоянии открывается — но покажет
+    // представителю объяснение вместо действий (см. requireCabinet).
+    if (target.role === 'self' && target.awaitingSelf) return res.redirect('/cabinet/adult');
+
+    if (target.role === 'self') {
+      req.session.cabinetMode = 'player';
+    } else {
+      req.session.cabinetMode = 'guardian';
+      req.session.guardian.playerId = playerId;
+    }
     return req.session.save((err) => (err ? next(err) : res.redirect('/cabinet')));
   });
 
@@ -233,7 +327,8 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
       history: playerHistory(db, profile.id),
       passwordMin: PASSWORD_MIN,
       byGuardian: req.actor.kind === 'guardian',
-      wardCount: req.actor.kind === 'guardian' ? wardsOf(db, req.actor.guardianId).length : 0,
+      // Ссылка «другой кабинет» показывается, только когда их правда несколько.
+      cabinetCount: cabinetsOf(db, sessionRoles(req)).length,
     });
   });
 
@@ -264,6 +359,16 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
         const taken = accountByEmail(db, newEmail);
         if (taken && taken.player_id !== profile.id) {
           throw new ValidationError('Этот адрес почты уже используется другим кабинетом.');
+        }
+        // ЗАХВАТ РОЛИ. Адрес, под которым входит законный представитель, даёт
+        // доступ к кабинетам его детей. Сменив на него свою почту, посторонний
+        // получил бы этот доступ вместе с ним. Пара «участник + представитель»
+        // на одном адресе создаётся ТОЛЬКО модерацией, самообслуживанием — нет.
+        if (guardianOwns(db, newEmail)) {
+          throw new ValidationError(
+            'Этот адрес уже используется для входа законного представителя. ' +
+              'Укажите другой или обратитесь в Федерацию.',
+          );
         }
       }
 
@@ -349,33 +454,35 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
         throw new ValidationError('Новый пароль и его повтор не совпадают.');
       }
 
-      if (byGuardian) {
-        const guardian = guardianById(db, req.actor.guardianId);
-        if (!checkGuardianLogin(db, guardian.email, current)) {
-          throw new ValidationError('Текущий пароль введён неверно.');
-        }
-        checkPasswordPolicy(next1, { email: guardian.email, fullName: guardian.full_name });
-        setGuardianPassword(db, guardian.id, next1);
-        logAction(db, null, 'cabinet.password.change', profile.id, { by: 'guardian' });
-        return flash(req, res, 'ok', 'Пароль представителя изменён.', '/cabinet');
-      }
+      // ПАРОЛЬ У ЧЕЛОВЕКА ОДИН на все его роли: и на собственный кабинет, и на
+      // доступ представителя. Менять его «в одной роли» значит оставить старый
+      // пароль работающим в другой — то есть не сменить.
+      const guardian = byGuardian ? guardianById(db, req.actor.guardianId) : null;
+      const account = byGuardian ? null : accountByPlayer(db, profile.id);
+      const email = guardian ? guardian.email : account.email;
+      const who = guardian ? guardian.full_name : profile.full_name;
 
-      const account = accountByPlayer(db, profile.id);
-      if (!checkLogin(db, account.email, current)) {
+      if (!checkPersonLogin(db, email, current)) {
         throw new ValidationError('Текущий пароль введён неверно.');
       }
-      checkPasswordPolicy(next1, { email: account.email, fullName: profile.full_name });
-      setPassword(db, account.id, next1);
+      checkPasswordPolicy(next1, { email, fullName: who });
+      const spread = setPersonPassword(db, email, next1);
 
       // ОТЗЫВ СЕССИЙ: если пароль меняют потому, что его увели, чужая сессия
       // обязана умереть здесь же, а не дожить до истечения.
       const revoked = revokePlayerSessions(db, profile.id, req.sessionID);
-      logAction(db, null, 'cabinet.password.change', profile.id, { sessions_revoked: revoked });
+      logAction(db, null, 'cabinet.password.change', profile.id, {
+        by: byGuardian ? 'guardian' : 'player',
+        roles_updated: spread.accounts + spread.guardians,
+        sessions_revoked: revoked,
+      });
       return flash(
         req,
         res,
         'ok',
-        `Пароль изменён. Остальные входы в кабинет прекращены (${revoked}).`,
+        spread.accounts && spread.guardians
+          ? `Пароль изменён — он общий для вашего кабинета и доступа представителя. Остальные входы прекращены (${revoked}).`
+          : `Пароль изменён. Остальные входы в кабинет прекращены (${revoked}).`,
         '/cabinet',
       );
     } catch (err) {
@@ -391,30 +498,33 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
 
   app.post('/cabinet/forgot', limitCabinet, (req, res) => {
     const login = String(req.body.email || '').trim().toLowerCase().slice(0, 160);
-    const account = accountByEmail(db, login);
-    if (account) {
-      const profile = cabinetProfile(db, account.player_id);
+    const person = personByEmail(db, login);
+    // ОДНО ПИСЬМО НА ЧЕЛОВЕКА, даже если ролей у него две: пароль общий, и
+    // новый, заданный по ссылке, встанет сразу на все роли (setPersonPassword).
+    // Ссылка выдаётся от собственного кабинета, если он есть, иначе от доступа
+    // представителя — токены живут в разных таблицах.
+    let token = null;
+    let letter = null;
+    if (person.account) {
+      const profile = cabinetProfile(db, person.account.player_id);
       if (profile && !profile.anonymized_at) {
-        const token = issueResetToken(db, account.id);
-        const letter = mailPasswordReset({
+        token = issueResetToken(db, person.account.id);
+        letter = mailPasswordReset({
           fullName: profile.full_name,
           setUrl: `${baseUrl(req)}/cabinet/reset/${token}`,
         });
-        queueMail(db, { to: account.email, kind: 'cabinet.reset', ...letter });
-        flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
       }
-    } else {
-      // Представитель восстанавливает доступ тем же путём и тем же ответом.
-      const guardian = guardianByEmail(db, login);
-      if (guardian && !guardian.revoked_at) {
-        const token = issueGuardianResetToken(db, guardian.id);
-        const letter = mailPasswordReset({
-          fullName: guardian.full_name,
-          setUrl: `${baseUrl(req)}/cabinet/reset/g/${token}`,
-        });
-        queueMail(db, { to: guardian.email, kind: 'cabinet.reset', ...letter });
-        flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
-      }
+    }
+    if (!token && person.guardian && !person.guardian.revoked_at) {
+      token = issueGuardianResetToken(db, person.guardian.id);
+      letter = mailPasswordReset({
+        fullName: person.guardian.full_name,
+        setUrl: `${baseUrl(req)}/cabinet/reset/g/${token}`,
+      });
+    }
+    if (letter) {
+      queueMail(db, { to: person.email, kind: 'cabinet.reset', ...letter });
+      flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
     }
     // Ответ ОДИНАКОВЫЙ независимо от того, есть такой адрес или нет: иначе
     // форма превращается в проверку «зарегистрирован ли этот человек».
@@ -449,7 +559,10 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
       }
       const profile = cabinetProfile(db, account.player_id);
       checkPasswordPolicy(password, { email: account.email, fullName: profile ? profile.full_name : '' });
-      setPassword(db, account.id, password);
+      // Пароль общий на все роли адреса: если этот же человек ещё и законный
+      // представитель, второй пароль ему заводить незачем.
+      if (account.email) setPersonPassword(db, account.email, password);
+      else setPassword(db, account.id, password);
       // Смена пароля по ссылке — тоже повод выкинуть все прежние сессии.
       revokePlayerSessions(db, account.player_id, null);
       logAction(db, null, 'cabinet.password.reset', account.player_id, null);
@@ -490,7 +603,7 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
         throw new ValidationError('Пароль и его повтор не совпадают.');
       }
       checkPasswordPolicy(password, { email: guardian.email, fullName: guardian.full_name });
-      setGuardianPassword(db, guardian.id, password);
+      setPersonPassword(db, guardian.email, password);
       logAction(db, null, 'cabinet.guardian.password.reset', guardian.id, null);
       return res.render('cabinet/reset-done', { title: 'Пароль установлен — ФТСО' });
     } catch (err) {

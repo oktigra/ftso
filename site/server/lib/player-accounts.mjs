@@ -7,6 +7,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { hashPassword, verifyPassword } from './password.mjs';
 import { ValidationError } from './validate.mjs';
 import { activeGuardianFor } from './guardians.mjs';
+import { adoptPassword } from './identity.mjs';
 
 export const PASSWORD_MIN = 10;
 const PASSWORD_MAX = 200;
@@ -132,6 +133,9 @@ export function createAccount(db, { playerId, email = null, consentBasis = 'self
   const info = db
     .prepare('INSERT INTO player_accounts (player_id, email, consent_basis) VALUES (?, ?, ?)')
     .run(playerId, address, consentBasis);
+  // Тот же адрес уже служит входом законного представителя — значит, это ОДИН
+  // человек (пару создаёт только модерация), и пароль у него уже есть.
+  if (address) adoptPassword(db, address);
   return db.prepare('SELECT * FROM player_accounts WHERE id = ?').get(Number(info.lastInsertRowid));
 }
 

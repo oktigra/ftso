@@ -63,6 +63,7 @@ import {
   mailApproved,
   mailRejected,
   mailCabinetInvite,
+  mailCabinetLinked,
   mailGuardianInvite,
   mailGuardianWardAdded,
   mailGuardianChanged,
@@ -424,7 +425,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         // Приглашение — только НОВОМУ представителю. Второй ребёнок той же
         // матери не должен перевыпускать ей токен: это убило бы ссылку из
         // первого письма, по которой она, может быть, как раз идёт.
-        if (out.guardianCreated) {
+        if (out.guardianCreated && !out.guardian.password_hash) {
           const token = issueGuardianResetToken(db, out.guardian.id);
           const invite = mailGuardianInvite({
             childName: reg.full_name,
@@ -442,6 +443,11 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
           setUrl: `${host}/cabinet/reset/${token}`,
         });
         queueMail(db, { to: account.email, kind: 'cabinet.invite', ...invite });
+      } else {
+        // Пароль у человека уже есть: он законный представитель и входит тем же
+        // адресом. Второй пароль ему не нужен — нужен только факт.
+        const note = mailCabinetLinked({ fullName: reg.full_name });
+        queueMail(db, { to: account.email, kind: 'cabinet.linked', ...note });
       }
       flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
       logAction(db, req.session.user.id, 'registration.approve', id, {
