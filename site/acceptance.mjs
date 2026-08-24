@@ -25,6 +25,11 @@ process.env.LOGIN_LOCK_MINUTES = '15';
 process.env.RATING_STALE_LOCK_MINUTES = '5';
 // Загрузки — в изолированный каталог прогона, а не в site/storage.
 process.env.UPLOAD_DIR = resolve(WORK, 'uploads');
+// Приём ПДн для основной части приёмки ОТКРЫТ: разделы 1–17 проверяют работу
+// форм. Дефолт рубильника — «закрыто», поэтому без этой строки приёмка на
+// чистой машине (где нет .env) валилась бы на регистрации и кабинете.
+// Закрытое состояние проверяется в разделе 18 на ОТДЕЛЬНОМ экземпляре приложения.
+process.env.INTAKE_ENABLED = '1';
 
 const CHROMIUM = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
@@ -3625,6 +3630,166 @@ try {
   browserNote = err.message;
   results.push({ group: '11. Браузер', name: 'запуск Chromium', ok: false, detail: err.message });
 }
+
+// ===========================================================================
+section('18. Рубильник приёма ПДн, баннер разработки, реестр cookie');
+
+// Отдельный экземпляр с ЗАКРЫТЫМ приёмом: основное приложение работает с
+// открытым, и переключать его на лету — значит ловить чужие эффекты.
+const closedInst = await (async () => {
+  const app = createApp({ ...config, intakeEnabled: false });
+  return new Promise((res) => {
+    const server = app.listen(0, '127.0.0.1', () => {
+      res({ app, server, base: `http://127.0.0.1:${server.address().port}` });
+    });
+  });
+})();
+const closedHttp = makeClient(closedInst.base);
+
+await check('при закрытом приёме формы ПДн заменены заглушкой', async () => {
+  for (const p of ['/register', '/tournament-request', '/cabinet', '/cabinet/login', '/cabinet/forgot']) {
+    const r = await closedHttp(p);
+    assert(r.status === 200, `${p}: ожидали 200 (страница есть), получили ${r.status}`);
+    assert(/Приём заявок закрыт/.test(r.text), `${p}: нет текста заглушки`);
+  }
+  // Полей формы быть не должно — иначе браузер покажет то, что не работает.
+  const reg = await closedHttp('/register');
+  assert(!/name="consent_processing"/.test(reg.text), '/register: чекбокс согласия всё ещё в разметке');
+  assert(!/name="email"/.test(reg.text), '/register: поле почты всё ещё в разметке');
+  return 'пять маршрутов отдают заглушку 200, полей формы в разметке нет';
+});
+
+await check('при закрытом приёме POST отклоняется и в БД НИЧЕГО не пишется', async () => {
+  const count = (t) => db.prepare(`select count(*) c from ${t}`).get().c;
+  const before = {
+    registrations: count('registrations'),
+    players: count('players'),
+    consents: count('consents'),
+    tournament_requests: count('tournament_requests'),
+    mail_outbox: count('mail_outbox'),
+  };
+
+  // Валидный CSRF-токен со страницы входа админа — она не закрыта.
+  // Без него отказ пришёл бы от CSRF, и рубильник остался бы непроверенным.
+  const jar = new Jar();
+  const page = await closedHttp('/login', { jar });
+  const _csrf = tokenFrom(page.text);
+
+  const targets = [
+    '/register',
+    '/tournament-request',
+    '/cabinet/login',
+    '/admin/players',
+    '/admin/rating/recompute',
+  ];
+  for (const p of targets) {
+    const r = await closedHttp(p, {
+      method: 'POST',
+      jar,
+      form: {
+        _csrf,
+        last_name: 'Тестов', first_name: 'Тест', city: 'Смоленск', sex: 'm',
+        email: 'gate-test@example.com', consent_processing: '1',
+      },
+    });
+    assert(r.status === 403, `${p}: ожидали 403 от рубильника, получили ${r.status}`);
+    assert(/Заявка не принята/.test(r.text), `${p}: 403 пришёл не от рубильника (нет текста отказа)`);
+  }
+
+  const after = {
+    registrations: count('registrations'),
+    players: count('players'),
+    consents: count('consents'),
+    tournament_requests: count('tournament_requests'),
+    mail_outbox: count('mail_outbox'),
+  };
+  for (const k of Object.keys(before)) {
+    assert(before[k] === after[k], `таблица ${k}: было ${before[k]}, стало ${after[k]} — запись прошла сквозь рубильник`);
+  }
+  return `5 маршрутов -> 403 заглушкой; счётчики 5 таблиц не изменились (${before.players} игроков, ${before.consents} согласий)`;
+});
+
+await check('рубильник НЕ трогает админский вход и публичный просмотр', async () => {
+  // Порядок важен: СНАЧАЛА верный вход. Он (а) доказывает главное — вход не
+  // перехвачен рубильником, (б) по логике login-attempts обнуляет счётчик
+  // неудач, накопленный предыдущими разделами приёмки с этого же IP. Неверный
+  // пароль — вторым: после обнуления одна неудача лимит не выбивает. Обратный
+  // порядок ловил 429 на слитой базе, где разделов до этого больше.
+  const ok = await login(ADMIN.user, ADMIN.pass, new Jar());
+  assert(ok.res.status === 302, `вход админа сломан: ${ok.res.status}`);
+
+  // Неверный пароль должен дать отказ ВХОДА, а не отказ рубильника.
+  const jar = new Jar();
+  const page = await closedHttp('/login', { jar });
+  assert(page.status === 200, `/login отдал ${page.status}`);
+  const _csrf = tokenFrom(page.text);
+  const bad = await closedHttp('/login', { method: 'POST', jar, form: { _csrf, username: ADMIN.user, password: 'ЗаведомоНеверный1' } });
+  assert(bad.status !== 403 || !/Заявка не принята/.test(bad.text), 'админский вход перехвачен рубильником');
+
+  for (const p of ['/', '/rating', '/news', '/tournaments', '/documents', '/coaches', '/privacy', '/consent']) {
+    const r = await closedHttp(p);
+    assert(r.status === 200, `${p}: публичный просмотр закрыт (${r.status})`);
+  }
+  return 'админский вход отвечает своей логикой; 8 публичных разделов и обе правовые страницы открыты';
+});
+
+await check('фраза о сборе ПДн привязана к рубильнику и снимается сама', async () => {
+  const PHRASE = 'Сбор персональных данных не осуществляется';
+
+  const closedHome = await closedHttp('/');
+  assert(closedHome.text.includes(PHRASE), 'при закрытом приёме фразы о сборе ПДн нет');
+  assert(/режиме разработки/.test(closedHome.text), 'нет баннера режима разработки');
+
+  // На открытом приёме та же страница не должна утверждать обратное факту.
+  const openHome = await http('/');
+  assert(!openHome.text.includes(PHRASE), 'при ОТКРЫТОМ приёме сайт всё ещё заявляет, что данные не собираются');
+
+  // Правовые страницы тоже под баннером — на них приходят читать про обработку.
+  const priv = await closedHttp('/privacy');
+  assert(priv.text.includes(PHRASE), '/privacy без предупреждения о режиме разработки');
+
+  // В админке баннер лишний.
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const adm = await http('/admin', { jar });
+  assert(!/режиме разработки/.test(adm.text), 'баннер просочился в админку');
+  return 'фраза есть при закрытом приёме (включая /privacy), отсутствует при открытом, в админке баннера нет';
+});
+
+await check('реестр cookie полон: браузер не получает ничего сверх списка', async () => {
+  const { COOKIE_REGISTRY, needsCookieConsent, optionalCookies } = await import('./server/lib/cookies.mjs');
+  const known = new Set(COOKIE_REGISTRY.map((c) => c.name));
+
+  // Согласие сейчас не требуется — необязательных cookie нет. Это НЕ ручной
+  // флаг: значение выведено из реестра, и добавление счётчика включит баннер само.
+  assert(needsCookieConsent() === false, 'реестр считает, что согласие нужно, — появилась необязательная cookie?');
+  assert(optionalCookies().length === 0, 'в реестре есть необязательные cookie, а баннера согласия нет');
+
+  // Обход публичных страниц: ни одной cookie вне реестра.
+  const seen = new Set();
+  for (const p of ['/', '/rating', '/news', '/register', '/privacy', '/consent']) {
+    const jar = new Jar();
+    const r = await closedHttp(p, { jar });
+    for (const raw of r.setCookie || []) seen.add(String(raw).split('=')[0].trim());
+  }
+  // Вход админа — здесь сессионная cookie появиться обязана.
+  const jar = new Jar();
+  const page = await http('/login', { jar });
+  await http('/login', { method: 'POST', jar, form: { _csrf: tokenFrom(page.text), username: ADMIN.user, password: ADMIN.pass } });
+  for (const raw of jar.header().split(';')) {
+    const n = raw.split('=')[0].trim();
+    if (n) seen.add(n);
+  }
+
+  for (const name of seen) {
+    assert(known.has(name), `cookie «${name}» ставится, но в реестре её нет (server/lib/cookies.mjs)`);
+  }
+  return `реестр: ${[...known].join(', ')}; согласие не требуется; cookie вне реестра не обнаружено`;
+});
+
+await new Promise((res) => {
+  closedInst.app.locals.closeStore();
+  closedInst.server.close(res);
+});
 
 // ===========================================================================
 await stopApp(inst);

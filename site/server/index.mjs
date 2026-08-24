@@ -48,7 +48,16 @@ if (smtpConfigured(config.smtp)) {
       'в очереди, статус виден в /admin/registrations. Заявители НЕ уведомляются.',
   );
 }
-scheduleMailFlush(db, { intervalMs: config.smtp.retryMinutes * 60 * 1000 });
+// РУБИЛЬНИК И ПОЧТА: при закрытом приёме (INTAKE_ENABLED=0) разбор очереди
+// НЕ запускается. Письмо — это передача ПДн получателя вовне, то есть та же
+// обработка; закрытые формы не спасут, если очередь продолжит отправлять
+// накопленное. Письма не теряются — лежат в mail_outbox и уйдут после
+// включения приёма (таймер поднимется на следующем старте).
+if (config.intakeEnabled) {
+  scheduleMailFlush(db, { intervalMs: config.smtp.retryMinutes * 60 * 1000 });
+} else {
+  console.warn('[почта] приём ПДн закрыт (INTAKE_ENABLED=0) — разбор очереди писем остановлен.');
+}
 
 // СРОКИ ХРАНЕНИЯ: при старте и дальше раз в сутки.
 scheduleDailyPurge('журнал согласий', () => purgeExpired(db, config.consent.retentionDays));

@@ -1,0 +1,45 @@
+<%
+/* Заглушка при выключенном приёме ПДн (INTAKE_ENABLED=0).
+
+   Отдаётся в двух случаях: вместо формы (HTTP 200 — страница существует и
+   осмысленна) и в ответ на попытку отправки (HTTP 403 — отказ по правилу).
+   Текст объясняет причину и оставляет живой путь связи, а не обрывает разговор. */
+%>
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Режим разработки</span>
+    <h1><%= rejected ? 'Заявка не принята' : 'Приём заявок закрыт' %></h1>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel">
+      <% if (rejected) { %>
+        <p class="lead">Форма не отправлена: сайт сейчас не принимает персональные данные.</p>
+        <p class="muted">Ничего из введённого вами не сохранено и никуда не передано.</p>
+      <% } else { %>
+        <p class="lead"><%= message %></p>
+      <% } %>
+
+      <div class="notice notice--warn">
+        <p>Федерация готовит сайт к запуску. Пока подготовка не завершена, приём
+        персональных данных отключён — так требует закон о персональных данных.</p>
+      </div>
+
+      <p>По вопросам регистрации и участия в турнирах пишите на
+        <a href="mailto:<%= operator.email %>"><%= operator.email %></a><% if (operator.phone) { %>
+        или звоните по телефону <%= operator.phone %><% } %>.</p>
+
+      <p class="muted">Ознакомиться с тем, как Федерация будет обращаться с данными,
+        можно уже сейчас: <a href="/privacy">Политика обработки персональных данных</a>
+        и <a href="/consent">Согласие на обработку</a>.</p>
+
+      <p class="table-foot"><a class="link-more" href="/">На главную <span aria-hidden="true">→</span></a></p>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('partials/footer') %>

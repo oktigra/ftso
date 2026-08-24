@@ -466,3 +466,19 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 @media (max-width:520px){.legal-dl{grid-template-columns:1fr; gap:.15rem;} .legal-dl dd{margin-bottom:.6rem;}}
 .skip-link{position:absolute; left:-9999px; top:0;}
 .skip-link:focus{left:1rem; top:1rem; z-index:100; background:var(--surface); padding:.6rem 1rem; border-radius:.6rem; border:1px solid var(--primary);}
+
+/* ── Баннер режима разработки ──────────────────────────────────────────────
+   Правовое уведомление, а не промо: не закрывается, всегда первым в потоке.
+   В потоке, а не position:fixed — иначе перекрывал бы контент на мобильном
+   и ломал прокрутку к якорям. Тёмно-синяя полоса из палитры сайта: заметна,
+   но не спорит с зелёным акцентом кнопок. */
+.dev-notice{background:#123d68; color:#eaf2fa; border-bottom:3px solid var(--primary);}
+html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
+.dev-notice__inner{display:flex; align-items:flex-start; gap:.7rem; padding:.7rem 0;}
+.dev-notice__icon{flex:0 0 auto; width:1.25rem; height:1.25rem; margin-top:.12rem; color:#ffc961;}
+.dev-notice__text{margin:0; font-size:.9375rem; line-height:1.45;}
+.dev-notice__text strong{color:#ffd98a; font-weight:700;}
+@media (max-width:520px){
+  .dev-notice__inner{padding:.6rem 0; gap:.55rem;}
+  .dev-notice__text{font-size:.875rem;}
+}

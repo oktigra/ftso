@@ -11,6 +11,7 @@ import { csrfMiddleware } from './lib/csrf.mjs';
 import { LoginAttempts } from './lib/login-attempts.mjs';
 import { writeLimiter, publicFormLimiter } from './middleware/write-limit.mjs';
 import { currentUser } from './middleware/auth.mjs';
+import { intakeGate } from './middleware/intake-gate.mjs';
 import {
   HEADER_PRIMARY,
   HEADER_MORE,
@@ -109,6 +110,11 @@ export function createApp(config) {
     res.locals.year = new Date().getFullYear();
     res.locals.user = null;
     res.locals.csrfToken = '';
+    // Состояние рубильника — в шаблоны: от него зависит текст баннера.
+    res.locals.intakeEnabled = config.intakeEnabled;
+    // Баннер только на публичной части: в админке он бесполезен, а на узких
+    // админ-таблицах ещё и мешает.
+    res.locals.devNotice = config.devNotice && !req.path.startsWith('/admin');
     next();
   });
 
@@ -154,6 +160,11 @@ export function createApp(config) {
   const ctx = {
     db, config, attempts, limitWrites, limitRegister, limitTournamentRequest, limitCabinet, store,
   };
+
+  // РУБИЛЬНИК — до монтирования маршрутов, чтобы ни один обработчик приёма ПДн
+  // не получил управление при выключенном приёме. Состояние читается на каждый
+  // запрос: тесты переключают его без перезапуска приложения.
+  app.use(intakeGate(() => config.intakeEnabled));
 
   mountAuth(app, ctx);
   mountAdmin(app, ctx);
