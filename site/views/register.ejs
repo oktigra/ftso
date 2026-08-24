@@ -68,14 +68,95 @@
         </div>
 
         <div class="field">
-          <label for="r-email">Электронная почта <span class="req" aria-hidden="true">*</span></label>
+          <label for="r-birth">Дата рождения <span class="req" aria-hidden="true">*</span></label>
+          <input id="r-birth" name="birth_date" type="date" required aria-describedby="r-birth-hint"
+                 value="<%= values.birth_date || '' %>">
+          <p class="field-hint" id="r-birth-hint">
+            Нужна по одной причине: за участника младше 18 лет согласие на обработку данных даёт
+            законный представитель (ч. 1 ст. 9 152-ФЗ). В открытом рейтинге дата рождения
+            не публикуется и в выгрузки не попадает.
+          </p>
+        </div>
+
+        <div class="field" data-minor="adult">
+          <label for="r-email">Электронная почта участника <span class="req" aria-hidden="true">*</span></label>
           <input id="r-email" name="email" type="email" maxlength="160" required autocomplete="email"
                  aria-describedby="r-email-hint" value="<%= values.email || '' %>">
           <p class="field-hint" id="r-email-hint">
             Нужна, чтобы сообщить решение по заявке. Больше ни для чего не используется,
-            в открытом рейтинге не публикуется.
+            в открытом рейтинге не публикуется. <strong>Если участнику нет 18 лет — оставьте
+            поле пустым</strong>: контактом и входом в кабинет служит почта законного
+            представителя.
           </p>
         </div>
+
+        <%
+        /* БЛОК ЗАКОННОГО ПРЕДСТАВИТЕЛЯ. Показан всегда: без JS человек должен
+           видеть, что от него потребуется, а не упереться в ошибку после
+           отправки. Обязательным его делает СЕРВЕР — по дате рождения. */
+        %>
+        <fieldset class="consent-box" data-minor="minor">
+          <legend>Законный представитель — если участнику нет 18 лет</legend>
+          <p class="field-hint">
+            За несовершеннолетнего согласие на обработку персональных данных даёт законный
+            представитель (родитель, усыновитель, опекун или попечитель). Он же входит в
+            кабинет участника и управляет согласиями, пока участнику не исполнится 18.
+          </p>
+
+          <div class="field">
+            <label for="r-g-name">ФИО законного представителя</label>
+            <input id="r-g-name" name="guardian_full_name" maxlength="120" autocomplete="off"
+                   value="<%= values.guardian_full_name || '' %>">
+          </div>
+          <div class="field">
+            <label for="r-g-rel">Кем приходится участнику</label>
+            <input id="r-g-rel" name="guardian_relation" maxlength="60" autocomplete="off"
+                   placeholder="мать, отец, опекун, попечитель"
+                   value="<%= values.guardian_relation || '' %>">
+          </div>
+          <div class="field">
+            <label for="r-g-email">Электронная почта представителя</label>
+            <input id="r-g-email" name="guardian_email" type="email" maxlength="160" autocomplete="off"
+                   aria-describedby="r-g-email-hint" value="<%= values.guardian_email || '' %>">
+            <p class="field-hint" id="r-g-email-hint">
+              На неё придёт решение по заявке и ссылка для входа в кабинет участника.
+              Если у вас уже есть доступ как представителя, новый логин не создаётся —
+              участник добавится к существующему.
+            </p>
+          </div>
+
+          <%
+          /* ДВЕ РАЗДЕЛЬНЫЕ ОТМЕТКИ, и это не формальность: у них РАЗНЫЕ СУБЪЕКТЫ.
+             Первая — согласие за ребёнка, вторая — согласие представителя на
+             обработку ЕГО СОБСТВЕННЫХ данных, потому что ФИО, родство и почта
+             представителя тоже персональные данные, и у него свои права на них.
+             Ни одна не предзаполнена (ч. 8 ст. 10.1). */
+          %>
+          <div class="check">
+            <input type="checkbox" id="r-g-child" name="consent_guardian_child" value="1"
+                   <%= values.consent_guardian_child ? 'checked' : '' %>>
+            <label for="r-g-child">
+              Я, законный представитель, даю согласие на <a href="/consent#processing" target="_blank"
+              rel="noopener">обработку персональных данных несовершеннолетнего участника</a>
+              и ознакомлен с <a href="/privacy" target="_blank" rel="noopener">Политикой обработки
+              персональных данных</a>.
+            </label>
+          </div>
+          <div class="check">
+            <input type="checkbox" id="r-g-self" name="consent_guardian_self" value="1"
+                   <%= values.consent_guardian_self ? 'checked' : '' %>>
+            <label for="r-g-self">
+              Даю отдельное согласие на обработку <strong>моих собственных</strong> персональных
+              данных как законного представителя — фамилии, имени, отчества, степени родства и
+              адреса электронной почты — для подтверждения законности обработки данных участника.
+            </label>
+          </div>
+          <p class="field-hint">
+            Обе отметки обязательны для участника младше 18 лет. Сведения о представителе
+            хранятся как подтверждение правомерности обработки и уничтожаются через три года
+            после того, как участник достигнет 18 лет или представитель будет заменён.
+          </p>
+        </fieldset>
 
         <%
         /* ПРИМАНКА ДЛЯ БОТОВ: человек этого поля не видит и табом в него не попадёт.
@@ -93,7 +174,7 @@
              ОТДЕЛЬНОЕ на публикацию. Ни одно НЕ предзаполнено — молчание и
              бездействие согласием не являются (ч. 8 ст. 10.1). */
           %>
-          <div class="check">
+          <div class="check" data-minor="adult">
             <input type="checkbox" id="r-consent-processing" name="consent_processing" value="1"
                    <%= values.consent_processing ? 'checked' : '' %>>
             <label for="r-consent-processing">
@@ -107,12 +188,14 @@
                    <%= values.consent_distribution ? 'checked' : '' %>>
             <label for="r-consent-distribution">
               Даю отдельное согласие на <a href="/consent#distribution" target="_blank" rel="noopener">распространение
-              персональных данных</a> — публикацию моих ФИО, города, возрастной группы и спортивных
-              результатов в открытом рейтинге на сайте.
+              персональных данных</a> — публикацию ФИО, города, возрастной группы и спортивных
+              результатов участника в открытом рейтинге на сайте. Для участника младше 18 лет
+              это согласие даёт законный представитель.
             </label>
           </div>
           <p class="field-hint">
-            Первое согласие обязательно: без него у Федерации нет основания обрабатывать заявку.
+            Согласие на обработку обязательно: без него у Федерации нет основания обрабатывать заявку
+            (для участника младше 18 лет его даёт законный представитель в блоке выше).
             Второе — добровольное. Без него вы участвуете в соревнованиях и рейтинге, но в
             открытых таблицах на месте вашей фамилии будет «Скрыто по заявлению».
             Оба согласия можно отозвать в любой момент, написав на

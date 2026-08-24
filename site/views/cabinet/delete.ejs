@@ -12,14 +12,41 @@
     <% if (cabinetFlash) { %>
       <div class="flash flash--<%= cabinetFlash.kind %>" role="alert"><%= cabinetFlash.text %></div>
     <% } %>
+    <% if (typeof error !== 'undefined' && error) { %>
+      <div class="form-errors" role="alert"><p><%= error %></p></div>
+    <% } %>
     <div class="panel form-panel">
-      <p class="lead">Это необратимо. Прочитайте, что произойдёт.</p>
+      <%
+      /* ОДИН экран на три случая: удаление по своей воле, отзыв согласия
+         законным представителем (для ребёнка это и есть требование удаления —
+         обработка лишается основания) и отказ дать согласие от себя при
+         переходе в 18. Последствия во всех трёх одни и те же, поэтому
+         текст один, а меняется только объяснение, кто и почему здесь оказался. */
+      %>
+      <% if (typeof adultDecline !== 'undefined' && adultDecline) { %>
+        <p class="lead">
+          Вы отказываетесь дать согласие на обработку своих персональных данных от своего имени.
+          Без согласия у Федерации нет основания их хранить, поэтому они будут уничтожены.
+        </p>
+      <% } else if (typeof byGuardian !== 'undefined' && byGuardian) { %>
+        <p class="lead">
+          Отзыв согласия на обработку персональных данных несовершеннолетнего участника
+          <strong><%= profile.full_name %></strong>. Без согласия основания для обработки нет,
+          поэтому отзыв означает уничтожение данных. Это необратимо.
+        </p>
+      <% } else { %>
+        <p class="lead">Это необратимо. Прочитайте, что произойдёт.</p>
+      <% } %>
       <h2>Будет уничтожено</h2>
       <ul>
         <li>фамилия, имя, отчество, город и возрастная группа;</li>
         <li>адрес электронной почты и пароль — вход в кабинет закроется;</li>
         <li>фотография профиля;</li>
-        <li>записи ваших согласий и поданные заявки;</li>
+        <li>записи согласий и поданные заявки;</li>
+        <% if (typeof byGuardian !== 'undefined' && byGuardian) { %>
+          <li>сведения о законном представителе — если этот участник у него единственный:
+              они хранились как подтверждение законности обработки, а подтверждать больше нечего;</li>
+        <% } %>
         <li>ваше имя в сохранённых снимках рейтинга и в служебных журналах.</li>
       </ul>
       <h2>Будет сохранено — и почему</h2>
@@ -30,7 +57,7 @@
         фамилии стоит «Игрок удалён».
       </p>
       <h2>Подтверждение</h2>
-      <form method="post" action="/cabinet/delete" class="stacked-form">
+      <form method="post" action="<%= action %>" class="stacked-form">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <div class="field">
           <label for="d-confirm">Введите слово УДАЛИТЬ, чтобы подтвердить</label>
@@ -38,7 +65,9 @@
         </div>
         <button class="btn btn--danger" type="submit">Удалить мои данные навсегда</button>
       </form>
-      <p class="table-foot"><a class="link-more" href="/cabinet">Вернуться в кабинет <span aria-hidden="true">→</span></a></p>
+      <% if (!(typeof adultDecline !== 'undefined' && adultDecline)) { %>
+        <p class="table-foot"><a class="link-more" href="/cabinet">Вернуться в кабинет <span aria-hidden="true">→</span></a></p>
+      <% } %>
     </div>
   </div>
 </section>

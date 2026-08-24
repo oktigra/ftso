@@ -1,0 +1,114 @@
+<%
+/* ЭКРАН ПЕРЕХОДА В 18. Попасть сюда можно только по личной ссылке: своего
+   пароля у вчерашнего ребёнка нет, а представитель за совершеннолетнего решать
+   уже не вправе — иначе «собственное согласие» дал бы за него родитель.
+
+   Три вещи на одном экране, и все три обязательны по сути: своя почта (она же
+   новый логин), свой пароль и СОБСТВЕННОЕ согласие. Согласие на обработку —
+   условие работы кабинета; согласие на публикацию — добровольное, как у всех. */
+%>
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Личный кабинет</span>
+    <h1>Согласие от своего имени</h1>
+    <p class="muted"><%= fullName %></p>
+  </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel form-panel">
+      <% if (error) { %><div class="form-errors" role="alert"><p><%= error %></p></div><% } %>
+
+      <% if (frozen) { %>
+        <div class="reg-warn" role="alert">
+          <p><strong>Кабинет заморожен.</strong> Переход не был завершён в течение 30 дней,
+             поэтому действия в кабинете недоступны. Данные сохранены и никуда не делись —
+             заморозка снимается сразу после подтверждения согласия ниже.</p>
+        </div>
+      <% } %>
+
+      <p class="lead">
+        Вам исполнилось 18 лет. С этого дня решения о своих персональных данных вы принимаете
+        сами: согласие законного представителя больше не является основанием их обработки.
+      </p>
+      <p class="muted">
+        Кабинет остаётся вашим — меняется только основание. Укажите свою почту: она станет
+        логином вместо почты представителя, и доступ представителя к кабинету прекратится.
+      </p>
+      <p class="muted">
+        <strong>Публикация в открытом рейтинге приостановлена</strong> со дня вашего
+        совершеннолетия: согласие на неё давал законный представитель, и оно перестало быть
+        основанием. Место и очки сохранены, в таблицах на месте фамилии — «Скрыто по
+        заявлению». Отметьте согласие на распространение ниже, и публикация вернётся сразу.
+      </p>
+
+      <form method="post" action="/cabinet/adult/<%= token %>" class="stacked-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+        <div class="field">
+          <label for="a-email">Ваша электронная почта <span class="req" aria-hidden="true">*</span></label>
+          <input id="a-email" name="email" type="email" maxlength="160" required autocomplete="email"
+                 value="<%= values.email || '' %>" aria-describedby="a-email-hint">
+          <p class="field-hint" id="a-email-hint">Это будет ваш логин в кабинет.</p>
+        </div>
+
+        <div class="field">
+          <label for="a-pass">Пароль <span class="req" aria-hidden="true">*</span></label>
+          <input id="a-pass" name="password" type="password" maxlength="200" required
+                 autocomplete="new-password" aria-describedby="a-pass-hint">
+          <p class="field-hint" id="a-pass-hint">
+            Не короче <%= passwordMin %> символов, буквы вместе с цифрой или знаком.
+            Не должен содержать вашу почту или имя.
+          </p>
+        </div>
+        <div class="field">
+          <label for="a-pass2">Повторите пароль <span class="req" aria-hidden="true">*</span></label>
+          <input id="a-pass2" name="password2" type="password" maxlength="200" required autocomplete="new-password">
+        </div>
+
+        <fieldset class="consent-box">
+          <legend>Согласия — от вашего имени</legend>
+          <div class="check">
+            <input type="checkbox" id="a-processing" name="consent_processing" value="1">
+            <label for="a-processing">
+              Даю согласие на <a href="/consent#processing" target="_blank" rel="noopener">обработку моих
+              персональных данных</a> и ознакомлен с <a href="/privacy" target="_blank" rel="noopener">Политикой
+              обработки персональных данных</a>. <span class="req" aria-hidden="true">*</span>
+            </label>
+          </div>
+          <div class="check">
+            <input type="checkbox" id="a-distribution" name="consent_distribution" value="1"
+                   <%= values.distribution ? 'checked' : '' %>>
+            <label for="a-distribution">
+              Даю отдельное согласие на <a href="/consent#distribution" target="_blank" rel="noopener">распространение
+              персональных данных</a> — публикацию ФИО, города, возрастной группы и спортивных
+              результатов в открытом рейтинге на сайте.
+            </label>
+          </div>
+          <p class="field-hint">
+            Согласия, данные за вас представителем, отзываются и заменяются вашими: отзыв
+            и выдача записываются в журнал согласий отдельными событиями с датой.
+            Первое согласие обязательно — без него у Федерации нет основания хранить ваши данные.
+            Второе добровольно и ни на что, кроме публикации, не влияет.
+          </p>
+        </fieldset>
+
+        <button class="btn btn--primary" type="submit">Подтвердить и продолжить</button>
+      </form>
+
+      <h2>Если согласия вы не даёте</h2>
+      <p class="muted">
+        Тогда у Федерации нет основания хранить ваши персональные данные, и они будут
+        уничтожены. Результаты сыгранных матчей останутся в обезличенном виде — они влияют
+        на рейтинг ваших соперников.
+      </p>
+      <p><a class="btn btn--danger" href="/cabinet/adult/<%= token %>/erase">Не даю согласия — удалить мои данные</a></p>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

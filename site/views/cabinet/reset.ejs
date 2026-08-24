@@ -11,7 +11,7 @@
   <div class="container">
     <div class="panel form-panel">
       <% if (error) { %><div class="form-errors" role="alert"><p><%= error %></p></div><% } %>
-      <form method="post" action="/cabinet/reset/<%= token %>" class="stacked-form">
+      <form method="post" action="<%= action %>" class="stacked-form">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <div class="field">
           <label for="r-pass">Пароль</label>

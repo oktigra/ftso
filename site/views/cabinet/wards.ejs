@@ -1,0 +1,113 @@
+<%
+/* ВЫБОР КАБИНЕТА — первое, что видит человек с несколькими ролями.
+   Экран существует ровно потому, что вход ОДИН, а кабинетов может быть
+   несколько: собственный профиль участника и кабинеты детей, за которых он
+   отвечает как законный представитель. Выбор делает человек, а не система. */
+%>
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Личный кабинет</span>
+    <h1>Мои кабинеты</h1>
+    <p class="muted">
+      <%= email %><% if (guardianName) { %> · <%= guardianName %><% } %>
+    </p>
+  </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container stack">
+    <% if (cabinetFlash) { %>
+      <div class="flash flash--<%= cabinetFlash.kind %>" role="status"><%= cabinetFlash.text %></div>
+    <% } %>
+
+    <%
+    const own = cabinets.filter(function (c) { return c.role === 'self'; });
+    const wards = cabinets.filter(function (c) { return c.role === 'guardian'; });
+    %>
+
+    <% if (own.length) { %>
+      <div class="panel">
+        <h2>Мой профиль</h2>
+        <ul class="cabinet-wards">
+          <% own.forEach(function (c) { %>
+            <li class="ward-item">
+              <div>
+                <strong><%= c.fullName %></strong>
+                <span class="muted"><%= c.city %></span>
+              </div>
+              <% if (c.awaitingSelf) { %>
+                <%
+                /* Свой кабинет ждёт подтверждения согласия от себя: открыть его
+                   до этого нельзя — основания обработки сейчас нет. */
+                %>
+                <a class="btn btn--secondary btn--small" href="/cabinet/adult">Подтвердить согласие</a>
+              <% } else { %>
+                <form method="post" action="/cabinet/wards/select" class="inline-form">
+                  <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                  <input type="hidden" name="player_id" value="<%= c.playerId %>">
+                  <button class="btn btn--primary btn--small" type="submit">Открыть мой кабинет</button>
+                </form>
+              <% } %>
+            </li>
+          <% }); %>
+        </ul>
+      </div>
+    <% } %>
+
+    <% if (wards.length) { %>
+      <div class="panel">
+        <h2>Мои дети</h2>
+        <p class="muted">
+          Кабинет принадлежит участнику. Вы входите в него как законный представитель и
+          действуете от его имени, пока участнику не исполнится 18 лет.
+        </p>
+        <ul class="cabinet-wards">
+          <% wards.forEach(function (c) { %>
+            <li class="ward-item">
+              <div>
+                <strong><%= c.fullName %></strong>
+                <span class="muted">
+                  <%= c.city %> · <%= c.relation %><%
+                  %><% if (c.awaitingSelf) { %> · исполнилось 18: ждём подтверждения участника<% } %>
+                </span>
+              </div>
+              <form method="post" action="/cabinet/wards/select" class="inline-form">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <input type="hidden" name="player_id" value="<%= c.playerId %>">
+                <button class="btn btn--secondary btn--small" type="submit">Открыть кабинет</button>
+              </form>
+            </li>
+          <% }); %>
+        </ul>
+      </div>
+    <% } %>
+
+    <% if (guardianName) { %>
+      <div class="panel">
+        <h2>Ваши данные как представителя</h2>
+        <p class="muted">
+          Федерация обрабатывает ваши фамилию, имя, отчество, степень родства и адрес почты —
+          на основании вашего собственного согласия. Эти сведения подтверждают, что согласие за
+          участника дано законно; подробнее — в
+          <a href="/privacy">Политике обработки персональных данных</a>.
+        </p>
+        <p class="muted">
+          Отозвать согласие на обработку СВОИХ данных, пока вы остаётесь действующим
+          представителем, нельзя: без них вы не можете быть представителем. Отзыв оформляется
+          как замена представителя — напишите на
+          <a href="mailto:<%= op.email %>"><%= op.email %></a>.
+        </p>
+      </div>
+    <% } %>
+
+    <form method="post" action="/cabinet/logout" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="btn btn--secondary btn--small" type="submit">Выйти</button>
+    </form>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

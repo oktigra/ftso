@@ -1,0 +1,57 @@
+<%
+/* Ссылка на экран перехода устарела или потерялась. Тупика тут быть не должно:
+   человек, которому исполнилось 18, не может остаться отрезанным от собственных
+   данных из-за письма, которое не дошло. Ответ формы ОДИНАКОВ независимо от
+   того, нашёлся контакт или нет, — иначе она превращается в проверку «есть ли
+   такой участник». */
+%>
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Личный кабинет</span>
+    <h1>Подтверждение согласия от своего имени</h1>
+  </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container">
+    <div class="panel form-panel">
+      <% if (sent) { %>
+        <p class="lead">Если такой участник у нас есть, ссылка отправлена на известный нам адрес.</p>
+        <p class="muted">
+          Письмо приходит на почту, указанную при регистрации: свою — если вы её уже указывали,
+          либо почту законного представителя. Ссылка личная, пересылать её посторонним не нужно.
+        </p>
+      <% } else { %>
+        <p class="lead">
+          Участнику исполнилось 18 лет: до подтверждения согласия от своего имени кабинет
+          не работает<%= frozen ? ' и находится в режиме заморозки' : '' %>.
+        </p>
+        <p class="muted">
+          Вход по прежнему паролю недоступен намеренно: согласие совершеннолетнего должен дать
+          он сам, а не тот, у кого есть пароль от кабинета. Ссылка отправлена письмом; если она
+          устарела или письмо не дошло — запросите новую.
+        </p>
+        <form method="post" action="/cabinet/adult/resend" class="stacked-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="field">
+            <label for="al-email">Почта, известная Федерации</label>
+            <input id="al-email" name="email" type="email" maxlength="160" required autocomplete="email"
+                   aria-describedby="al-hint">
+            <p class="field-hint" id="al-hint">
+              Своя — если вы её уже указывали, либо почта законного представителя.
+            </p>
+          </div>
+          <button class="btn btn--primary" type="submit">Выслать ссылку</button>
+        </form>
+      <% } %>
+      <p class="table-foot">
+        Ничего не помогает — напишите на <a href="mailto:<%= op.email %>"><%= op.email %></a>.
+      </p>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('../partials/footer') %>

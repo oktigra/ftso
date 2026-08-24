@@ -1,6 +1,10 @@
 <%
 /* Кабинет игрока. РЕДАКТИРУЕМО: ФИО, почта, фото. НЕ редактируемо: рейтинг,
-   очки, места — их считает движок по результатам, а не владелец профиля. */
+   очки, места — их считает движок по результатам, а не владелец профиля.
+
+   ОДИН И ТОТ ЖЕ кабинет открывается и самому участнику, и его законному
+   представителю (byGuardian): владелец не меняется, меняется тот, кто
+   действует от его имени, пока участнику нет 18. */
 %>
 <%- include('../partials/head') %>
 <%- include('../partials/header') %>
@@ -10,6 +14,14 @@
     <span class="eyebrow">Личный кабинет</span>
     <h1><%= profile.full_name %></h1>
     <p class="muted"><%= profile.city %><%= profile.age_group ? ' · ' + profile.age_group : '' %></p>
+    <% if (profile.basis === 'representative' && profile.guardian) { %>
+      <p class="badge-line">
+        <span class="badge badge--minor">Несовершеннолетний участник</span>
+        <span class="muted">
+          законный представитель: <%= profile.guardian.full_name %> (<%= profile.guardian.relation %>)
+        </span>
+      </p>
+    <% } %>
   </div>
 </section>
 
@@ -17,6 +29,32 @@
   <div class="container stack">
     <% if (cabinetFlash) { %>
       <div class="flash flash--<%= cabinetFlash.kind %>" role="status"><%= cabinetFlash.text %></div>
+    <% } %>
+
+    <% if (byGuardian) { %>
+      <div class="panel">
+        <p>
+          Вы вошли как <strong>законный представитель</strong> и действуете от имени участника.
+          Согласиями за участника распоряжаетесь вы — до его совершеннолетия.
+        </p>
+        <% if (cabinetCount > 1) { %>
+          <p class="table-foot">
+            <a class="link-more" href="/cabinet/wards">Другой кабинет <span aria-hidden="true">→</span></a>
+          </p>
+        <% } %>
+      </div>
+    <% } %>
+
+    <% if (!byGuardian && cabinetCount > 1) { %>
+      <div class="panel">
+        <p>
+          Открыт <strong>ваш собственный кабинет</strong>. Вы также законный представитель —
+          кабинеты детей рядом, в общем списке.
+        </p>
+        <p class="table-foot">
+          <a class="link-more" href="/cabinet/wards">Другой кабинет <span aria-hidden="true">→</span></a>
+        </p>
+      </div>
     <% } %>
 
     <div class="panel form-panel">
@@ -27,12 +65,24 @@
           <label for="p-full-name">Фамилия, имя, отчество</label>
           <input id="p-full-name" name="full_name" maxlength="120" required value="<%= profile.full_name %>">
         </div>
-        <div class="field">
-          <label for="p-email">Электронная почта</label>
-          <input id="p-email" name="email" type="email" maxlength="160" required value="<%= profile.email || '' %>"
-                 aria-describedby="p-email-hint">
-          <p class="field-hint" id="p-email-hint">Это же адрес для входа в кабинет.</p>
-        </div>
+        <% if (!byGuardian) { %>
+          <div class="field">
+            <label for="p-email">Электронная почта</label>
+            <input id="p-email" name="email" type="email" maxlength="160" required value="<%= profile.email || '' %>"
+                   aria-describedby="p-email-hint">
+            <p class="field-hint" id="p-email-hint">Это же адрес для входа в кабинет.</p>
+          </div>
+        <% } else { %>
+          <%
+          /* У участника младше 18 своей почты НЕ СПРАШИВАЕМ вовсе: до 14 лет он
+             и не вправе завести её сам, а контактом служит почта представителя.
+             Своя почта появится при переходе в 18 — и станет логином. */
+          %>
+          <p class="field-hint">
+            Контакт кабинета — ваша почта представителя (<%= profile.guardian ? profile.guardian.email : '' %>).
+            Своя почта у участника появится, когда ему исполнится 18 лет.
+          </p>
+        <% } %>
         <div class="field">
           <label for="p-photo">Фотография</label>
           <input id="p-photo" name="photo" type="file" aria-describedby="p-photo-hint">
@@ -67,14 +117,17 @@
         </button>
       </form>
       <p class="muted">
-        Без согласия вы остаётесь в рейтинге и участвуете в соревнованиях, но в открытых
+        Без согласия участник остаётся в рейтинге и участвует в соревнованиях, но в открытых
         таблицах на месте фамилии стоит «Скрыто по заявлению» — место и очки сохраняются.
         Подробнее — в <a href="/consent#distribution">тексте согласия</a>.
+        <% if (byGuardian) { %>
+          Согласие на распространение данных несовершеннолетнего даёте и отзываете вы.
+        <% } %>
       </p>
     </div>
 
     <div class="panel form-panel">
-      <h2>Смена пароля</h2>
+      <h2><%= byGuardian ? 'Смена вашего пароля (представителя)' : 'Смена пароля' %></h2>
       <form method="post" action="/cabinet/password" class="stacked-form">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <div class="field">
@@ -96,7 +149,14 @@
         </div>
         <button class="btn btn--primary" type="submit">Сменить пароль</button>
       </form>
-      <p class="muted">После смены пароля все остальные входы в кабинет прекращаются.</p>
+      <p class="muted">
+        <% if (byGuardian) { %>
+          Меняется пароль вашего входа как представителя — он общий для всех ваших участников.
+          Отдельного пароля у участника до 18 лет нет.
+        <% } else { %>
+          После смены пароля все остальные входы в кабинет прекращаются.
+        <% } %>
+      </p>
     </div>
 
     <div class="panel">
@@ -150,11 +210,21 @@
     </div>
 
     <div class="panel">
-      <h2>Удаление данных</h2>
+      <h2><%= byGuardian ? 'Отзыв согласия и удаление данных' : 'Удаление данных' %></h2>
       <p class="muted">
-        Право на удаление персональных данных (ст. 21 152-ФЗ). Действие необратимо.
+        <% if (byGuardian) { %>
+          Отзыв согласия на обработку персональных данных участника (ч. 2 ст. 9 152-ФЗ). Без
+          согласия у Федерации нет основания их хранить, поэтому отзыв означает уничтожение
+          данных — как и обращение по ст. 21. Действие необратимо.
+        <% } else { %>
+          Право на удаление персональных данных (ст. 21 152-ФЗ). Действие необратимо.
+        <% } %>
       </p>
-      <p><a class="btn btn--danger" href="/cabinet/delete">Удалить мои данные</a></p>
+      <p>
+        <a class="btn btn--danger" href="/cabinet/delete">
+          <%= byGuardian ? 'Отозвать согласие и удалить данные участника' : 'Удалить мои данные' %>
+        </a>
+      </p>
     </div>
 
     <form method="post" action="/cabinet/logout" class="inline-form">

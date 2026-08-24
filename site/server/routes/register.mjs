@@ -40,11 +40,29 @@ export default function mountRegister(app, { db, config, limitRegister }) {
       }
 
       const data = registrationInput(req.body);
-      // ДВЕ РАЗДЕЛЬНЫЕ отметки (ч. 6 ст. 10.1). Обработка обязательна — без неё
+      // РАЗДЕЛЬНЫЕ отметки (ч. 6 ст. 10.1). Обработка обязательна — без неё
       // нет основания. Публикация добровольна: отказ не мешает подать заявку.
-      const acceptProcessing = req.body.consent_processing === '1';
       const acceptDistribution = req.body.consent_distribution === '1';
-      if (!acceptProcessing) {
+
+      if (data.guardian) {
+        // НЕСОВЕРШЕННОЛЕТНИЙ: обе отметки представителя обязательны и проверяются
+        // ПОРОЗНЬ, потому что у них разные субъекты. Согласие за ребёнка без
+        // согласия представителя на СВОИ данные невозможно: без данных
+        // представителя нечем подтвердить, что согласие дал именно он.
+        if (req.body.consent_guardian_child !== '1') {
+          throw new ValidationError(
+            'Без согласия законного представителя на обработку персональных данных участника ' +
+              'заявку принять нельзя — это её правовое основание.',
+          );
+        }
+        if (req.body.consent_guardian_self !== '1') {
+          throw new ValidationError(
+            'Нужно отдельное согласие законного представителя на обработку ЕГО СОБСТВЕННЫХ данных ' +
+              '(ФИО, родство, почта): без них Федерация не может подтвердить, что согласие за ' +
+              'участника дано законным представителем.',
+          );
+        }
+      } else if (req.body.consent_processing !== '1') {
         throw new ValidationError(
           'Без согласия на обработку персональных данных заявку принять нельзя — это её правовое основание.',
         );
@@ -53,7 +71,18 @@ export default function mountRegister(app, { db, config, limitRegister }) {
       // Черновик держим до успеха: упадёт валидация — поля вернутся заполненными.
       req.session.registerDraft = {
         ...data,
-        consent_processing: acceptProcessing,
+        ...(data.guardian
+          ? {
+            guardian_full_name: data.guardian.full_name,
+            guardian_relation: data.guardian.relation,
+            guardian_email: data.guardian.email,
+            // Почту участника в черновик не возвращаем: у минора её нет.
+            email: '',
+          }
+          : {}),
+        consent_processing: req.body.consent_processing === '1',
+        consent_guardian_child: req.body.consent_guardian_child === '1',
+        consent_guardian_self: req.body.consent_guardian_self === '1',
         consent_distribution: acceptDistribution,
       };
 
@@ -81,7 +110,13 @@ export default function mountRegister(app, { db, config, limitRegister }) {
           sex: req.body.sex,
           age_group: req.body.age_group,
           email: req.body.email,
+          birth_date: req.body.birth_date,
+          guardian_full_name: req.body.guardian_full_name,
+          guardian_relation: req.body.guardian_relation,
+          guardian_email: req.body.guardian_email,
           consent_processing: req.body.consent_processing === '1',
+          consent_guardian_child: req.body.consent_guardian_child === '1',
+          consent_guardian_self: req.body.consent_guardian_self === '1',
           consent_distribution: req.body.consent_distribution === '1',
         };
         return req.session.save(() => renderForm(req, res, { errors: err.messages, status: 400 }));

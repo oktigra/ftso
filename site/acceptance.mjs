@@ -1109,7 +1109,9 @@ await check('регистрация пишет ДВЕ раздельные за�
   eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(id2).n, 1, 'только обработка');
   eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(id2).is_public, 0, 'без согласия — не публикуется');
 
-  db.prepare('DELETE FROM players WHERE id IN (?, ?)').run(id, id2);
+  // Каскад унёс бы записи журнала, а он закрыт на удаление триггером СУБД:
+  // убирать за собой тестовые данные — такое же законное удаление, как ст. 21.
+  journal.withConsentErasure(db, () => db.prepare('DELETE FROM players WHERE id IN (?, ?)').run(id, id2));
   return `две записи, редакция ${LEGAL_VERSION} у обеих; отказ от публикации оставляет только обработку`;
 });
 
@@ -1189,15 +1191,17 @@ await check('автоочистка чистит отозванные, дейс�
   eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(id).n, 3, 'записей до очистки');
 
   eq(journal.purgeExpired(db, 1095), 0, 'свежий отзыв чистить рано');
-  db.prepare("UPDATE consents SET at = datetime('now','-1200 days') WHERE player_id = ?").run(id);
-  const removed = journal.purgeExpired(db, 1095);
+  // Раньше запись «состаривали» через UPDATE. Теперь журнал НЕИЗМЕНЯЕМ на
+  // уровне СУБД, и правильный способ проверить срок — подвинуть САМ СРОК:
+  // с нулевым сроком хранения отозванное подлежит удалению прямо сейчас.
+  const removed = journal.purgeExpired(db, 0);
   eq(removed, 2, 'удаляется пара «выдано + отозвано» по распространению');
   const left = db.prepare('SELECT kind, event FROM consents WHERE player_id = ?').all(id);
   eq(left.length, 1, 'осталась одна запись');
   eq(left[0].kind, 'processing', 'действующее согласие на обработку не тронуто');
 
-  db.prepare('DELETE FROM players WHERE id = ?').run(id);
-  return 'отозванное старше срока удалено (2 записи), действующее согласие на обработку осталось';
+  journal.withConsentErasure(db, () => db.prepare('DELETE FROM players WHERE id = ?').run(id));
+  return 'отозванное по истечении срока удалено (2 записи), действующее согласие на обработку осталось';
 });
 
 await check('публикация из админки идёт ЧЕРЕЗ журнал, а не мимо', async () => {
@@ -1258,11 +1262,19 @@ section('12. Публичная регистрация и модерация');
 
 const regs = await import('./server/lib/registrations.mjs');
 
-/** Подать заявку формой: GET за токеном -> POST. Возвращает ответ и банку. */
+/**
+ * Подать заявку формой: GET за токеном -> POST. Возвращает ответ и банку.
+ *
+ * Дата рождения подставляется совершеннолетняя, если тест не задал свою: с
+ * введением слоя несовершеннолетних поле обязательно, и каждый тест про другое
+ * не должен её повторять. Тесты про минорный флоу передают birth_date явно.
+ */
+const ADULT_BIRTH = '1990-05-17';
 async function submitRegistration(form, jar = new Jar()) {
   const page = await http('/register', { jar });
   const _csrf = tokenFrom(page.text);
-  const res = await http('/register', { method: 'POST', form: { _csrf, ...form }, jar });
+  const body = { _csrf, birth_date: ADULT_BIRTH, ...form };
+  const res = await http('/register', { method: 'POST', form: body, jar });
   return { res, jar, _csrf };
 }
 
@@ -1422,7 +1434,7 @@ await check('rate-limit на /register срабатывает', async () => {
       method: 'POST',
       form: {
         _csrf, full_name: `Поток Заявкин ${i}`, city: 'Смоленск', sex: 'M',
-        email: `flood${i}@example.com`, consent_processing: '1',
+        birth_date: ADULT_BIRTH, email: `flood${i}@example.com`, consent_processing: '1',
       },
       jar,
     });
@@ -1432,7 +1444,9 @@ await check('rate-limit на /register срабатывает', async () => {
   assert(ok > 0, `лимитер режет всё подряд: принято ${ok} — живой человек не подаст заявку`);
   assert(limited > 0, `лимит не сработал: принято ${ok}, отказов 429 — ${limited}`);
   db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
-  db.prepare("DELETE FROM registrations WHERE email LIKE 'flood%@example.com'").run();
+  // Каскад от заявки уносит согласия, а журнал закрыт на удаление триггером.
+  journal.withConsentErasure(db, () =>
+    db.prepare("DELETE FROM registrations WHERE email LIKE 'flood%@example.com'").run());
   return `принято ${ok}, отбито лимитом ${limited}`;
 });
 
@@ -1843,7 +1857,7 @@ await check('rate-limit формы турнира срабатывает и не
     method: 'POST',
     form: {
       _csrf: regCsrf, full_name: 'Не Заблокирован', city: 'Смоленск', sex: 'M',
-      email: 'notblocked@example.com', consent_processing: '1',
+      birth_date: ADULT_BIRTH, email: 'notblocked@example.com', consent_processing: '1',
     },
     jar: regJar,
   });
@@ -1851,7 +1865,8 @@ await check('rate-limit формы турнира срабатывает и не
   db.prepare("DELETE FROM write_attempts WHERE key LIKE 't:%'").run();
   db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
   db.prepare("DELETE FROM tournament_requests WHERE email LIKE 'flood%@example.com'").run();
-  db.prepare("DELETE FROM registrations WHERE email = 'notblocked@example.com'").run();
+  journal.withConsentErasure(db, () =>
+    db.prepare("DELETE FROM registrations WHERE email = 'notblocked@example.com'").run());
   return `принято ${ok}, отбито ${limited}; регистрация игроков при этом работает (счётчики раздельные)`;
 });
 
@@ -2384,6 +2399,876 @@ await check('согласование заявки переносит докум
 });
 
 // ===========================================================================
+section('18. Несовершеннолетние и законный представитель (ч. 1 ст. 9 152-ФЗ)');
+
+const guardians = await import('./server/lib/guardians.mjs');
+const adulthood = await import('./server/lib/adulthood.mjs');
+const validate = await import('./server/lib/validate.mjs');
+const identity = await import('./server/lib/identity.mjs');
+
+/** Дата рождения, дающая ровно N лет на сегодня. */
+function birthFor(age, shiftDays = 0) {
+  const d = new Date();
+  d.setUTCFullYear(d.getUTCFullYear() - age);
+  d.setUTCDate(d.getUTCDate() + shiftDays);
+  return d.toISOString().slice(0, 10);
+}
+
+await check('миграция на копии БОЕВОЙ базы: старые аккаунты остаются взрослыми', async () => {
+  // Базу «как до внедрения» собираем из схемы, лежащей в git на момент HEAD:
+  // проверять миграцию на чистой базе бессмысленно — ломается она на старой.
+  const legacySchema = spawnSync('git', ['show', 'HEAD:site/db/schema.sql'], { cwd: HERE, encoding: 'utf8' });
+  assert(legacySchema.status === 0, 'не удалось достать прежнюю схему из git');
+  const LEGACY = resolve(WORK, 'legacy.sqlite');
+  rmSync(LEGACY, { force: true });
+  const legacy = new Database(LEGACY);
+  legacy.pragma('foreign_keys = ON');
+  legacy.exec(legacySchema.stdout);
+  const pid = Number(legacy.prepare(
+    "INSERT INTO players (full_name, city, sex, age_group) VALUES ('Старожилов Пётр','Смоленск','M','35-44')",
+  ).run().lastInsertRowid);
+  legacy.prepare('INSERT INTO player_accounts (player_id, email, password_hash) VALUES (?, ?, ?)')
+    .run(pid, 'old-timer@example.com', 'scrypt$16384$8$1$c29sdA$aGFzaA');
+  legacy.prepare(
+    "INSERT INTO consents (player_id, kind, event, legal_version, source) VALUES (?, 'processing','granted','2026-08-08','web')",
+  ).run(pid);
+  legacy.close();
+
+  const out = run(['db/migrate.mjs'], { DB_FILE: LEGACY });
+  eq(out.status, 0, `миграция на боевой копии упала: ${out.stderr}`);
+  const twice = run(['db/migrate.mjs'], { DB_FILE: LEGACY });
+  eq(twice.status, 0, 'повторная миграция боевой копии упала');
+
+  const after = new Database(LEGACY);
+  const acc = after.prepare('SELECT * FROM player_accounts WHERE player_id = ?').get(pid);
+  eq(acc.consent_basis, null, 'существующему аккаунту проставили основание — он должен остаться как был');
+  eq(acc.email, 'old-timer@example.com', 'почта существующего аккаунта потеряна при пересборке таблицы');
+  assert(accounts.basisOf(acc) === 'self', 'NULL должен читаться как «self»');
+  eq(after.prepare('PRAGMA table_info(player_accounts)').all().find((c) => c.name === 'email').notnull, 0,
+    'почта аккаунта осталась обязательной — кабинет ребёнка без почты не заведётся');
+  eq(after.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(pid).n, 1,
+    'записи журнала потеряны при пересборке таблицы');
+  assert(after.prepare("SELECT sql FROM sqlite_master WHERE name = 'consents'").get().sql.includes('representative_processing'),
+    'вид согласия представителя не добавлен в CHECK');
+  const triggers = after.prepare("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'consents'").all();
+  eq(triggers.length, 2, 'триггеры неизменяемости журнала не встали на пересобранную таблицу');
+  eq(after.prepare('SELECT COUNT(*) AS n FROM guardians').get().n, 0, 'таблица представителей не создана');
+  // Просроченный по возрасту, но НЕ минорный аккаунт в цикл не втягивается.
+  after.prepare('UPDATE players SET birth_date = ? WHERE id = ?').run(birthFor(10), pid);
+  const report = adulthood.runAdulthoodCheck(after, { baseUrl: 'https://example.test' });
+  eq(report.promoted, 0, 'старый аккаунт затянуло в минорный жизненный цикл');
+  after.close();
+  return 'миграция и повтор прошли на копии боевой базы; данные целы, старый аккаунт = self и вне минорного цикла';
+});
+
+const MINOR = {
+  name: 'Юниоров Тимофей Сергеевич',
+  birth: birthFor(14),
+  guardianName: 'Юниорова Анна Петровна',
+  guardianEmail: 'guardian@example.com',
+};
+const SIBLING = { name: 'Юниорова Дарья Сергеевна', birth: birthFor(11) };
+let minorPlayerId = null;
+let guardianSetUrl = null;
+
+/** Одобрить заявку от имени секретаря. */
+async function approveByAdmin(regId, form = {}) {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/registrations', { jar });
+  const _csrf = tokenFrom(page.text);
+  return http(`/admin/registrations/${regId}/approve`, { method: 'POST', form: { _csrf, ...form }, jar });
+}
+
+await check('заявка за минора без блока представителя и БЕЗ ОБЕИХ галочек не проходит', async () => {
+  resetCabinetLimit();
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  const base = {
+    full_name: MINOR.name, city: 'Смоленск', sex: 'M', birth_date: MINOR.birth,
+    consent_distribution: '1',
+  };
+  // 1) блока представителя нет вовсе
+  const noBlock = await submitRegistration({ ...base, consent_processing: '1' });
+  eq(noBlock.res.status, 400, 'заявка минора без представителя должна отклоняться');
+  assert(/ФИО законного представителя/i.test(noBlock.res.text), 'не названо, чего не хватает');
+
+  // 2) есть представитель, но нет согласия ЗА РЕБЁНКА
+  const noChild = await submitRegistration({
+    ...base,
+    guardian_full_name: MINOR.guardianName, guardian_relation: 'мать',
+    guardian_email: MINOR.guardianEmail, consent_guardian_self: '1',
+  });
+  eq(noChild.res.status, 400, 'нет согласия представителя за участника');
+  assert(/правовое основание/i.test(noChild.res.text), 'не объяснено, почему нельзя');
+
+  // 3) есть согласие за ребёнка, но нет согласия представителя на СВОИ данные
+  const noSelf = await submitRegistration({
+    ...base,
+    guardian_full_name: MINOR.guardianName, guardian_relation: 'мать',
+    guardian_email: MINOR.guardianEmail, consent_guardian_child: '1',
+  });
+  eq(noSelf.res.status, 400, 'нет согласия представителя на свои данные');
+  assert(/СОБСТВЕННЫХ данных/i.test(noSelf.res.text), 'не объяснено, зачем вторая отметка');
+
+  // 4) почта РЕБЁНКА при этом не собирается вовсе
+  const withChildMail = await submitRegistration({
+    ...base, email: 'kid@example.com',
+    guardian_full_name: MINOR.guardianName, guardian_relation: 'мать',
+    guardian_email: MINOR.guardianEmail,
+    consent_guardian_child: '1', consent_guardian_self: '1',
+  });
+  eq(withChildMail.res.status, 400, 'почта участника младше 18 не должна приниматься');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM registrations WHERE email = ?').get('kid@example.com').n, 0,
+    'почта ребёнка попала в БД');
+  return 'четыре отказа: нет блока, нет согласия за ребёнка, нет согласия представителя за себя, почта ребёнка не принимается';
+});
+
+await check('заявка минора пишет ТРИ согласия: два за ребёнка и одно за представителя', async () => {
+  const { res } = await submitRegistration({
+    full_name: MINOR.name, city: 'Смоленск', sex: 'M', birth_date: MINOR.birth,
+    guardian_full_name: MINOR.guardianName, guardian_relation: 'мать',
+    guardian_email: MINOR.guardianEmail,
+    consent_guardian_child: '1', consent_guardian_self: '1', consent_distribution: '1',
+  });
+  eq(res.status, 302, 'заявка минора не принята');
+  const reg = db.prepare('SELECT * FROM registrations WHERE full_name = ?').get(MINOR.name);
+  assert(reg, 'заявки нет в БД');
+  eq(reg.email, MINOR.guardianEmail, 'контактом заявки минора должна быть почта представителя');
+  eq(reg.birth_date, MINOR.birth, 'дата рождения не сохранена');
+  const rows = db.prepare('SELECT kind, event, subject_ref, basis FROM consents WHERE registration_id = ? ORDER BY id').all(reg.id);
+  eq(rows.length, 3, 'должно быть три записи журнала');
+  const child = rows.filter((r) => r.kind === 'processing' || r.kind === 'distribution');
+  eq(child.length, 2, 'нет пары согласий за ребёнка');
+  for (const r of child) {
+    assert(/ст\. 9/.test(r.basis || ''), 'в записи за ребёнка не назван законный представитель как основание');
+    assert(!r.subject_ref.includes(MINOR.guardianEmail), 'почта представителя продублирована в записи ребёнка');
+  }
+  const own = rows.find((r) => r.kind === 'representative_processing');
+  assert(own, 'нет отдельной записи согласия представителя на свои данные');
+  assert(own.subject_ref.includes(MINOR.guardianEmail), 'субъектом записи должен быть представитель');
+  return `три записи: ${rows.map((r) => r.kind).join(', ')}; субъект третьей — представитель`;
+});
+
+await check('одобрение минора: кабинет на РЕБЁНКА без почты, ссылка ушла ПРЕДСТАВИТЕЛЮ', async () => {
+  const reg = db.prepare('SELECT * FROM registrations WHERE full_name = ?').get(MINOR.name);
+  const appr = await approveByAdmin(reg.id);
+  eq(appr.status, 302, 'одобрение заявки минора');
+
+  const player = db.prepare('SELECT * FROM players WHERE full_name = ?').get(MINOR.name);
+  minorPlayerId = player.id;
+  eq(player.birth_date, MINOR.birth, 'дата рождения не скопирована в players — детект пропустил бы игрока');
+
+  const account = accounts.accountByPlayer(db, player.id);
+  assert(account, 'кабинет участника не заведён');
+  eq(account.email, null, 'у кабинета несовершеннолетнего не должно быть почты');
+  eq(account.password_hash, null, 'у кабинета несовершеннолетнего не должно быть пароля');
+  eq(account.consent_basis, 'representative', 'основание аккаунта не «представитель»');
+
+  const g = guardians.activeGuardianFor(db, player.id);
+  assert(g, 'представитель не привязан');
+  eq(g.email, MINOR.guardianEmail, 'почта представителя');
+  eq(g.relation, 'мать', 'степень родства');
+  const own = db.prepare("SELECT * FROM consents WHERE guardian_id = ? AND kind = 'representative_processing'").get(g.id);
+  assert(own, 'согласие представителя не привязано к его записи при одобрении');
+
+  const invite = db.prepare("SELECT * FROM mail_outbox WHERE to_email = ? AND kind = 'cabinet.guardian.invite'")
+    .get(MINOR.guardianEmail);
+  assert(invite, 'приглашение представителю не поставлено в очередь');
+  const m = /\/cabinet\/reset\/g\/([A-Za-z0-9_-]+)/.exec(invite.body);
+  assert(m, 'в письме нет ссылки установки пароля представителя');
+  guardianSetUrl = `/cabinet/reset/g/${m[1]}`;
+  assert(!db.prepare("SELECT 1 AS x FROM mail_outbox WHERE to_email = ? AND kind = 'cabinet.invite'").get(MINOR.guardianEmail),
+    'представителю ушло письмо про кабинет игрока — он входит своим логином');
+  return 'аккаунт ребёнка без почты и пароля, представитель привязан, ссылка ушла ему';
+});
+
+await check('ВТОРОЙ ребёнок того же представителя: новый логин не создаётся', async () => {
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  const { res } = await submitRegistration({
+    full_name: SIBLING.name, city: 'Смоленск', sex: 'F', birth_date: SIBLING.birth,
+    guardian_full_name: MINOR.guardianName, guardian_relation: 'мать',
+    guardian_email: MINOR.guardianEmail,
+    consent_guardian_child: '1', consent_guardian_self: '1',
+  });
+  eq(res.status, 302, 'заявка второго ребёнка');
+  const reg = db.prepare('SELECT * FROM registrations WHERE full_name = ?').get(SIBLING.name);
+  const appr = await approveByAdmin(reg.id);
+  eq(appr.status, 302, 'одобрение второго ребёнка должно проходить, а не падать на UNIQUE');
+
+  const all = db.prepare('SELECT COUNT(*) AS n FROM guardians WHERE email = ?').get(MINOR.guardianEmail).n;
+  eq(all, 1, 'на одного представителя должна быть ОДНА запись');
+  const sibling = db.prepare('SELECT * FROM players WHERE full_name = ?').get(SIBLING.name);
+  const wards = identity.cabinetsOf(db, { guardian: guardians.guardianByEmail(db, MINOR.guardianEmail) });
+  eq(wards.length, 2, 'у представителя должно быть двое подопечных');
+  const acc = accounts.accountByPlayer(db, sibling.id);
+  eq(acc.email, null, 'второй кабинет тоже без почты');
+  const note = db.prepare("SELECT * FROM mail_outbox WHERE to_email = ? AND kind = 'cabinet.guardian.ward'").get(MINOR.guardianEmail);
+  assert(note, 'представителю не сообщили о добавлении второго участника');
+  return 'один представитель, два кабинета, второго логина и второго пароля не появилось';
+});
+
+await check('представитель задаёт пароль, входит и выбирает участника', async () => {
+  resetCabinetLimit();
+  const jar = new Jar();
+  const open = await http(guardianSetUrl, { jar });
+  eq(open.status, 200, 'страница установки пароля представителя');
+  const set = await http(guardianSetUrl, {
+    method: 'POST',
+    form: { _csrf: tokenFrom(open.text), password: 'смоленские-корты-2026', password2: 'смоленские-корты-2026' },
+    jar,
+  });
+  eq(set.status, 200, 'установка пароля представителя');
+  assert(set.text.includes('Пароль'), 'нет подтверждения установки');
+
+  resetCabinetLimit();
+  const jar2 = new Jar();
+  const page = await http('/cabinet/login', { jar: jar2 });
+  const enter = await http('/cabinet/login', {
+    method: 'POST',
+    form: { _csrf: tokenFrom(page.text), email: MINOR.guardianEmail, password: 'смоленские-корты-2026' },
+    jar: jar2,
+  });
+  eq(enter.status, 302, 'вход представителя');
+  eq(enter.location, '/cabinet/wards', 'представителя должно вести к списку участников');
+
+  const wards = await http('/cabinet/wards', { jar: jar2 });
+  eq(wards.status, 200, 'список участников');
+  assert(wards.text.includes(MINOR.name) && wards.text.includes(SIBLING.name), 'в списке не оба участника');
+
+  const select = await http('/cabinet/wards/select', {
+    method: 'POST', form: { _csrf: tokenFrom(wards.text), player_id: String(minorPlayerId) }, jar: jar2,
+  });
+  eq(select.status, 302, 'выбор участника');
+  const cab = await http('/cabinet', { jar: jar2 });
+  eq(cab.status, 200, 'кабинет участника глазами представителя');
+  assert(cab.text.includes(MINOR.name), 'открылся не тот кабинет');
+  assert(/законный представитель/i.test(cab.text), 'кабинет не помечен как представительский');
+  assert(cab.text.includes(MINOR.guardianName), 'не показан представитель');
+
+  // Чужой кабинет подстановкой id не открывается.
+  const other = db.prepare("SELECT id FROM players WHERE full_name = 'Артём Ковалёв'").get();
+  const steal = await http('/cabinet/wards/select', {
+    method: 'POST', form: { _csrf: tokenFrom(wards.text), player_id: String(other.id) }, jar: jar2,
+  });
+  eq(steal.status, 403, 'подстановка чужого id должна отбиваться');
+  return 'один вход -> список из двух участников -> кабинет выбранного; чужой id отбит 403';
+});
+
+await check('дата рождения НЕ утекает: ни в витрину, ни в кабинет, ни в выгрузку', async () => {
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  await http('/cabinet/login', {
+    method: 'POST',
+    form: { _csrf: tokenFrom(page.text), email: MINOR.guardianEmail, password: 'смоленские-корты-2026' },
+    jar,
+  });
+  const wards = await http('/cabinet/wards', { jar });
+  await http('/cabinet/wards/select', {
+    method: 'POST', form: { _csrf: tokenFrom(wards.text), player_id: String(minorPlayerId) }, jar,
+  });
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  const paths = ['/rating', '/rating.csv', '/rating.csv?format=engine', '/', '/cabinet', '/cabinet/wards'];
+  for (const p of paths) {
+    const r = await http(p, { jar });
+    assert(!r.text.includes(MINOR.birth), `${p}: в ответе видна дата рождения`);
+    assert(!/birth_date/i.test(r.text), `${p}: в ответе есть поле birth_date`);
+  }
+  // И в самом снимке рейтинга её тоже нет — снимок переживает игрока.
+  const snap = db.prepare('SELECT standings_json FROM rating_cache ORDER BY id DESC LIMIT 1').get();
+  assert(!snap.standings_json.includes(MINOR.birth), 'дата рождения попала в снимок рейтинга');
+
+  // А В АДМИНКЕ — ВИДНА И ПРАВИТСЯ: секретарю она нужна, чтобы проверить возраст
+  // и разобрать спорную заявку. Это ровно одно место на весь сайт.
+  const admin = await login(ADMIN.user, ADMIN.pass);
+  const card = await http('/admin/players', { jar: admin.jar });
+  eq(card.status, 200, 'карточка игроков в админке');
+  assert(card.text.includes(MINOR.birth), 'секретарь не видит дату рождения — нечем проверить возраст');
+  assert(/name="birth_date"/.test(card.text), 'дату рождения нельзя исправить: опечатка станет неисправимой');
+  // Аноним в админку не попадает — дата за логином, а не «просто на странице».
+  const anon = await http('/admin/players');
+  eq(anon.status, 302, 'админка без входа должна уводить на /login');
+  return `${paths.length} публичных ответов и снимок без даты рождения; в админке за логином — видна и правится`;
+});
+
+await check('представитель распоряжается публикацией данных ребёнка', async () => {
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  await http('/cabinet/login', {
+    method: 'POST',
+    form: { _csrf: tokenFrom(page.text), email: MINOR.guardianEmail, password: 'смоленские-корты-2026' },
+    jar,
+  });
+  const wards = await http('/cabinet/wards', { jar });
+  await http('/cabinet/wards/select', {
+    method: 'POST', form: { _csrf: tokenFrom(wards.text), player_id: String(minorPlayerId) }, jar,
+  });
+  const cab = await http('/cabinet', { jar });
+  const off = await http('/cabinet/publication', {
+    method: 'POST', form: { _csrf: tokenFrom(cab.text), publish: '0' }, jar,
+  });
+  eq(off.status, 302, 'отзыв публикации представителем');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(minorPlayerId).is_public, 0,
+    'флаг публикуемости не снялся');
+  const last = db.prepare("SELECT event FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1")
+    .get(minorPlayerId);
+  eq(last.event, 'revoked', 'отзыв не записан событием журнала');
+  return 'отзыв распространения представителем: новая строка журнала + снятый флаг';
+});
+
+await check('журнал согласий неизменяем НА УРОВНЕ СУБД: UPDATE и DELETE отбиты', async () => {
+  const row = db.prepare('SELECT id FROM consents WHERE player_id = ? LIMIT 1').get(minorPlayerId);
+  let updateBlocked = false;
+  let deleteBlocked = false;
+  try {
+    db.prepare("UPDATE consents SET legal_version = 'подделка' WHERE id = ?").run(row.id);
+  } catch (err) {
+    updateBlocked = /неизменяема/.test(err.message);
+  }
+  try {
+    db.prepare('DELETE FROM consents WHERE id = ?').run(row.id);
+  } catch (err) {
+    deleteBlocked = /не удаляется/.test(err.message);
+  }
+  assert(updateBlocked, 'UPDATE записи журнала прошёл — журнал перестал быть доказательством');
+  assert(deleteBlocked, 'DELETE записи журнала прошёл');
+  assert(db.prepare('SELECT 1 AS x FROM consents WHERE id = ?').get(row.id), 'запись всё-таки исчезла');
+  // Каскад тоже отбивается: удаление игрока мимо ворот не унесёт журнал.
+  let cascadeBlocked = false;
+  try {
+    db.prepare('DELETE FROM players WHERE id = ?').run(minorPlayerId);
+  } catch (err) {
+    cascadeBlocked = /не удаляется/.test(err.message);
+  }
+  assert(cascadeBlocked, 'каскадное удаление унесло записи журнала в обход ворот');
+  return 'UPDATE, DELETE и каскад отвергнуты триггерами СУБД; запись на месте';
+});
+
+await check('переход в 18: детект догоняет просроченных и НЕ рвёт активную сессию', async () => {
+  // Сессия представителя живёт ДО детекта и во время него.
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  await http('/cabinet/login', {
+    method: 'POST',
+    form: { _csrf: tokenFrom(page.text), email: MINOR.guardianEmail, password: 'смоленские-корты-2026' },
+    jar,
+  });
+  const wards = await http('/cabinet/wards', { jar });
+  await http('/cabinet/wards/select', {
+    method: 'POST', form: { _csrf: tokenFrom(wards.text), player_id: String(minorPlayerId) }, jar,
+  });
+  eq((await http('/cabinet', { jar })).status, 200, 'кабинет до детекта');
+
+  // (a) ГРАНИЦА: ровно 18 сегодня. (b) ПРОСРОЧКА: 25 лет, заведён как минор.
+  db.prepare('UPDATE players SET birth_date = ? WHERE id = ?').run(birthFor(18), minorPlayerId);
+  const sibling = db.prepare('SELECT id FROM players WHERE full_name = ?').get(SIBLING.name);
+  db.prepare('UPDATE players SET birth_date = ? WHERE id = ?').run(birthFor(25), sibling.id);
+
+  const first = adulthood.runAdulthoodCheck(db, { baseUrl: inst.base });
+  eq(first.promoted, 2, 'детект не нашёл обоих (граница + просрочка)');
+  const again = adulthood.runAdulthoodCheck(db, { baseUrl: inst.base });
+  eq(again.promoted, 0, 'повторный проход не идемпотентен');
+
+  eq(accounts.accountByPlayer(db, minorPlayerId).consent_basis, 'awaiting_self', 'состояние не сменилось');
+  // Активная сессия НЕ тронута: страница отдаётся, а не рвётся редиректом на вход.
+  const during = await http('/cabinet', { jar });
+  assert(during.status === 200, 'детект выкинул активную сессию');
+  assert(/исполнилось 18/i.test(during.text), 'представителю не объяснили, почему кабинет закрыт');
+  assert(!during.text.includes('/cabinet/login'), 'вместо объяснения показан вход');
+
+  const letter = db.prepare("SELECT * FROM mail_outbox WHERE kind = 'cabinet.adult.start' ORDER BY id DESC LIMIT 1").get();
+  assert(letter, 'письмо о переходе не поставлено в очередь');
+  eq(letter.to_email, MINOR.guardianEmail, 'письмо ушло не на известный контакт');
+  return 'граница и просрочка найдены, повтор идемпотентен, активная сессия жива, письмо ушло представителю';
+});
+
+await check('переход в 18: представитель действовать больше не может', async () => {
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  const enter = await http('/cabinet/login', {
+    method: 'POST',
+    form: { _csrf: tokenFrom(page.text), email: MINOR.guardianEmail, password: 'смоленские-корты-2026' },
+    jar,
+  });
+  eq(enter.status, 302, 'вход представителя');
+  const wards = await http('/cabinet/wards', { jar });
+  const select = await http('/cabinet/wards/select', {
+    method: 'POST', form: { _csrf: tokenFrom(wards.text), player_id: String(minorPlayerId) }, jar,
+  });
+  eq(select.status, 302, 'выбор участника');
+  const cab = await http('/cabinet', { jar });
+  assert(/исполнилось 18/i.test(cab.text), 'представителю показан кабинет вместо объяснения');
+  assert(!cab.text.includes('/cabinet/publication'), 'представителю оставили значимые действия');
+  return 'после 18 представитель видит объяснение, а не кабинет: значимых действий нет';
+});
+
+await check('экран перехода: почта-дубликат отбивается, переход не завершается', async () => {
+  // Занятый адрес заводим ЯВНО: кабинет из раздела 15 к этому моменту удалён
+  // по ст. 21, и «занятым» его адрес больше не является.
+  const busyId = Number(db.prepare(
+    "INSERT INTO players (full_name, city, sex) VALUES ('Занятов Адрес Почтович','Смоленск','M')",
+  ).run().lastInsertRowid);
+  const BUSY_EMAIL = 'busy-mailbox@example.com';
+  db.prepare('INSERT INTO player_accounts (player_id, email, consent_basis) VALUES (?, ?, ?)')
+    .run(busyId, BUSY_EMAIL, 'self');
+  const acc = accounts.accountByPlayer(db, minorPlayerId);
+  const token = adulthood.issueTransitionToken(db, acc.id);
+  resetCabinetLimit();
+  const jar = new Jar();
+  const screen = await http(`/cabinet/adult/${token}`, { jar });
+  eq(screen.status, 200, 'экран перехода по ссылке');
+  assert(screen.text.includes(MINOR.name), 'на экране не тот участник');
+
+  const dup = await http(`/cabinet/adult/${token}`, {
+    method: 'POST',
+    form: {
+      _csrf: tokenFrom(screen.text), email: BUSY_EMAIL,
+      password: 'своя-жизнь-2026-корт', password2: 'своя-жизнь-2026-корт',
+      consent_processing: '1',
+    },
+    jar,
+  });
+  eq(dup.status, 400, 'занятая почта должна отклоняться');
+  assert(/уже используется/i.test(dup.text), 'не объяснено, почему адрес не подходит');
+  eq(accounts.accountByPlayer(db, minorPlayerId).consent_basis, 'awaiting_self', 'переход завершился с чужой почтой');
+
+  // И без согласия на обработку — тоже отказ.
+  const noConsent = await http(`/cabinet/adult/${token}`, {
+    method: 'POST',
+    form: {
+      _csrf: tokenFrom(screen.text), email: 'timofey@example.com',
+      password: 'своя-жизнь-2026-корт', password2: 'своя-жизнь-2026-корт',
+    },
+    jar,
+  });
+  eq(noConsent.status, 400, 'без согласия на обработку переход завершаться не должен');
+  assert(/правовое основание/i.test(noConsent.text), 'не объяснено, почему согласие обязательно');
+  return 'дубликат почты и отсутствие согласия отбиты, состояние осталось awaiting_self';
+});
+
+await check('переход в 18 завершается: журнал отзывает старое и принимает своё', async () => {
+  const acc = accounts.accountByPlayer(db, minorPlayerId);
+  const token = adulthood.issueTransitionToken(db, acc.id);
+  resetCabinetLimit();
+  const jar = new Jar();
+  const screen = await http(`/cabinet/adult/${token}`, { jar });
+  const before = db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(minorPlayerId).n;
+
+  const done = await http(`/cabinet/adult/${token}`, {
+    method: 'POST',
+    form: {
+      _csrf: tokenFrom(screen.text), email: 'timofey@example.com',
+      password: 'своя-жизнь-2026-корт', password2: 'своя-жизнь-2026-корт',
+      consent_processing: '1', consent_distribution: '1',
+    },
+    jar,
+  });
+  eq(done.status, 302, 'завершение перехода');
+  eq(done.location, '/cabinet', 'после перехода человек должен оказаться в своём кабинете');
+
+  const after = accounts.accountByPlayer(db, minorPlayerId);
+  eq(after.consent_basis, 'self', 'основание не стало собственным');
+  eq(after.email, 'timofey@example.com', 'своя почта не стала логином');
+  assert(after.password_hash, 'свой пароль не задан');
+  eq(after.transition_token, null, 'токен перехода не погашен');
+  assert(!guardians.activeGuardianFor(db, minorPlayerId), 'представитель остался действующим');
+
+  const rows = db.prepare('SELECT kind, event, legal_version FROM consents WHERE player_id = ? ORDER BY id').all(minorPlayerId);
+  assert(rows.length > before, 'журнал не пополнился');
+  const revoked = rows.filter((r) => r.event === 'revoked');
+  assert(revoked.length >= 2, 'представительские согласия не отозваны');
+  const granted = rows.slice(-2).filter((r) => r.event === 'granted');
+  assert(granted.length >= 1, 'собственное согласие не записано');
+  eq(granted[granted.length - 1].legal_version, LEGAL_VERSION, 'собственное согласие записано не текущей редакцией');
+
+  // Вход по НОВОМУ логину работает, кабинет свой.
+  const jar2 = new Jar();
+  const page = await http('/cabinet/login', { jar: jar2 });
+  const enter = await http('/cabinet/login', {
+    method: 'POST',
+    form: { _csrf: tokenFrom(page.text), email: 'timofey@example.com', password: 'своя-жизнь-2026-корт' },
+    jar: jar2,
+  });
+  eq(enter.status, 302, 'вход по своей почте');
+  eq(enter.location, '/cabinet', 'после входа — сразу кабинет, без списка подопечных');
+  return `журнал: ${rows.map((r) => r.kind + '/' + r.event).join(', ')}; логин сменился на свой`;
+});
+
+await check('представитель второго ребёнка остаётся действующим, его данные на месте', async () => {
+  const g = guardians.guardianByEmail(db, MINOR.guardianEmail);
+  assert(g, 'запись представителя исчезла после перехода первого ребёнка');
+  eq(g.revoked_at, null, 'представитель снят, хотя второй ребёнок ещё за ним');
+  const wards = identity.cabinetsOf(db, { guardian: g });
+  eq(wards.length, 1, 'у представителя должен остаться один подопечный');
+  return 'снятие одного подопечного не тронуло ни представителя, ни второго ребёнка';
+});
+
+await check('заморозка на +30 дней: read-only, данные не удалены, секретарь уведомлён', async () => {
+  const sibling = db.prepare('SELECT id, full_name FROM players WHERE full_name = ?').get(SIBLING.name);
+  const acc = accounts.accountByPlayer(db, sibling.id);
+  db.prepare("UPDATE player_accounts SET transition_started_at = datetime('now', '-31 days') WHERE id = ?").run(acc.id);
+  const report = adulthood.runAdulthoodCheck(db, { baseUrl: inst.base });
+  assert(report.frozen >= 1, 'заморозка не сработала');
+  const frozen = accounts.accountByPlayer(db, sibling.id);
+  assert(frozen.frozen_at, 'отметка заморозки не проставлена');
+  eq(frozen.consent_basis, 'awaiting_self', 'заморозка не должна менять состояние перехода');
+  assert(db.prepare('SELECT full_name FROM players WHERE id = ?').get(sibling.id).full_name === SIBLING.name,
+    'данные при заморозке удалены — этого делать нельзя');
+  const staff = db.prepare("SELECT * FROM mail_outbox WHERE kind = 'cabinet.adult.frozen.staff' ORDER BY id DESC LIMIT 1").get();
+  assert(staff, 'секретарь не уведомлён о заморозке');
+  assert(staff.body.includes(String(sibling.id)), 'в уведомлении секретарю нет ссылки на игрока');
+  return 'кабинет заморожен, данные целы, письма участнику и секретарю поставлены в очередь';
+});
+
+await check('замена представителя не создаёт второго действующего и гасит доступ прежнего', async () => {
+  // Новый минор — на нём и проверяем замену.
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  const NAME = 'Сменов Кирилл Павлович';
+  await submitRegistration({
+    full_name: NAME, city: 'Вязьма', sex: 'M', birth_date: birthFor(12),
+    guardian_full_name: 'Сменова Ольга Ивановна', guardian_relation: 'мать',
+    guardian_email: 'old-guardian@example.com',
+    consent_guardian_child: '1', consent_guardian_self: '1',
+  });
+  const reg = db.prepare('SELECT * FROM registrations WHERE full_name = ?').get(NAME);
+  await approveByAdmin(reg.id);
+  const pid = db.prepare('SELECT id FROM players WHERE full_name = ?').get(NAME).id;
+  const before = guardians.activeGuardianFor(db, pid);
+  assert(before, 'первый представитель не привязан');
+
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/players', { jar });
+  const swap = await http(`/admin/players/${pid}/guardian`, {
+    method: 'POST',
+    form: {
+      _csrf: tokenFrom(page.text),
+      guardian_full_name: 'Сменов Павел Петрович', guardian_relation: 'отец',
+      guardian_email: 'new-guardian@example.com',
+      guardian_basis: 'решение суда об определении места жительства',
+      guardian_document_date: '2026-03-14',
+    },
+    jar,
+  });
+  eq(swap.status, 302, 'замена представителя');
+
+  const active = db.prepare('SELECT COUNT(*) AS n FROM guardian_wards WHERE player_id = ? AND revoked_at IS NULL').get(pid).n;
+  eq(active, 1, 'действующих представителей должно остаться ровно один');
+  const now = guardians.activeGuardianFor(db, pid);
+  eq(now.email, 'new-guardian@example.com', 'новый представитель не привязан');
+  const old = guardians.guardianByEmail(db, 'old-guardian@example.com');
+  assert(old.revoked_at, 'прежний представитель не снят');
+  const revokedConsent = db.prepare(
+    "SELECT event FROM consents WHERE guardian_id = ? AND kind = 'representative_processing' ORDER BY id DESC LIMIT 1",
+  ).get(old.id);
+  eq(revokedConsent.event, 'revoked', 'собственное согласие прежнего представителя не отозвано');
+  const proof = db.prepare(
+    "SELECT basis, document_date FROM consents WHERE guardian_id = ? AND event = 'granted' ORDER BY id DESC LIMIT 1",
+  ).get(now.id);
+  assert(proof && proof.basis.includes('решение суда'), 'документ-основание замены не записан');
+  eq(proof.document_date, '2026-03-14', 'дата документа не записана');
+  eq(db.prepare('SELECT id FROM players WHERE full_name = ?').get(NAME).id, pid, 'запись игрока пересоздана');
+  return 'один действующий представитель, прежний снят с отзывом согласия, документ замены в журнале';
+});
+
+await check('удаление данных ребёнка уносит и представителя — если ребёнок у него последний', async () => {
+  const pid = db.prepare("SELECT id FROM players WHERE full_name = 'Сменов Кирилл Павлович'").get().id;
+  const g = guardians.activeGuardianFor(db, pid);
+  const report = erasure.erasePlayer(db, pid, { uploadDir: UPLOAD_DIR });
+  assert(report.playerId === pid, 'обезличивание не выполнено');
+  assert(!guardians.guardianById(db, g.id), 'данные представителя остались без единого подопечного');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE guardian_id = ?').get(g.id).n, 0,
+    'согласия удалённого представителя остались');
+  eq(db.prepare('SELECT birth_date FROM players WHERE id = ?').get(pid).birth_date, null,
+    'дата рождения не стёрта при обезличивании');
+  assert(!dbContains('new-guardian@example.com'), 'почта представителя осталась в файлах базы');
+  return 'ребёнок обезличен, представитель и его согласия удалены, дата рождения стёрта';
+});
+
+await check('срок хранения данных представителя: 3 года ОТ СНЯТИЯ, не от 18 лет', async () => {
+  // Свой подопытный: у снятого представителя должен ОСТАВАТЬСЯ ребёнок в БД,
+  // иначе его данные уносит не срок хранения, а обезличивание участника.
+  // Ребёнок тоже свой — у чужого уже есть действующий представитель, и второго
+  // частичный уникальный индекс не допустит (это и правильно).
+  const keeperId = Number(db.prepare(
+    "INSERT INTO players (full_name, city, sex, birth_date) VALUES ('Хранимов Лев Игоревич','Ярцево','M','2015-04-04')",
+  ).run().lastInsertRowid);
+  const { guardian: g } = db.transaction(() => guardians.attachGuardian(db, keeperId, {
+    full_name: 'Хранимова Вера Ильинична', relation: 'опекун', email: 'retention-guardian@example.com',
+  }))();
+  guardians.recordGuardianConsent(db, g, { source: 'offline', basis: 'акт опеки', documentDate: '2026-01-09' });
+  db.transaction(() => guardians.revokeWard(db, keeperId, { source: 'offline' }))();
+  assert(guardians.guardianById(db, g.id).revoked_at, 'представитель не снят');
+  // Свежеснятый не чистится.
+  eq(guardians.purgeGuardians(db, config.guardian.retentionDays), 0, 'снятый вчера представитель удалён досрочно');
+  assert(guardians.guardianById(db, g.id), 'запись исчезла раньше срока');
+  // Просроченный — чистится вместе со своими согласиями.
+  db.prepare("UPDATE guardians SET revoked_at = datetime('now', '-1096 days') WHERE id = ?").run(g.id);
+  const removed = guardians.purgeGuardians(db, config.guardian.retentionDays);
+  eq(removed, 1, 'просроченный представитель не вычищен');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE guardian_id = ?').get(g.id).n, 0,
+    'согласия вычищенного представителя остались');
+  return `срок ${config.guardian.retentionDays} дней от revoked_at: свежий цел, просроченный удалён вместе с согласиями`;
+});
+
+await check('существующие аккаунты (consent_basis NULL) в минорный цикл не попадают', async () => {
+  const legacy = db.prepare("SELECT id FROM players WHERE full_name = 'Дмитрий Волков'").get();
+  db.prepare('INSERT INTO player_accounts (player_id, email) VALUES (?, ?)').run(legacy.id, 'legacy@example.com');
+  db.prepare('UPDATE player_accounts SET consent_basis = NULL WHERE player_id = ?').run(legacy.id);
+  // Даже с датой рождения ребёнка: аккаунт заводился НЕ как минорный.
+  db.prepare('UPDATE players SET birth_date = ? WHERE id = ?').run(birthFor(10), legacy.id);
+  const report = adulthood.runAdulthoodCheck(db, { baseUrl: inst.base });
+  const acc = accounts.accountByPlayer(db, legacy.id);
+  eq(acc.consent_basis, null, 'старому аккаунту переписали основание');
+  assert(accounts.basisOf(acc) === 'self', 'NULL должен читаться как self');
+  db.prepare('UPDATE players SET birth_date = NULL WHERE id = ?').run(legacy.id);
+  db.prepare('DELETE FROM player_accounts WHERE player_id = ?').run(legacy.id);
+  return `детект прошёл (${report.promoted} переведено), старый аккаунт не тронут и читается как «self»`;
+});
+
+await check('публикация снимается В МОМЕНТ 18-летия, без отсрочки и без правки движка', async () => {
+  // Свой подопытный: минор с действующим согласием на распространение.
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  const NAME = 'Публиков Роман Игоревич';
+  await submitRegistration({
+    full_name: NAME, city: 'Смоленск', sex: 'M', birth_date: birthFor(17),
+    guardian_full_name: 'Публикова Инна Олеговна', guardian_relation: 'мать',
+    guardian_email: 'publication-guardian@example.com',
+    consent_guardian_child: '1', consent_guardian_self: '1', consent_distribution: '1',
+  });
+  const reg = db.prepare('SELECT * FROM registrations WHERE full_name = ?').get(NAME);
+  await approveByAdmin(reg.id);
+  const pid = db.prepare('SELECT id FROM players WHERE full_name = ?').get(NAME).id;
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(pid).is_public, 1,
+    'до 18 участник публикуется по согласию представителя');
+
+  // Даём результат, чтобы игрок попал в таблицу и было что скрывать.
+  const t = db.prepare('SELECT id FROM tournaments ORDER BY id LIMIT 1').get();
+  db.prepare('INSERT OR IGNORE INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)').run(t.id, pid, 6);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  const before = currentStandings(db);
+  const rowBefore = before.players.find((p) => p.playerId === pid);
+  assert(rowBefore && rowBefore.playerName === NAME, 'до 18 фамилия видна в открытом рейтинге');
+
+  // Совершеннолетие — ровно сегодня.
+  db.prepare('UPDATE players SET birth_date = ? WHERE id = ?').run(birthFor(18), pid);
+  const report = adulthood.runAdulthoodCheck(db, { baseUrl: inst.base });
+  assert(report.unpublished >= 1, 'публикация не снята при переходе');
+
+  // ФЛАГ снят СРАЗУ, без ожидания заморозки.
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(pid).is_public, 0,
+    'флаг публикуемости не снят в момент 18-летия');
+  eq(db.prepare('SELECT frozen_at FROM player_accounts WHERE player_id = ?').get(pid).frozen_at, null,
+    'заморозки быть не должно — снятие публикации от неё не зависит');
+
+  // В журнале — отзыв С НАЗВАННОЙ ПРИЧИНОЙ и с той редакцией, что покрывало согласие.
+  const last = db.prepare(
+    "SELECT event, basis, legal_version FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1",
+  ).get(pid);
+  eq(last.event, 'revoked', 'прекращение публикации не записано событием журнала');
+  assert(/исполнилось 18/.test(last.basis || ''), 'в записи не названа причина прекращения');
+
+  // ВИТРИНА: фамилия скрыта, а место и очки — те же, что считает движок.
+  const after = currentStandings(db);
+  const rowAfter = after.players.find((p) => p.playerId === pid);
+  assert(rowAfter, 'участник исчез из таблицы — места соперников поедут');
+  eq(rowAfter.playerName, 'Скрыто по заявлению', 'фамилия всё ещё публикуется');
+  eq(rowAfter.anonymized, 'hidden', 'причина скрытия не «скрыт»');
+  eq(rowAfter.rank, rowBefore.rank, 'место изменилось — движок не должен был шевельнуться');
+  eq(rowAfter.ratingPoints, rowBefore.ratingPoints, 'очки изменились — движок не должен был шевельнуться');
+
+  // И в СВЕЖЕМ пересчёте движок даёт то же самое: трогали только фильтр публикации.
+  const engine = computeStandings(collectEngineInput(db));
+  const engineRow = engine.players.find((p) => p.playerId === pid);
+  eq(engineRow.rank, rowBefore.rank, 'расчёт движка изменился после снятия публикации');
+  return `флаг снят в день 18-летия (заморозки нет), отзыв в журнале с причиной, место ${rowAfter.rank} и очки сохранены`;
+});
+
+await check('подтверждение согласия возвращает публикацию мгновенно', async () => {
+  const pid = db.prepare("SELECT id FROM players WHERE full_name = 'Публиков Роман Игоревич'").get().id;
+  const acc = accounts.accountByPlayer(db, pid);
+  const token = adulthood.issueTransitionToken(db, acc.id);
+  resetCabinetLimit();
+  const jar = new Jar();
+  const screen = await http(`/cabinet/adult/${token}`, { jar });
+  eq(screen.status, 200, 'экран перехода');
+  assert(/приостановлена/i.test(screen.text), 'человеку не сказали, что публикация приостановлена');
+
+  const done = await http(`/cabinet/adult/${token}`, {
+    method: 'POST',
+    form: {
+      _csrf: tokenFrom(screen.text), email: 'roman-publikov@example.com',
+      password: 'мой-корт-моё-имя-2026', password2: 'мой-корт-моё-имя-2026',
+      consent_processing: '1', consent_distribution: '1',
+    },
+    jar,
+  });
+  eq(done.status, 302, 'завершение перехода');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(pid).is_public, 1,
+    'публикация не вернулась сразу после собственного согласия');
+  const last = db.prepare(
+    "SELECT event, legal_version FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1",
+  ).get(pid);
+  eq(last.event, 'granted', 'собственное согласие на распространение не записано');
+  eq(last.legal_version, LEGAL_VERSION, 'собственное согласие записано не текущей редакцией');
+  const shown = currentStandings(db);
+  eq(shown.players.find((p) => p.playerId === pid).playerName, 'Публиков Роман Игоревич',
+    'фамилия не вернулась в открытый рейтинг');
+  return 'один клик подтверждения — публикация вернулась той же секундой, новой строкой журнала';
+});
+
+await check('родитель, который сам играет: ОДИН вход на обе роли', async () => {
+  // Сначала он появляется как УЧАСТНИК: обычная заявка, обычный кабинет.
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  const PARENT = 'Играев Роман Сергеевич';
+  const PARENT_MAIL = 'playing-parent@example.com';
+  const PARENT_PASS = 'ракетка-и-струны-2026';
+  await submitRegistration({
+    full_name: PARENT, city: 'Смоленск', sex: 'M', birth_date: '1988-03-12',
+    email: PARENT_MAIL, consent_processing: '1', consent_distribution: '1',
+  });
+  const reg = db.prepare('SELECT * FROM registrations WHERE email = ?').get(PARENT_MAIL);
+  await approveByAdmin(reg.id);
+  const invite = db
+    .prepare("SELECT body FROM mail_outbox WHERE to_email = ? AND kind = 'cabinet.invite' ORDER BY id DESC LIMIT 1")
+    .get(PARENT_MAIL);
+  const setUrl = `/cabinet/reset/${/\/cabinet\/reset\/([A-Za-z0-9_-]+)/.exec(invite.body)[1]}`;
+  resetCabinetLimit();
+  const setJar = new Jar();
+  const setPage = await http(setUrl, { jar: setJar });
+  await http(setUrl, {
+    method: 'POST',
+    form: { _csrf: tokenFrom(setPage.text), password: PARENT_PASS, password2: PARENT_PASS },
+    jar: setJar,
+  });
+
+  // Теперь он приводит РЕБЁНКА и становится законным представителем.
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  const KID = 'Играева Полина Романовна';
+  await submitRegistration({
+    full_name: KID, city: 'Смоленск', sex: 'F', birth_date: birthFor(9),
+    guardian_full_name: PARENT, guardian_relation: 'отец', guardian_email: PARENT_MAIL,
+    consent_guardian_child: '1', consent_guardian_self: '1',
+  });
+  const kidReg = db.prepare('SELECT * FROM registrations WHERE full_name = ?').get(KID);
+  await approveByAdmin(kidReg.id);
+
+  // ВТОРОГО ПАРОЛЯ НЕ ПОЯВИЛОСЬ: доступ представителя подхватил уже заданный.
+  const g = guardians.guardianByEmail(db, PARENT_MAIL);
+  const acc = accounts.accountByEmail(db, PARENT_MAIL);
+  assert(g && g.password_hash, 'у доступа представителя нет пароля — человеку пришлось бы заводить второй');
+  eq(g.password_hash, acc.password_hash, 'пароли ролей разъехались — вход перестал быть одним');
+  assert(!db.prepare("SELECT 1 AS x FROM mail_outbox WHERE to_email = ? AND kind = 'cabinet.guardian.invite'").get(PARENT_MAIL),
+    'человеку прислали приглашение задать второй пароль');
+
+  // ОДИН вход даёт ОБА кабинета.
+  resetCabinetLimit();
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  const enter = await http('/cabinet/login', {
+    method: 'POST', form: { _csrf: tokenFrom(page.text), email: PARENT_MAIL, password: PARENT_PASS }, jar,
+  });
+  eq(enter.status, 302, 'вход');
+  eq(enter.location, '/cabinet/wards', 'при двух ролях человек должен попасть к выбору кабинета');
+  const list = await http('/cabinet/wards', { jar });
+  eq(list.status, 200, 'список кабинетов');
+  assert(/Мой профиль/.test(list.text), 'нет раздела «Мой профиль»');
+  assert(/Мои дети/.test(list.text), 'нет раздела «Мои дети»');
+  assert(list.text.includes(PARENT) && list.text.includes(KID), 'в списке не оба кабинета');
+
+  // Свой кабинет.
+  const parentId = db.prepare('SELECT id FROM players WHERE full_name = ?').get(PARENT).id;
+  const kidId = db.prepare('SELECT id FROM players WHERE full_name = ?').get(KID).id;
+  const openOwn = await http('/cabinet/wards/select', {
+    method: 'POST', form: { _csrf: tokenFrom(list.text), player_id: String(parentId) }, jar,
+  });
+  eq(openOwn.status, 302, 'открытие своего кабинета');
+  const own = await http('/cabinet', { jar });
+  assert(own.text.includes(PARENT), 'открылся не свой кабинет');
+  assert(/собственный кабинет/i.test(own.text), 'не сказано, что открыт свой кабинет');
+  assert(own.text.includes('name="email"'), 'в своём кабинете нет поля почты');
+
+  // Кабинет ребёнка — той же сессией, без повторного входа.
+  const openKid = await http('/cabinet/wards/select', {
+    method: 'POST', form: { _csrf: tokenFrom(own.text), player_id: String(kidId) }, jar,
+  });
+  eq(openKid.status, 302, 'переключение на кабинет ребёнка');
+  const kid = await http('/cabinet', { jar });
+  assert(kid.text.includes(KID), 'открылся не кабинет ребёнка');
+  assert(/законный представитель/i.test(kid.text), 'кабинет ребёнка не помечен представительским');
+
+  // Смена пароля в одной роли меняет его для ОБЕИХ.
+  const NEW_PASS = 'корты-и-сетка-2027';
+  const change = await http('/cabinet/password', {
+    method: 'POST',
+    form: {
+      _csrf: tokenFrom(kid.text), current_password: PARENT_PASS,
+      new_password: NEW_PASS, new_password2: NEW_PASS,
+    },
+    jar,
+  });
+  eq(change.status, 302, 'смена пароля');
+  const after = { g: guardians.guardianByEmail(db, PARENT_MAIL), a: accounts.accountByEmail(db, PARENT_MAIL) };
+  eq(after.g.password_hash, after.a.password_hash, 'после смены пароли ролей разъехались');
+  assert(after.a.password_hash !== acc.password_hash, 'пароль не изменился вовсе');
+  resetCabinetLimit();
+  const jar2 = new Jar();
+  const page2 = await http('/cabinet/login', { jar: jar2 });
+  const relog = await http('/cabinet/login', {
+    method: 'POST', form: { _csrf: tokenFrom(page2.text), email: PARENT_MAIL, password: NEW_PASS }, jar: jar2,
+  });
+  eq(relog.status, 302, 'вход новым паролем');
+  eq(relog.location, '/cabinet/wards', 'обе роли по-прежнему на одном входе');
+  return 'один адрес — один пароль — два кабинета; смена пароля общая, переключение без повторного входа';
+});
+
+await check('чужую роль представителя сменой почты не захватить', async () => {
+  // Посторонний участник пытается сделать своим логином адрес представителя.
+  const outsider = db.prepare("SELECT id FROM players WHERE full_name = 'Артём Ковалёв'").get();
+  db.prepare('INSERT OR REPLACE INTO player_accounts (player_id, email, consent_basis, password_hash) VALUES (?, ?, ?, ?)')
+    .run(outsider.id, 'outsider@example.com', 'self', db.prepare('SELECT password_hash FROM player_accounts WHERE email = ?').get('playing-parent@example.com').password_hash);
+  resetCabinetLimit();
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  const enter = await http('/cabinet/login', {
+    method: 'POST',
+    form: { _csrf: tokenFrom(page.text), email: 'outsider@example.com', password: 'корты-и-сетка-2027' },
+    jar,
+  });
+  eq(enter.status, 302, 'вход постороннего');
+  const cab = await http('/cabinet', { jar });
+  // Адрес ЧИСТО представительский: у него нет кабинета участника, поэтому
+  // сработать должна именно защита роли, а не проверка «адрес занят кабинетом».
+  assert(!accounts.accountByEmail(db, MINOR.guardianEmail), 'подопытный адрес должен быть только представительским');
+  const grab = await http('/cabinet/profile', {
+    method: 'POST',
+    multipart: { fields: { _csrf: tokenFrom(cab.text), full_name: 'Артём Ковалёв', email: MINOR.guardianEmail } },
+    jar,
+  });
+  eq(grab.status, 302, 'ответ формы профиля');
+  const flash = await http('/cabinet', { jar });
+  assert(/законного представителя/i.test(flash.text), 'захват адреса представителя не отбит понятным сообщением');
+  eq(db.prepare('SELECT email FROM player_accounts WHERE player_id = ?').get(outsider.id).email, 'outsider@example.com',
+    'почта всё-таки сменилась — посторонний получил бы доступ к кабинетам чужих детей');
+  db.prepare('DELETE FROM player_accounts WHERE player_id = ?').run(outsider.id);
+  return 'смена почты на адрес представителя отклонена: пара ролей создаётся только модерацией';
+});
+
+await check('юр-тексты: категория представителей, cookie-тема и обработка по поручению', async () => {
+  const privacy = await http('/privacy');
+  eq(privacy.status, 200, 'GET /privacy анониму');
+  assert(/Законные представители несовершеннолетних/i.test(privacy.text), 'в §4 нет категории представителей');
+  assert(privacy.text.includes('localStorage'), 'нет клаузулы про тему оформления в localStorage');
+  assert(/Обработка по поручению/i.test(privacy.text), 'нет пункта «Обработка по поручению»');
+  assert(privacy.text.includes('За пределы Российской Федерации персональные данные не передаются'),
+    'нет обязательной фразы о непередаче за пределы РФ');
+  const consentPage = await http('/consent');
+  eq(consentPage.status, 200, 'GET /consent анониму');
+  assert(/дата рождения/i.test(consentPage.text), 'в перечне данных нет даты рождения');
+  const reg = await http('/register');
+  eq(reg.status, 200, 'GET /register анониму');
+  assert(!/checked/.test(reg.text.split('consent-box')[1] || ''), 'галочки согласий предзаполнены');
+  return 'обе клаузулы дословно на месте, категория представителей описана, галочки пусты';
+});
+
+// ===========================================================================
 section('17. Браузер: адаптив, доступность, тема, CSP, XSS');
 
 let browserNote = '';
@@ -2583,6 +3468,76 @@ try {
     assert(tableScrolls, 'таблица не скроллится горизонтально');
     assert(noHScroll, 'страница уезжает вбок по горизонтали');
     return '390px: бургер работает, hero и новости в одну колонку, таблица скроллится, страница не уезжает вбок';
+  });
+
+  await check('новые экраны кабинета: адаптив и доступность за логином', async () => {
+    // Экраны представителя и перехода в 18 живут ЗА ВХОДОМ, поэтому в общий
+    // список A11Y_PAGES они не попадают: анониму там показывается «нет доступа».
+    // Заводим своего представителя с подопечным, входим формой в браузере и
+    // проверяем те же требования, что и на публичных страницах.
+    const BROWSER_MAIL = 'browser-guardian@example.com';
+    const BROWSER_PASS = 'смоленский-снег-2026';
+    const kidId = Number(db.prepare(
+      "INSERT INTO players (full_name, city, sex, birth_date) VALUES ('Браузеров Тихон Ильич','Смоленск','M','2014-02-02')",
+    ).run().lastInsertRowid);
+    db.prepare("INSERT INTO player_accounts (player_id, consent_basis) VALUES (?, 'representative')").run(kidId);
+    const { guardian: bg } = db.transaction(() => guardians.attachGuardian(db, kidId, {
+      full_name: 'Браузерова Ирина Львовна', relation: 'мать', email: BROWSER_MAIL,
+    }))();
+    identity.setPersonPassword(db, BROWSER_MAIL, BROWSER_PASS);
+    // Отдельный участник в состоянии перехода — для экрана согласия от себя.
+    const grownId = Number(db.prepare(
+      "INSERT INTO players (full_name, city, sex, birth_date) VALUES ('Взрослов Артур Павлович','Вязьма','M','2008-01-01')",
+    ).run().lastInsertRowid);
+    const grownAcc = Number(db.prepare(
+      "INSERT INTO player_accounts (player_id, consent_basis, transition_started_at) VALUES (?, 'awaiting_self', datetime('now'))",
+    ).run(grownId).lastInsertRowid);
+    const token = adulthood.issueTransitionToken(db, grownAcc);
+
+    const page = await browser.newPage();
+    await page.goto(inst.base + '/cabinet/login', { waitUntil: 'domcontentloaded' });
+    await page.fill('#c-email', BROWSER_MAIL);
+    await page.fill('#c-pass', BROWSER_PASS);
+    await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded' }), page.click('button[type="submit"]')]);
+
+    const guarded = ['/cabinet/wards', '/cabinet', `/cabinet/adult/${token}`, '/cabinet/adult'];
+    const problems = [];
+    for (const path of guarded) {
+      await page.goto(inst.base + path, { waitUntil: 'domcontentloaded' });
+      eq(page.url().replace(inst.base, ''), path, `${path}: увело на другой адрес`);
+      const found = await page.evaluate(() => {
+        const out = [];
+        if (document.documentElement.lang !== 'ru') out.push('нет lang="ru"');
+        const h1 = document.querySelectorAll('h1');
+        if (h1.length !== 1) out.push(`заголовков h1: ${h1.length}`);
+        if (!document.querySelector('main')) out.push('нет <main>');
+        if (!document.querySelector('.skip-link')) out.push('нет ссылки «к содержимому»');
+        for (const el of document.querySelectorAll('input, select, textarea')) {
+          if (el.type === 'hidden') continue;
+          const byId = el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+          if (!byId && !el.closest('label') && !el.getAttribute('aria-label') && !el.getAttribute('aria-labelledby')) {
+            out.push(`поле без метки: ${el.name || el.type}`);
+          }
+        }
+        for (const a of document.querySelectorAll('a')) {
+          const text = (a.textContent || '').trim();
+          if (!text && !a.getAttribute('aria-label')) out.push(`ссылка без текста: ${a.getAttribute('href')}`);
+        }
+        return out;
+      });
+      for (const item of found) problems.push(`${path}: ${item}`);
+
+      for (const width of [360, 768]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto(inst.base + path, { waitUntil: 'domcontentloaded' });
+        const spill = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        if (spill > 1) problems.push(`${path} @${width}px: горизонтальный скролл +${spill}px`);
+      }
+      await page.setViewportSize({ width: 1280, height: 900 });
+    }
+    await page.close();
+    eq(problems.join('; '), '', `новые экраны: ${problems.join('; ')}`);
+    return `${guarded.length} экрана за логином: метки, один h1, skip-link на месте; 360 и 768 px без горизонтального скролла`;
   });
 
   await check('XSS из данных НЕ выполняется', async () => {
