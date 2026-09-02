@@ -1,0 +1,6 @@
+[Unit]
+Description=FTSO: vykat pri smene origin/main (deploy-watch.sh)
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /root/deploy-watch.sh
