@@ -42,7 +42,10 @@ CREATE TABLE IF NOT EXISTS players (
   -- нет: ФИО затёрто, город и группа очищены, аккаунт и фото удалены.
   -- Строку нельзя было удалить целиком — на неё ссылаются матчи, а они влияют
   -- на рейтинг СОПЕРНИКОВ. Игрок остаётся анонимной вершиной графа матчей.
-  anonymized_at TEXT
+  anonymized_at TEXT,
+  -- Номер РНИ (Российский теннисный тур). Публичный профиль ФТСО со временем
+  -- свяжется с федеральным; в эту задачу связка не входит, поле — задел.
+  rni       TEXT
 );
 
 CREATE TABLE IF NOT EXISTS tournaments (
@@ -56,22 +59,35 @@ CREATE TABLE IF NOT EXISTS tournaments (
   category TEXT NOT NULL CHECK (category IN ('A','B'))
 );
 
+-- discipline — разряд: 'single' одиночный, 'double' парный. Рейтинги считаются
+-- РАЗДЕЛЬНО, как у РТТ; один игрок в одном турнире может иметь место в обоих.
 CREATE TABLE IF NOT EXISTS results (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   player_id     INTEGER NOT NULL REFERENCES players(id)     ON DELETE CASCADE,
   place         INTEGER NOT NULL CHECK (place >= 1 AND place = CAST(place AS INTEGER)),
-  UNIQUE (tournament_id, player_id)
+  discipline    TEXT NOT NULL DEFAULT 'single' CHECK (discipline IN ('single','double')),
+  UNIQUE (tournament_id, player_id, discipline)
 );
 
 -- Обратный матч (B победил A) — ДРУГАЯ строка, разрешён: сыграли дважды.
+-- score — счёт по сетам как текст («6:4 3:6 10:8»), played_on — дата матча;
+-- пустая дата на витрине заменяется датой окончания турнира. kind и партнёры —
+-- парный разряд: у 'single' партнёры пусты, у 'double' заполнены оба.
 CREATE TABLE IF NOT EXISTS matches (
   id               INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
   tournament_id    INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   winner_player_id INTEGER NOT NULL REFERENCES players(id)     ON DELETE CASCADE,
   loser_player_id  INTEGER NOT NULL REFERENCES players(id)     ON DELETE CASCADE,
+  score            TEXT CHECK (score IS NULL OR length(score) <= 60),
+  played_on        TEXT CHECK (played_on IS NULL OR (played_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+                                                     AND played_on IS strftime('%Y-%m-%d', played_on))),
+  kind             TEXT NOT NULL DEFAULT 'single' CHECK (kind IN ('single','double')),
+  winner_partner_id INTEGER REFERENCES players(id) ON DELETE CASCADE,
+  loser_partner_id  INTEGER REFERENCES players(id) ON DELETE CASCADE,
   CHECK (winner_player_id <> loser_player_id),
-  UNIQUE (tournament_id, winner_player_id, loser_player_id)
+  -- Одна и та же пара может сыграть в одном турнире и в одиночке, и в паре.
+  UNIQUE (tournament_id, winner_player_id, loser_player_id, kind)
 );
 
 -- Снимки рейтинга. Копятся; retention — последние 24, чистятся при пересчёте.

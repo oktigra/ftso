@@ -55,7 +55,8 @@ function scrubSnapshots(db, playerId) {
       continue;
     }
     let changed = false;
-    for (const p of data.players || []) {
+    // Два разряда в снимке: одиночный (players) и парный (doubles).
+    for (const p of [...(data.players || []), ...(data.doubles || [])]) {
       if (p.playerId === playerId) {
         p.playerName = ERASED_LABEL;
         p.city = '';

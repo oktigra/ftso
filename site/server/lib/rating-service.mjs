@@ -2,11 +2,18 @@
 // сервис только собирает вход из SQLite, кладёт итог в rating_cache и считает
 // «Изменение» на УРОВНЕ САЙТА (движок остаётся снимком, дельту не считает).
 import { computeStandings, DEFAULT_CONFIG } from '../../../rating/rating.mjs';
+import { ageOn, ageLabel, slicesFor } from './age.mjs';
 
 export { DEFAULT_CONFIG as RATING_CONFIG };
 
-/** Вход движка ровно в его формате: {tournaments, results, matches}. */
-export function collectEngineInput(db) {
+// Разряды. Рейтинги считаются РАЗДЕЛЬНО (как у РТТ): одиночный по results с
+// discipline='single' и матчам kind='single', парный — по 'double'. Движок при
+// этом один и тот же и не переписывается.
+export const DISCIPLINES = ['single', 'double'];
+export const DISCIPLINE_RU = { single: 'одиночный', double: 'парный' };
+
+/** Вход движка ровно в его формате: {tournaments, results, matches} — для одного разряда. */
+export function collectEngineInput(db, discipline = 'single') {
   const tournaments = db
     .prepare('SELECT id, name, end_date AS endDate, category FROM tournaments ORDER BY id')
     .all();
@@ -16,16 +23,17 @@ export function collectEngineInput(db) {
       `SELECT r.player_id AS playerId, p.full_name AS playerName,
               r.tournament_id AS tournamentId, r.place AS place
          FROM results r JOIN players p ON p.id = r.player_id
+        WHERE r.discipline = ?
         ORDER BY r.id`,
     )
-    .all();
+    .all(discipline);
   const matches = db
     .prepare(
       `SELECT tournament_id AS tournamentId, winner_player_id AS winnerPlayerId,
               loser_player_id AS loserPlayerId
-         FROM matches ORDER BY id`,
+         FROM matches WHERE kind = ? ORDER BY id`,
     )
-    .all();
+    .all(discipline);
   return { tournaments, results, matches };
 }
 
@@ -35,29 +43,41 @@ function playerMeta(db) {
   return new Map(rows.map((r) => [r.id, r]));
 }
 
-/** Снимок = вывод движка + метаданные игроков, чтобы витрина не зависела от JOIN. */
+function rowsWithMeta(standings, meta) {
+  return standings.players.map((p) => {
+    const m = meta.get(p.playerId) || {};
+    return {
+      rank: p.rank,
+      playerId: p.playerId,
+      playerName: p.playerName,
+      city: m.city || '',
+      sex: m.sex || '',
+      ageGroup: m.age_group || null,
+      ratingPoints: p.ratingPoints,
+      counted: p.counted,
+      totalInWindow: p.totalInWindow,
+    };
+  });
+}
+
+/**
+ * Снимок = вывод движка + метаданные игроков, чтобы витрина не зависела от JOIN.
+ * players — одиночный разряд, doubles — парный (пустой список, пока парных
+ * результатов нет: схема готова, интерфейс включится с данными).
+ * ДАТА РОЖДЕНИЯ В СНИМОК НЕ КЛАДЁТСЯ: возраст считается на выдаче, живьём.
+ */
 export function buildSnapshot(db, { asOf } = {}) {
-  const input = collectEngineInput(db);
-  const standings = computeStandings(asOf ? { ...input, asOf } : input);
+  const single = collectEngineInput(db, 'single');
+  const double = collectEngineInput(db, 'double');
+  const standings = computeStandings(asOf ? { ...single, asOf } : single);
+  const doubles = computeStandings(asOf ? { ...double, asOf } : double);
   const meta = playerMeta(db);
   return {
     ratingStatus: standings.ratingStatus,
     asOf: standings.asOf,
-    warnings: standings.warnings,
-    players: standings.players.map((p) => {
-      const m = meta.get(p.playerId) || {};
-      return {
-        rank: p.rank,
-        playerId: p.playerId,
-        playerName: p.playerName,
-        city: m.city || '',
-        sex: m.sex || '',
-        ageGroup: m.age_group || null,
-        ratingPoints: p.ratingPoints,
-        counted: p.counted,
-        totalInWindow: p.totalInWindow,
-      };
-    }),
+    warnings: [...standings.warnings, ...doubles.warnings.map((w) => `парный: ${w}`)],
+    players: rowsWithMeta(standings, meta),
+    doubles: rowsWithMeta(doubles, meta),
   };
 }
 
@@ -136,46 +156,55 @@ export function withChange(current, previous) {
 
 // --- обезличивание на отрисовке -------------------------------------------
 
-export const HIDDEN_LABEL = 'Скрыто по заявлению';
 export const ERASED_LABEL = 'Игрок удалён';
 
 /**
- * ОДИН слой обезличивания на ТРИ случая:
- *  - нет действующего согласия на распространение (is_public = 0) -> «Скрыто по заявлению»;
+ * ОДИН слой обезличивания на ДВА случая:
  *  - игрок ОБЕЗЛИЧЕН по ст. 21 (anonymized_at заполнен)          -> «Игрок удалён»;
  *  - игрока больше нет в БД (снесён из админки, снимок старый)    -> «Игрок удалён».
  *
- * Разница между вторым и третьим случаем только в способе: в обоих личных
- * данных на витрине нет. Но различать «нет согласия» и «удалён» ОБЯЗАТЕЛЬНО:
- * первое обратимо согласием субъекта, второе — нет.
+ * СОГЛАСИЕ НА ВИТРИНУ БОЛЬШЕ НЕ ВЛИЯЕТ (ТЗ ред. 6, модель РТТ): результаты
+ * соревнований публикуются на основании участия в них (п. 5 ч. 1 ст. 6 152-ФЗ,
+ * 329-ФЗ), а не согласия, и отзыв согласия строку в рейтинге не меняет.
+ * Прежнего «Скрыто по заявлению» нет.
  *
- * МЕСТО И ОЧКИ СОХРАНЯЮТСЯ. Выкинуть строку нельзя: места соперников уедут
- * вверх и опубликованная таблица перестанет биться с расчётом движка.
- * Движок и снимки работают с РЕАЛЬНЫМИ данными — прячем только на выдаче.
+ * МЕСТО И ОЧКИ СОХРАНЯЮТСЯ и у обезличенного. Выкинуть строку нельзя: места
+ * соперников уедут вверх и опубликованная таблица перестанет биться с расчётом
+ * движка. Движок и снимки работают с РЕАЛЬНЫМИ данными — прячем только на выдаче.
  *
- * Город, пол и группу тоже гасим: по согласию (ст. 10.1) они разрешены к
- * публикации вместе с именем, а не отдельно. Побочный эффект намеренный —
- * поиск по фамилии и фильтры по такой строке не сработают, значит через
- * фильтр скрытого игрока не опознать.
+ * Здесь же — ВОЗРАСТ ЖИВЬЁМ: полные годы на сегодня от birth_date (в снимке даты
+ * нет), срезы и признак фотографии. Обезличенному ничего из этого не даётся.
  */
-export function anonymizeForPublic(db, players) {
+export function anonymizeForPublic(db, players, { on } = {}) {
   const state = new Map(
     db
-      .prepare('SELECT id, is_public, anonymized_at FROM players')
+      .prepare('SELECT id, anonymized_at, birth_date, photo_upload_id FROM players')
       .all()
       .map((r) => [r.id, r]),
   );
   return players.map((p) => {
     const row = state.get(p.playerId);
-    if (row && row.is_public && !row.anonymized_at) return p;
-    const erased = !row || Boolean(row.anonymized_at);
+    if (row && !row.anonymized_at) {
+      const age = ageOn(row.birth_date, on);
+      return {
+        ...p,
+        age,
+        ageLabel: ageLabel(age),
+        slices: slicesFor(age),
+        hasPhoto: Boolean(row.photo_upload_id),
+      };
+    }
     return {
       ...p,
-      playerName: erased ? ERASED_LABEL : HIDDEN_LABEL,
+      playerName: ERASED_LABEL,
       city: '',
       sex: '',
       ageGroup: null,
-      anonymized: erased ? 'erased' : 'hidden',
+      age: null,
+      ageLabel: '—',
+      slices: [],
+      hasPhoto: false,
+      anonymized: 'erased',
     };
   });
 }
@@ -183,20 +212,134 @@ export function anonymizeForPublic(db, players) {
 /**
  * То, что нужно витрине: игроки со стрелками, статус, дата актуальности.
  * ЕДИНСТВЕННАЯ дверь публичной выдачи рейтинга (/rating, /rating.csv, ТОП-5
- * на главной) — поэтому обезличивание стоит здесь, а не в каждом шаблоне.
+ * на главной, профиль) — поэтому обезличивание стоит здесь, а не в каждом шаблоне.
  * Админка ходит мимо, через lastSnapshots: у неё законный доступ к данным.
  */
 export function currentStandings(db) {
   const snaps = lastSnapshots(db, 2);
   if (snaps.length === 0) return null;
   const [current, previous] = snaps;
+  const prev = previous ? previous.data : null;
+  const prevDoubles = prev && Array.isArray(prev.doubles) ? { players: prev.doubles } : null;
   return {
     snapshotId: current.id,
     computedAt: current.computedAt,
     status: current.status,
     asOf: current.data.asOf,
     hasPrevious: Boolean(previous),
-    players: anonymizeForPublic(db, withChange(current.data, previous ? previous.data : null)),
+    players: anonymizeForPublic(db, withChange(current.data, prev)),
+    // Снимки, снятые до появления парного разряда, поля doubles не имеют.
+    doubles: anonymizeForPublic(
+      db,
+      withChange({ players: Array.isArray(current.data.doubles) ? current.data.doubles : [] }, prevDoubles),
+    ),
+  };
+}
+
+// --- публичный профиль -------------------------------------------------------
+
+/**
+ * Всё для /player/:id одним вызовом. null — игрока нет либо он обезличен по
+ * ст. 21 (профиля у анонимной вершины графа матчей быть не может -> 404).
+ *
+ * Состав — ровно перечень ТЗ §5: ФИО, город, пол, возраст в полных годах,
+ * группа и срезы, очки и место (одиночный и парный), число турниров, результаты
+ * по турнирам, матчи с соперниками/партнёрами, счётом, датой и турниром.
+ * Даты рождения, почты, телефона здесь НЕТ и быть не должно (см. приёмку).
+ */
+export function playerProfile(db, playerId) {
+  const row = db
+    .prepare(
+      `SELECT id, full_name, city, sex, age_group, birth_date, photo_upload_id, anonymized_at
+         FROM players WHERE id = ?`,
+    )
+    .get(playerId);
+  if (!row || row.anonymized_at) return null;
+
+  const standings = currentStandings(db);
+  const inTable = (list) => (list || []).find((p) => p.playerId === row.id) || null;
+  const age = ageOn(row.birth_date);
+
+  const results = db
+    .prepare(
+      `SELECT r.place, r.discipline, t.id AS tournament_id, t.name AS tournament_name,
+              t.end_date, t.category
+         FROM results r JOIN tournaments t ON t.id = r.tournament_id
+        WHERE r.player_id = ?
+        ORDER BY t.end_date DESC, t.id DESC, r.discipline`,
+    )
+    .all(row.id);
+
+  // Матч выводится «от лица» игрока: соперник(и), выигран/проигран, партнёр.
+  // Обезличенный соперник — «Игрок удалён» без ссылки.
+  const matches = db
+    .prepare(
+      `SELECT m.id, m.kind, m.score, COALESCE(m.played_on, t.end_date) AS played_on,
+              t.id AS tournament_id, t.name AS tournament_name,
+              m.winner_player_id, m.loser_player_id, m.winner_partner_id, m.loser_partner_id
+         FROM matches m JOIN tournaments t ON t.id = m.tournament_id
+        WHERE ? IN (m.winner_player_id, m.loser_player_id, m.winner_partner_id, m.loser_partner_id)
+        ORDER BY played_on DESC, m.id DESC`,
+    )
+    .all(row.id);
+  const ids = new Set();
+  for (const m of matches) {
+    for (const k of ['winner_player_id', 'loser_player_id', 'winner_partner_id', 'loser_partner_id']) {
+      if (m[k]) ids.add(m[k]);
+    }
+  }
+  const names = new Map();
+  if (ids.size) {
+    const list = [...ids];
+    db.prepare(`SELECT id, full_name, anonymized_at FROM players WHERE id IN (${list.map(() => '?').join(',')})`)
+      .all(...list)
+      .forEach((p) => names.set(p.id, p));
+  }
+  const ref = (id) => {
+    if (!id) return null;
+    const p = names.get(id);
+    if (!p || p.anonymized_at) return { id: null, name: ERASED_LABEL };
+    return { id: p.id, name: p.full_name };
+  };
+  const matchRows = matches.map((m) => {
+    const won = m.winner_player_id === row.id || m.winner_partner_id === row.id;
+    const ownSide = won ? ['winner_player_id', 'winner_partner_id'] : ['loser_player_id', 'loser_partner_id'];
+    const otherSide = won ? ['loser_player_id', 'loser_partner_id'] : ['winner_player_id', 'winner_partner_id'];
+    const partnerId = ownSide.map((k) => m[k]).find((id) => id && id !== row.id) || null;
+    return {
+      id: m.id,
+      kind: m.kind,
+      won,
+      score: m.score || '',
+      playedOn: m.played_on,
+      tournament: { id: m.tournament_id, name: m.tournament_name },
+      opponents: otherSide.map((k) => ref(m[k])).filter(Boolean),
+      partner: ref(partnerId),
+    };
+  });
+
+  return {
+    id: row.id,
+    fullName: row.full_name,
+    city: row.city,
+    sex: row.sex,
+    ageGroup: row.age_group || null,
+    age,
+    ageLabel: ageLabel(age),
+    slices: slicesFor(age),
+    hasPhoto: Boolean(row.photo_upload_id),
+    rating: standings
+      ? {
+          asOf: standings.asOf,
+          computedAt: standings.computedAt,
+          status: standings.status,
+          single: inTable(standings.players),
+          double: inTable(standings.doubles),
+        }
+      : null,
+    tournamentsPlayed: new Set(results.map((r) => r.tournament_id)).size,
+    results,
+    matches: matchRows,
   };
 }
 

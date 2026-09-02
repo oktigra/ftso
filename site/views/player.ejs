@@ -1,0 +1,127 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Профиль игрока</span>
+    <div class="profile-head">
+      <% if (profile.hasPhoto) { %>
+        <img class="profile-photo" src="/player/<%= profile.id %>/photo" alt="Фотография: <%= profile.fullName %>" width="160" height="160">
+      <% } %>
+      <div>
+        <%
+        /* ЭКРАНИРОВАНИЕ: всё из БД — только через экранирующий тег. */
+        %>
+        <h1><%= profile.fullName %></h1>
+        <div class="rating-meta">
+          <span class="tag"><%= profile.city %></span>
+          <span class="tag"><%= sexRu[profile.sex] || profile.sex %></span>
+          <span class="tag">возраст: <%= profile.ageLabel %></span>
+          <% if (profile.ageGroup) { %><span class="tag">группа: <%= profile.ageGroup %></span><% } %>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container stack">
+    <div class="panel">
+      <h2>Рейтинг</h2>
+      <% if (!profile.rating) { %>
+        <p class="muted">Рейтинг ещё не рассчитан.</p>
+      <% } else { %>
+        <div class="table-scroll">
+          <table class="rating-table">
+            <caption class="visually-hidden">Место и очки игрока по разрядам</caption>
+            <thead><tr><th scope="col">Разряд</th><th scope="col">Место</th><th scope="col">Очки</th><th scope="col">Турниров в окне</th><th scope="col">Зачтено</th><th scope="col">Изменение</th></tr></thead>
+            <tbody>
+              <% ['single', 'double'].forEach(function (d) { var r = profile.rating[d]; %>
+                <tr>
+                  <td><%= disciplineRu[d] %></td>
+                  <% if (r) { %>
+                    <td class="rank"><%= r.rank %></td>
+                    <td class="pts"><%= r.ratingPoints %></td>
+                    <td><%= r.totalInWindow %></td>
+                    <td><%= r.counted %></td>
+                    <td class="chg chg--<%= r.change.kind %>"><%= r.change.label %></td>
+                  <% } else { %>
+                    <td colspan="5" class="muted">нет в рейтинге</td>
+                  <% } %>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+        <p class="rating-summary muted">
+          <%= statusText %> · актуальность <%= profile.rating.asOf %> · обновлён <%= profile.rating.computedAt %> UTC.
+          <% if (profile.slices.length) { %>
+            Возрастные срезы:
+            <% profile.slices.forEach(function (id, i) { %><%= i ? ', ' : '' %><a href="/rating?slice=<%= id %>"><%= sliceLabels.get(id) %></a><% }); %>.
+          <% } %>
+          <a class="link-more" href="/rating">К таблице рейтинга <span aria-hidden="true">→</span></a>
+        </p>
+      <% } %>
+    </div>
+
+    <div class="panel">
+      <h2>Турниры</h2>
+      <% if (!profile.results.length) { %>
+        <p class="muted">Результатов ещё нет.</p>
+      <% } else { %>
+        <p class="muted">Всего турниров: <%= profile.tournamentsPlayed %>.</p>
+        <div class="table-scroll">
+          <table>
+            <caption class="visually-hidden">Места игрока по турнирам</caption>
+            <thead><tr><th scope="col">Дата</th><th scope="col">Турнир</th><th scope="col">Категория</th><th scope="col">Разряд</th><th scope="col">Место</th></tr></thead>
+            <tbody>
+              <% profile.results.forEach(function (r) { %>
+                <tr>
+                  <td><%= r.end_date %></td>
+                  <td><a href="/tournaments/<%= r.tournament_id %>"><%= r.tournament_name %></a></td>
+                  <td><%= r.category %></td>
+                  <td><%= disciplineRu[r.discipline] %></td>
+                  <td class="rank"><%= r.place %></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </div>
+
+    <div class="panel">
+      <h2>Матчи</h2>
+      <% if (!profile.matches.length) { %>
+        <p class="muted">Сыгранных матчей ещё нет.</p>
+      <% } else { %>
+        <div class="table-scroll">
+          <table>
+            <caption class="visually-hidden">Сыгранные матчи игрока</caption>
+            <thead><tr><th scope="col">Дата</th><th scope="col">Итог</th><th scope="col">Соперник</th><th scope="col">Счёт</th><th scope="col">Турнир</th></tr></thead>
+            <tbody>
+              <% profile.matches.forEach(function (m) { %>
+                <tr class="match match--<%= m.won ? 'won' : 'lost' %>">
+                  <td><%= m.playedOn %></td>
+                  <td><%= m.won ? 'победа' : 'поражение' %><%= m.kind === 'double' ? ' · пара' : '' %></td>
+                  <td>
+                    <% m.opponents.forEach(function (o, i) { %><%= i ? ' / ' : '' %><% if (o.id) { %><a href="/player/<%= o.id %>"><%= o.name %></a><% } else { %><span class="player--anonymized"><%= o.name %></span><% } %><% }); %>
+                    <% if (m.partner) { %>
+                      <span class="muted">(в паре с <% if (m.partner.id) { %><a href="/player/<%= m.partner.id %>"><%= m.partner.name %></a><% } else { %><%= m.partner.name %><% } %>)</span>
+                    <% } %>
+                  </td>
+                  <td><%= m.score || '—' %></td>
+                  <td><a href="/tournaments/<%= m.tournament.id %>"><%= m.tournament.name %></a></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</section>
+</main>
+
+<%- include('partials/footer') %>

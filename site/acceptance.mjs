@@ -1087,8 +1087,10 @@ section('11. Журнал согласий и публикуемость (152-Ф
 const journal = await import('./server/lib/consent-journal.mjs');
 const { LEGAL_VERSION } = await import('./server/lib/legal.mjs');
 // Имена игроков в таблице рейтинга, В ПОРЯДКЕ строк.
+// Имя в строке рейтинга — ссылкой на профиль (/player/:id) либо текстом
+// («Игрок удалён»): снимаем содержимое ячейки без тегов.
 const rowNames = (html) =>
-  [...html.matchAll(/<td class="player[^"]*">([^<]*)<\/td>/g)].map((m) => m[1]);
+  [...html.matchAll(/<td class="player[^"]*">(.*?)<\/td>/gs)].map((m) => m[1].replace(/<[^>]+>/g, '').trim());
 
 await check('регистрация пишет ДВЕ раздельные записи с одной редакцией', async () => {
   const id = Number(
@@ -1120,43 +1122,36 @@ await check('регистрация пишет ДВЕ раздельные за�
   return `две записи, редакция ${LEGAL_VERSION} у обеих; отказ от публикации оставляет только обработку`;
 });
 
-await check('отзыв распространения скрывает игрока, СОХРАНЯЯ место', async () => {
+await check('отзыв распространения НЕ меняет строку в рейтинге (ТЗ ред. 6, §8.7)', async () => {
   const before = rowNames((await http('/rating')).text);
   const target = before.find((n) => n === 'Сергей Новиков');
   assert(target, 'в таблице нет ожидаемого игрока');
   const idx = before.indexOf(target);
   const player = db.prepare('SELECT id FROM players WHERE full_name = ?').get(target);
+  const pointsBefore = (await http('/rating.csv')).text.split('\r\n').find((l) => l.includes(target));
 
   journal.setDistributionConsent(db, player.id, false, { source: 'web', ip: '203.0.113.9' });
-  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(player.id).is_public, 0, 'флаг снят отзывом');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(player.id).is_public, 0, 'флаг снят отзывом (журнал жив)');
 
+  // Результаты публикуются на основании УЧАСТИЯ, не согласия: имя, место и
+  // очки на месте, «Скрыто по заявлению» на витрине нет ни в HTML, ни в CSV.
   const after = rowNames((await http('/rating')).text);
   eq(after.length, before.length, 'число строк не изменилось');
-  eq(after[idx], 'Скрыто по заявлению', 'строка обезличена на своём месте');
-  for (let i = 0; i < before.length; i++) {
-    if (i !== idx) eq(after[i], before[i], `строка ${i + 1} не должна была измениться`);
-  }
-
-  // Через поиск и через CSV настоящая фамилия тоже не достаётся.
-  // Сверяем СТРОКИ ТАБЛИЦЫ, а не весь HTML: страница честно возвращает запрос
-  // в поле поиска, и «Новиков» в разметке — это эхо ввода, а не данные игрока.
-  const search = await http(`/rating?q=${encodeURIComponent('Новиков')}`);
-  eq(rowNames(search.text).length, 0, 'скрытый игрок находится поиском по фамилии');
+  for (let i = 0; i < before.length; i++) eq(after[i], before[i], `строка ${i + 1} не должна была измениться`);
   const csv = await http('/rating.csv');
-  assert(!csv.text.includes('Новиков'), 'скрытый игрок утекает в CSV');
-  assert(csv.text.includes('Скрыто по заявлению'), 'в CSV нет обезличенной строки');
+  assert(!csv.text.includes('Скрыто по заявлению'), 'на витрине всплыло старое «Скрыто по заявлению»');
+  eq(csv.text.split('\r\n').find((l) => l.includes(target)), pointsBefore, 'строка CSV игрока изменилась после отзыва');
+  const search = await http(`/rating?q=${encodeURIComponent('Новиков')}`);
+  eq(rowNames(search.text).length, 1, 'игрок должен находиться поиском по фамилии');
+  const profile = await http(`/player/${player.id}`);
+  eq(profile.status, 200, 'профиль недоступен после отзыва согласия');
+  assert(profile.text.includes(target), 'на профиле нет имени после отзыва согласия');
 
-  // Движок продолжает считать по РЕАЛЬНЫМ данным — обезличивание только на выдаче.
   const direct = computeStandings(collectEngineInput(db));
-  assert(
-    direct.players.some((p) => p.playerName === target),
-    'движок не должен видеть обезличивание',
-  );
+  assert(direct.players.some((p) => p.playerName === target), 'движок не должен зависеть от согласий');
 
   journal.setDistributionConsent(db, player.id, true, { source: 'offline' });
-  const restored = rowNames((await http('/rating')).text);
-  eq(restored[idx], target, 'после возврата согласия имя вернулось на своё место');
-  return `${target}: отзыв -> «Скрыто по заявлению» на месте ${idx + 1}, места соперников не поехали; движок видит реальные данные`;
+  return `${target}: отзыв записан в журнал, строка ${idx + 1} рейтинга, CSV и профиль не изменились`;
 });
 
 await check('удалённый игрок в старом снимке -> «Игрок удалён»', async () => {
@@ -1180,6 +1175,7 @@ await check('удалённый игрок в старом снимке -> «И�
   const after = rowNames((await http('/rating')).text);
   assert(!after.includes('Тест Удалённый'), 'имя удалённого игрока осталось на витрине');
   assert(after.includes('Игрок удалён'), 'нет строки «Игрок удалён»');
+  eq((await http(`/player/${id}`)).status, 404, 'у удалённого игрока не должно быть профиля');
 
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
@@ -2279,28 +2275,27 @@ await check('черновик новости наружу не отдаётся'
   return 'черновик -> 404 и не в списке; опубликованная открывается и видна';
 });
 
-await check('карточка турнира: участники без ссылок на профили и с обезличиванием', async () => {
+await check('карточка турнира: участники и матчи со ссылками на профили, согласие не влияет', async () => {
   const t = db.prepare('SELECT id FROM tournaments ORDER BY id LIMIT 1').get();
   const page = await http(`/tournaments/${t.id}`);
   eq(page.status, 200, 'карточка турнира');
-  // Ссылок на карточку игрока быть не должно: публичного профиля в проекте нет.
-  assert(!/href="\/players?\//.test(page.text), 'на карточке появились ссылки на профили игроков');
-
-  // Игрок без согласия на публикацию в протоколе тоже обезличен — иначе
-  // протокол турнира стал бы обходным путём вокруг согласия.
   const participant = db
     .prepare('SELECT p.id, p.full_name FROM results r JOIN players p ON p.id = r.player_id WHERE r.tournament_id = ? LIMIT 1')
     .get(t.id);
   assert(participant, 'в турнире нет участников — проверять нечего');
+  // Участник — ссылкой на публичный профиль /player/:id (ТЗ ред. 6 §6, §8.3).
+  assert(page.text.includes(`href="/player/${participant.id}"`), 'участник не ведёт на свой профиль');
+
+  // Отзыв согласия протокол НЕ меняет: результаты публикуются по факту участия.
   const journal = await import('./server/lib/consent-journal.mjs');
   journal.setDistributionConsent(db, participant.id, false, { source: 'web', ip: '203.0.113.9' });
-  const hidden = await http(`/tournaments/${t.id}`);
-  assert(!hidden.text.includes(participant.full_name), 'ФИО без согласия попало в протокол турнира');
-  assert(hidden.text.includes('Скрыто по заявлению'), 'нет обезличенной строки в протоколе');
+  const after = await http(`/tournaments/${t.id}`);
+  assert(after.text.includes(participant.full_name), 'ФИО пропало из протокола после отзыва согласия');
+  assert(!after.text.includes('Скрыто по заявлению'), 'на карточке всплыло старое «Скрыто по заявлению»');
   journal.setDistributionConsent(db, participant.id, true, { source: 'offline', basis: 'бумажное согласие', documentDate: '2026-07-01' });
-  const back = await http(`/tournaments/${t.id}`);
-  assert(back.text.includes(participant.full_name), 'после возврата согласия имя не вернулось');
-  return 'ссылок на профили нет; участник без согласия показан как «Скрыто по заявлению»';
+
+  // Обезличенный по ст. 21 — «Игрок удалён» без ссылки (проверяется в блоке кабинета).
+  return `участник ${participant.id} ведёт на /player/${participant.id}; отзыв согласия протокол не меняет`;
 });
 
 await check('справочник с ФИО требует правового основания публикации', async () => {
@@ -3028,7 +3023,7 @@ await check('существующие аккаунты (consent_basis NULL) в �
   return `детект прошёл (${report.promoted} переведено), старый аккаунт не тронут и читается как «self»`;
 });
 
-await check('публикация снимается В МОМЕНТ 18-летия, без отсрочки и без правки движка', async () => {
+await check('18-летие НЕ трогает рейтинг и профиль: переход только в управлении кабинетом (ТЗ ред. 6, §8.8)', async () => {
   // Свой подопытный: минор с действующим согласием на распространение.
   db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
   const NAME = 'Публиков Роман Игоревич';
@@ -3041,49 +3036,44 @@ await check('публикация снимается В МОМЕНТ 18-лети
   const reg = db.prepare('SELECT * FROM registrations WHERE full_name = ?').get(NAME);
   await approveByAdmin(reg.id);
   const pid = db.prepare('SELECT id FROM players WHERE full_name = ?').get(NAME).id;
-  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(pid).is_public, 1,
-    'до 18 участник публикуется по согласию представителя');
 
-  // Даём результат, чтобы игрок попал в таблицу и было что скрывать.
   const t = db.prepare('SELECT id FROM tournaments ORDER BY id LIMIT 1').get();
   db.prepare('INSERT OR IGNORE INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)').run(t.id, pid, 6);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
   const before = currentStandings(db);
   const rowBefore = before.players.find((p) => p.playerId === pid);
   assert(rowBefore && rowBefore.playerName === NAME, 'до 18 фамилия видна в открытом рейтинге');
+  eq(rowBefore.age, 17, 'возраст в полных годах до 18-летия');
+  const profileBefore = await http(`/player/${pid}`);
+  eq(profileBefore.status, 200, 'профиль до 18');
 
   // Совершеннолетие — ровно сегодня.
   db.prepare('UPDATE players SET birth_date = ? WHERE id = ?').run(birthFor(18), pid);
   const report = adulthood.runAdulthoodCheck(db, { baseUrl: inst.base });
-  assert(report.unpublished >= 1, 'публикация не снята при переходе');
+  eq(report.promoted, 1, 'переход в 18 не запущен');
+  eq(db.prepare('SELECT consent_basis FROM player_accounts WHERE player_id = ?').get(pid).consent_basis,
+    'awaiting_self', 'аккаунт не перешёл в ожидание собственного согласия');
 
-  // ФЛАГ снят СРАЗУ, без ожидания заморозки.
-  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(pid).is_public, 0,
-    'флаг публикуемости не снят в момент 18-летия');
-  eq(db.prepare('SELECT frozen_at FROM player_accounts WHERE player_id = ?').get(pid).frozen_at, null,
-    'заморозки быть не должно — снятие публикации от неё не зависит');
-
-  // В журнале — отзыв С НАЗВАННОЙ ПРИЧИНОЙ и с той редакцией, что покрывало согласие.
+  // Ни отзыва в журнале, ни снятия флага, ни изменений на витрине.
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(pid).is_public, 1,
+    'флаг публикуемости снят в момент 18-летия — правило отменено');
   const last = db.prepare(
-    "SELECT event, basis, legal_version FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1",
+    "SELECT event FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1",
   ).get(pid);
-  eq(last.event, 'revoked', 'прекращение публикации не записано событием журнала');
-  assert(/исполнилось 18/.test(last.basis || ''), 'в записи не названа причина прекращения');
+  eq(last.event, 'granted', 'в журнал записан отзыв по 18-летию — правило отменено');
 
-  // ВИТРИНА: фамилия скрыта, а место и очки — те же, что считает движок.
   const after = currentStandings(db);
   const rowAfter = after.players.find((p) => p.playerId === pid);
   assert(rowAfter, 'участник исчез из таблицы — места соперников поедут');
-  eq(rowAfter.playerName, 'Скрыто по заявлению', 'фамилия всё ещё публикуется');
-  eq(rowAfter.anonymized, 'hidden', 'причина скрытия не «скрыт»');
-  eq(rowAfter.rank, rowBefore.rank, 'место изменилось — движок не должен был шевельнуться');
-  eq(rowAfter.ratingPoints, rowBefore.ratingPoints, 'очки изменились — движок не должен был шевельнуться');
-
-  // И в СВЕЖЕМ пересчёте движок даёт то же самое: трогали только фильтр публикации.
-  const engine = computeStandings(collectEngineInput(db));
-  const engineRow = engine.players.find((p) => p.playerId === pid);
-  eq(engineRow.rank, rowBefore.rank, 'расчёт движка изменился после снятия публикации');
-  return `флаг снят в день 18-летия (заморозки нет), отзыв в журнале с причиной, место ${rowAfter.rank} и очки сохранены`;
+  eq(rowAfter.playerName, NAME, 'фамилия скрыта в 18 — правило отменено');
+  eq(rowAfter.rank, rowBefore.rank, 'место изменилось');
+  eq(rowAfter.ratingPoints, rowBefore.ratingPoints, 'очки изменились');
+  eq(rowAfter.age, 18, 'возраст не пересчитался живьём');
+  const profileAfter = await http(`/player/${pid}`);
+  eq(profileAfter.status, 200, 'профиль пропал в 18');
+  assert(profileAfter.text.includes('18 лет'), 'на профиле нет возраста «18 лет»');
+  assert(!profileAfter.text.includes('Скрыто по заявлению'), 'на профиле всплыло «Скрыто по заявлению»');
+  return `в день 18-летия: переход запущен (awaiting_self), строка ${rowAfter.rank}, очки и профиль без изменений, возраст 18 лет`;
 });
 
 await check('подтверждение согласия возвращает публикацию мгновенно', async () => {
@@ -3094,7 +3084,7 @@ await check('подтверждение согласия возвращает п
   const jar = new Jar();
   const screen = await http(`/cabinet/adult/${token}`, { jar });
   eq(screen.status, 200, 'экран перехода');
-  assert(/приостановлена/i.test(screen.text), 'человеку не сказали, что публикация приостановлена');
+  assert(/не меняются/i.test(screen.text), 'человеку не сказали, что рейтинг и профиль не меняются');
 
   const done = await http(`/cabinet/adult/${token}`, {
     method: 'POST',
@@ -3274,6 +3264,296 @@ await check('юр-тексты: категория представителей,
 });
 
 // ===========================================================================
+// ---------------------------------------------------------------------------
+section('19. Публичный профиль игрока, возраст, срезы, фотография (ТЗ ред. 6, модель РТТ)');
+// ---------------------------------------------------------------------------
+const { hashPassword } = await import('./server/lib/password.mjs');
+const P19 = {
+  name: 'Профилев Артём Сергеевич', email: 'profilev@example.com', password: 'корт-профиль-2026-x',
+  rival: 'Соперников Илья Петрович', partner: 'Партнёров Кирилл Олегович', rival2: 'Дублёров Егор Иванович',
+};
+const mkPlayer = (name, age, extra = {}) => Number(
+  db.prepare("INSERT INTO players (full_name, city, sex, age_group, birth_date) VALUES (?, 'Смоленск', 'M', 'до 19', ?)")
+    .run(name, birthFor(age)).lastInsertRowid,
+);
+const p19 = mkPlayer(P19.name, 14);
+const rival19 = mkPlayer(P19.rival, 14);
+const partner19 = mkPlayer(P19.partner, 15);
+const rival2_19 = mkPlayer(P19.rival2, 16);
+const noBirth19 = Number(
+  db.prepare("INSERT INTO players (full_name, city, sex, age_group) VALUES ('Бездатов Пётр Ильич', 'Вязьма', 'M', '19-34')").run().lastInsertRowid,
+);
+accounts.createAccount(db, { playerId: p19, email: P19.email, consentBasis: 'self' });
+db.prepare('UPDATE player_accounts SET password_hash = ? WHERE player_id = ?').run(hashPassword(P19.password), p19);
+const t19 = Number(
+  db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Открытый кубок профиля', date('now','-15 days'), 'A')").run().lastInsertRowid,
+);
+for (const [pid, place] of [[p19, 1], [rival19, 2], [rival2_19, 3], [noBirth19, 4]]) {
+  db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)').run(t19, pid, place);
+}
+// Парный разряд: схема готова — место в паре у того же турнира рядом с одиночным.
+for (const [pid, place] of [[p19, 1], [partner19, 1], [rival19, 2], [rival2_19, 2]]) {
+  db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, 'double')").run(t19, pid, place);
+}
+db.prepare("INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, played_on) VALUES (?, ?, ?, '6:4 3:6 10:8', date('now','-16 days'))")
+  .run(t19, p19, rival19);
+db.prepare("INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, kind, winner_partner_id, loser_partner_id, score) VALUES (?, ?, ?, 'double', ?, ?, '6:2 6:3')")
+  .run(t19, p19, rival19, partner19, rival2_19);
+recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+const resetLimits19 = () => {
+  resetCabinetLimit();
+  db.prepare('DELETE FROM login_attempts').run();
+  db.prepare('DELETE FROM write_attempts').run();
+};
+const cabLogin19 = async () => {
+  resetLimits19();
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  const r = await http('/cabinet/login', { method: 'POST', form: { _csrf: tokenFrom(page.text), email: P19.email, password: P19.password }, jar });
+  eq(r.status, 302, 'вход в кабинет');
+  const cab = await http('/cabinet', { jar });
+  eq(cab.status, 200, 'кабинет');
+  return { jar, _csrf: tokenFrom(cab.text) };
+};
+const jpeg19 = (color) => sharpLib({ create: { width: 640, height: 480, channels: 3, background: color } }).jpeg().toBuffer();
+
+await check('§8.1 профиль открывается: ФИО, город, пол, возраст в годах, группа, очки, место, матчи со счётом', async () => {
+  const page = await http(`/player/${p19}`);
+  eq(page.status, 200, '/player/:id');
+  for (const s of [P19.name, 'Смоленск', 'муж.', 'возраст: 14 лет', 'группа: до 19', '6:4 3:6 10:8', 'победа', 'Открытый кубок профиля']) {
+    assert(page.text.includes(s), `на профиле нет «${s}»`);
+  }
+  const st = currentStandings(db);
+  const row = st.players.find((p) => p.playerId === p19);
+  assert(row, 'игрок не в снимке');
+  assert(page.text.includes(`<td class="rank">${row.rank}</td>`), 'место в рейтинге не выведено');
+  assert(page.text.includes(`<td class="pts">${row.ratingPoints}</td>`), 'очки не выведены');
+  const dbl = st.doubles.find((p) => p.playerId === p19);
+  assert(dbl, 'парный рейтинг не посчитан');
+  assert(page.text.includes('парный'), 'парный разряд не показан');
+  assert(page.text.includes('в паре с') && page.text.includes(P19.partner), 'партнёр по паре не показан');
+  return `место ${row.rank}, ${row.ratingPoints} очков; парный: место ${dbl.rank}; матчи со счётом и партнёром`;
+});
+
+await check('§8.2 на профиле нет даты рождения, почты и телефона; адрес — числовой id', async () => {
+  const page = await http(`/player/${p19}`);
+  const birth = db.prepare('SELECT birth_date FROM players WHERE id = ?').get(p19).birth_date;
+  assert(!page.text.includes(birth), 'дата рождения утекла на профиль');
+  assert(!page.text.includes(birth.slice(0, 4)), 'год рождения утёк на профиль');
+  assert(!page.text.includes(P19.email), 'почта утекла на профиль');
+  const photo = await http(`/player/${p19}/photo`);
+  eq(photo.status, 404, 'фото без загрузки должно быть 404');
+  eq((await http('/player/abc')).status, 404, 'нечисловой id');
+  eq((await http('/player/999999')).status, 404, 'несуществующий id');
+  return 'дата и год рождения, почта отсутствуют; /player/abc и /player/999999 -> 404';
+});
+
+await check('§8.3 из матчей ведут ссылки на профили соперников/партнёров и на турнир; со строки рейтинга — на профиль', async () => {
+  const page = await http(`/player/${p19}`);
+  for (const id of [rival19, partner19, rival2_19]) {
+    assert(page.text.includes(`href="/player/${id}"`), `нет ссылки на профиль игрока ${id}`);
+  }
+  assert(page.text.includes(`href="/tournaments/${t19}"`), 'нет ссылки на турнир');
+  const rating = await http('/rating');
+  assert(rating.text.includes(`href="/player/${p19}"`), 'строка рейтинга не ведёт на профиль');
+  const tour = await http(`/tournaments/${t19}`);
+  assert(tour.text.includes(`href="/player/${p19}"`) && tour.text.includes('6:4 3:6 10:8'), 'карточка турнира без ссылок/счёта');
+  return 'ссылки на 3 профиля и турнир; /rating и /tournaments/:id ведут на профиль';
+});
+
+await check('§8.4 игрок стоит во всех подходящих возрастных срезах, место считается внутри среза', async () => {
+  const st = currentStandings(db);
+  const row = st.players.find((p) => p.playerId === p19);
+  eq(row.slices.join(','), 'y14,u15,u17,u19', 'срезы четырнадцатилетнего');
+  const has = async (slice) => rowNames((await http(`/rating?slice=${slice}`)).text).includes(P19.name);
+  for (const s of ['y14', 'u15', 'u17', 'u19']) assert(await has(s), `игрока нет в срезе ${s}`);
+  for (const s of ['y13', 'u13', 'adult']) assert(!(await has(s)), `игрок попал в чужой срез ${s}`);
+  // Без даты рождения — только общая таблица.
+  const nb = st.players.find((p) => p.playerId === noBirth19);
+  eq(nb.age, null, 'возраст без даты рождения');
+  eq(nb.slices.length, 0, 'игрок без даты рождения не должен быть в срезах');
+  assert(rowNames((await http('/rating')).text).includes('Бездатов Пётр Ильич'), 'игрок без даты пропал из общей таблицы');
+  assert(!(await has('adult')) && !rowNames((await http('/rating?slice=adult')).text).includes('Бездатов Пётр Ильич'), 'без даты — не в срезе 19+');
+  // Место внутри среза — своё: у y14 два игрока, первый = 1.
+  const y14 = await http('/rating?slice=y14');
+  const names = rowNames(y14.text);
+  eq(names.length, 2, 'в срезе «14 лет» должно быть двое');
+  assert(/<td class="rank">1 /.test(y14.text) || y14.text.includes('<td class="rank">1<'), 'место внутри среза не с единицы');
+  assert(y14.text.includes('срез: 14 лет'), 'подпись среза');
+  // Парный разряд — своя таблица и фильтр.
+  const dbl = await http('/rating?discipline=double');
+  assert(rowNames(dbl.text).includes(P19.partner), 'парный рейтинг не показан');
+  assert(!rowNames((await http('/rating')).text).includes(P19.partner), 'партнёр (без одиночных результатов) попал в одиночный рейтинг');
+  return 'срезы y14,u15,u17,u19; чужие срезы пусты; без даты рождения — только общая; парный — отдельно';
+});
+
+await check('§8.5–8.6 фото: нет -> профиль без картинки; загрузил -> появилась; заменил -> новая; удалил -> исчезла сразу, прямая ссылка 404', async () => {
+  const st0 = currentStandings(db).players.find((p) => p.playerId === p19);
+  const before = await http(`/player/${p19}`);
+  assert(!before.text.includes('class="profile-photo"'), 'картинка без фото');
+  const { jar, _csrf } = await cabLogin19();
+  const cab0 = await http('/cabinet', { jar });
+  assert(cab0.text.includes('Фотография отображается в вашем публичном профиле'), 'подсказка у поля не по ТЗ');
+
+  const up = await http('/cabinet/profile', {
+    method: 'POST',
+    multipart: { fields: { _csrf, full_name: P19.name, email: P19.email }, files: [{ field: 'photo', filename: 'me.jpg', type: 'image/jpeg', buffer: await jpeg19('#0e7a52') }] },
+    jar,
+  });
+  eq(up.status, 302, 'загрузка фото');
+  const after = await http(`/player/${p19}`);
+  assert(after.text.includes(`src="/player/${p19}/photo"`), 'картинка не появилась на профиле');
+  const img = await http(`/player/${p19}/photo`);
+  eq(img.status, 200, 'фото отдаётся');
+  eq(img.headers.get('content-type'), 'image/jpeg', 'тип фото');
+  eq(img.headers.get('content-disposition'), 'inline', 'фото должно отдаваться встроенно');
+  eq(img.headers.get('cache-control'), 'no-cache', 'кэш должен перепроверять');
+  const etag = img.headers.get('etag');
+  assert(etag, 'нет ETag');
+  eq((await http(`/player/${p19}/photo`, { headers: { 'if-none-match': etag } })).status, 304, 'условный запрос');
+  const sha1 = db.prepare('SELECT u.sha256, u.stored_name FROM players p JOIN uploads u ON u.id = p.photo_upload_id WHERE p.id = ?').get(p19);
+
+  // Замена.
+  resetLimits19();
+  const up2 = await http('/cabinet/profile', {
+    method: 'POST',
+    multipart: { fields: { _csrf, full_name: P19.name, email: P19.email }, files: [{ field: 'photo', filename: 'me2.jpg', type: 'image/jpeg', buffer: await jpeg19('#123d68') }] },
+    jar,
+  });
+  eq(up2.status, 302, 'замена фото');
+  const sha2 = db.prepare('SELECT u.sha256, u.stored_name FROM players p JOIN uploads u ON u.id = p.photo_upload_id WHERE p.id = ?').get(p19);
+  assert(sha2.sha256 !== sha1.sha256, 'после замены фото не изменилось');
+  assert(!existsSync(resolve(UPLOAD_DIR, sha1.stored_name)), 'старый файл после замены остался');
+  assert((await http(`/player/${p19}/photo`)).headers.get('etag') !== etag, 'ETag не сменился после замены');
+
+  // Режим A цел: в кабинете фото видно владельцу.
+  const own = await http('/cabinet/photo', { jar });
+  eq(own.status, 200, 'фото в кабинете владельцу');
+
+  // Удаление.
+  resetLimits19();
+  const del = await http('/cabinet/photo/delete', { method: 'POST', form: { _csrf }, jar });
+  eq(del.status, 302, 'удаление фото');
+  eq(db.prepare('SELECT photo_upload_id FROM players WHERE id = ?').get(p19).photo_upload_id, null, 'ссылка на фото осталась');
+  assert(!existsSync(resolve(UPLOAD_DIR, sha2.stored_name)), 'файл после удаления остался на диске');
+  eq((await http(`/player/${p19}/photo`)).status, 404, 'прямая ссылка на удалённое фото работает');
+  const gone = await http(`/player/${p19}`);
+  eq(gone.status, 200, 'профиль после удаления фото');
+  assert(!gone.text.includes('class="profile-photo"'), 'картинка осталась на профиле');
+  assert(gone.text.includes(P19.name), 'профиль без фото потерял данные');
+
+  // §8.7: ни одно действие с фото не тронуло строку рейтинга.
+  const st1 = currentStandings(db).players.find((p) => p.playerId === p19);
+  eq(st1.rank, st0.rank, 'место изменилось от действий с фото');
+  eq(st1.ratingPoints, st0.ratingPoints, 'очки изменились от действий с фото');
+  return 'inline, no-cache, ETag/304; замена меняет sha и удаляет старый файл; удаление -> 404 сразу; рейтинг не тронут';
+});
+
+await check('§8.9 представитель несовершеннолетнего управляет фотографией из своего кабинета', async () => {
+  // Свой подопытный: минор с представителем, заведённый через регистрацию и модерацию.
+  resetLimits19();
+  const G_EMAIL = 'profile-guardian@example.com';
+  const G_PASS = 'корты-представителя-2026';
+  const WARD = 'Подопечный Матвей Ильич';
+  await submitRegistration({
+    full_name: WARD, city: 'Смоленск', sex: 'M', birth_date: birthFor(12),
+    guardian_full_name: 'Подопечная Анна Ильинична', guardian_relation: 'мать', guardian_email: G_EMAIL,
+    consent_guardian_child: '1', consent_guardian_self: '1', consent_distribution: '1',
+  });
+  const reg = db.prepare('SELECT * FROM registrations WHERE full_name = ?').get(WARD);
+  assert(reg, 'заявка подопечного не подана');
+  resetLimits19();
+  await approveByAdmin(reg.id);
+  const ward = db.prepare('SELECT id FROM players WHERE full_name = ?').get(WARD);
+  assert(ward, 'подопечный не заведён');
+  const g = guardians.guardianByEmail(db, G_EMAIL);
+  assert(g, 'представитель не заведён');
+  db.prepare('UPDATE guardians SET password_hash = ? WHERE id = ?').run(hashPassword(G_PASS), g.id);
+  resetLimits19();
+  const jar = new Jar();
+  const page = await http('/cabinet/login', { jar });
+  const enter = await http('/cabinet/login', { method: 'POST', form: { _csrf: tokenFrom(page.text), email: G_EMAIL, password: G_PASS }, jar });
+  eq(enter.status, 302, 'вход представителя');
+  if (enter.location === '/cabinet/wards') {
+    const wards = await http('/cabinet/wards', { jar });
+    await http('/cabinet/wards/select', { method: 'POST', form: { _csrf: tokenFrom(wards.text), player_id: String(ward.id) }, jar });
+  }
+  const cab = await http('/cabinet', { jar });
+  eq(cab.status, 200, 'кабинет подопечного');
+  assert(cab.text.includes(WARD), 'кабинет открыт не на подопечного');
+  const _csrf = tokenFrom(cab.text);
+  const name = db.prepare('SELECT full_name FROM players WHERE id = ?').get(ward.id).full_name;
+  const up = await http('/cabinet/profile', {
+    method: 'POST',
+    multipart: { fields: { _csrf, full_name: name }, files: [{ field: 'photo', filename: 'kid.jpg', type: 'image/jpeg', buffer: await jpeg19('#b22222') }] },
+    jar,
+  });
+  eq(up.status, 302, 'представитель загружает фото');
+  eq((await http(`/player/${ward.id}/photo`)).status, 200, 'фото подопечного на публичном профиле');
+  resetLimits19();
+  const del = await http('/cabinet/photo/delete', { method: 'POST', form: { _csrf }, jar });
+  eq(del.status, 302, 'представитель удаляет фото');
+  eq((await http(`/player/${ward.id}/photo`)).status, 404, 'фото подопечного не удалилось');
+  const log = db.prepare("SELECT action FROM action_log WHERE action LIKE '%cabinet.photo.delete%' ORDER BY id DESC LIMIT 1").get();
+  assert(log && log.action.includes('"guardian"'), 'в журнале не отмечено, что удалял представитель');
+  return `подопечный ${ward.id}: представитель загрузил и удалил фото, журнал помнит, кто`;
+});
+
+await check('уполномоченное лицо убирает фотографию участника из админки; счёт и дата матча вносятся из админки', async () => {
+  const { jar, _csrf } = await cabLogin19();
+  await http('/cabinet/profile', {
+    method: 'POST',
+    multipart: { fields: { _csrf, full_name: P19.name, email: P19.email }, files: [{ field: 'photo', filename: 'me3.jpg', type: 'image/jpeg', buffer: await jpeg19('#444') }] },
+    jar,
+  });
+  eq((await http(`/player/${p19}/photo`)).status, 200, 'фото загружено');
+  resetLimits19();
+  const admin = await login(ADMIN.user, ADMIN.pass);
+  eq(admin.res.status, 302, 'вход админа');
+  const list = await http('/admin/players', { jar: admin.jar });
+  assert(list.text.includes(`/admin/players/${p19}/photo/delete`), 'в админке нет кнопки убрать фото');
+  const rm = await http(`/admin/players/${p19}/photo/delete`, { method: 'POST', form: { _csrf: tokenFrom(list.text), reason: 'неподобающее изображение' }, jar: admin.jar });
+  eq(rm.status, 302, 'удаление из админки');
+  eq((await http(`/player/${p19}/photo`)).status, 404, 'фото не убрано из админки');
+  assert(db.prepare("SELECT 1 FROM action_log WHERE action LIKE '%player.photo.delete%'").get(), 'удаление не в журнале действий');
+
+  const form = await http(`/admin/tournaments/${t19}/results`, { jar: admin.jar });
+  assert(form.text.includes('name="score"') && form.text.includes('name="played_on"'), 'в форме матча нет счёта/даты');
+  const add = await http(`/admin/tournaments/${t19}/matches`, {
+    method: 'POST', form: { _csrf: tokenFrom(form.text), winner_player_id: String(rival2_19), loser_player_id: String(p19), score: '7:5 6:4', played_on: '2026-08-20' }, jar: admin.jar,
+  });
+  eq(add.status, 302, 'матч со счётом добавлен');
+  const m = db.prepare('SELECT score, played_on FROM matches WHERE tournament_id = ? AND winner_player_id = ? AND loser_player_id = ?').get(t19, rival2_19, p19);
+  eq(m.score, '7:5 6:4', 'счёт не сохранён');
+  eq(m.played_on, '2026-08-20', 'дата не сохранена');
+  const bad = await http(`/admin/tournaments/${t19}/matches`, {
+    method: 'POST', form: { _csrf: tokenFrom(form.text), winner_player_id: String(p19), loser_player_id: String(rival2_19), played_on: '2026-02-30' }, jar: admin.jar,
+  });
+  eq(bad.status, 302, 'несуществующая дата отклоняется редиректом с ошибкой');
+  assert(!db.prepare('SELECT 1 FROM matches WHERE tournament_id = ? AND winner_player_id = ? AND loser_player_id = ?').get(t19, p19, rival2_19), 'матч с датой 30 февраля записан');
+  const prof = await http(`/player/${p19}`);
+  assert(prof.text.includes('7:5 6:4') && prof.text.includes('2026-08-20') && prof.text.includes('поражение'), 'новый матч не на профиле');
+  return 'фото убрано админом с записью в журнал; матч 7:5 6:4 от 2026-08-20 на профиле; 30 февраля отклонено';
+});
+
+await check('обезличенный по ст. 21: профиль 404, фото 404, в матчах соперников — «Игрок удалён» без ссылки', async () => {
+  const gone = mkPlayer('Стёртый Тест Тестович', 15);
+  db.prepare("INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score) VALUES (?, ?, ?, '6:0 6:0')").run(t19, p19, gone);
+  eq((await http(`/player/${gone}`)).status, 200, 'до обезличивания профиль есть');
+  const erasure = await import('./server/lib/erasure.mjs');
+  erasure.erasePlayer(db, gone, { uploadDir: UPLOAD_DIR });
+  assert(db.prepare('SELECT anonymized_at FROM players WHERE id = ?').get(gone).anonymized_at, 'игрок не обезличен');
+  eq((await http(`/player/${gone}`)).status, 404, 'профиль обезличенного должен быть 404');
+  eq((await http(`/player/${gone}/photo`)).status, 404, 'фото обезличенного');
+  const prof = await http(`/player/${p19}`);
+  assert(prof.text.includes('Игрок удалён'), 'в матчах нет «Игрок удалён»');
+  assert(!prof.text.includes(`href="/player/${gone}"`), 'на обезличенного ведёт ссылка');
+  const tour = await http(`/tournaments/${t19}`);
+  assert(!tour.text.includes(`href="/player/${gone}"`), 'на карточке турнира ссылка на обезличенного');
+  resetLimits19();
+  return 'обезличенный: 404 профиль и фото, в матчах текст без ссылки';
+});
+
 section('17. Браузер: адаптив, доступность, тема, CSP, XSS');
 
 let browserNote = '';

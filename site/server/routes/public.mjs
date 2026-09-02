@@ -3,7 +3,6 @@ import {
   currentStandings,
   statusLabel,
   RATING_CONFIG,
-  HIDDEN_LABEL,
   ERASED_LABEL,
 } from '../lib/rating-service.mjs';
 import { HOME_STATS, HOME_NEXT_EVENT } from '../lib/home-content.mjs';
@@ -22,7 +21,7 @@ import {
 } from '../lib/content.mjs';
 import { uploadById, sendUpload } from '../lib/uploads.mjs';
 
-const LABELS = { hiddenLabel: HIDDEN_LABEL, erasedLabel: ERASED_LABEL };
+const LABELS = { erasedLabel: ERASED_LABEL };
 const sectionFor = (path) => SECTIONS.find((s) => s.path === path);
 
 export default function mountPublic(app, { db, config }) {
@@ -80,8 +79,7 @@ export default function mountPublic(app, { db, config }) {
     res.status(200).render('tournament', {
       title: `${tournament.name} — ФТСО`,
       tournament,
-      // Участники СПИСКОМ, без ссылок на профили: публичной карточки игрока в
-      // проекте нет, и заводить её здесь нельзя.
+      // Участники и матчи со ссылками на публичные профили /player/:id.
       participants: tournamentParticipants(db, tournament.id, LABELS),
       matches: tournamentMatches(db, tournament.id, LABELS),
       documents: tournamentFiles(db, tournament.id),

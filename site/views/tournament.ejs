@@ -30,13 +30,14 @@
         <div class="table-scroll">
           <table>
             <caption class="visually-hidden">Итоговые места участников</caption>
-            <thead><tr><th scope="col">Место</th><th scope="col">Участник</th><th scope="col">Город</th></tr></thead>
+            <thead><tr><th scope="col">Место</th><th scope="col">Участник</th><th scope="col">Город</th><th scope="col">Разряд</th></tr></thead>
             <tbody>
               <% participants.forEach(function (p) { %>
                 <tr>
                   <td class="rank"><%= p.place %></td>
-                  <td class="player<%= p.anonymized ? ' player--anonymized' : '' %>"><%= p.name %></td>
+                  <td class="player<%= p.anonymized ? ' player--anonymized' : '' %>"><% if (p.playerId) { %><a href="/player/<%= p.playerId %>"><%= p.name %></a><% } else { %><%= p.name %><% } %></td>
                   <td><%= p.city || '—' %></td>
+                  <td><%= p.discipline === 'double' ? 'парный' : 'одиночный' %></td>
                 </tr>
               <% }); %>
             </tbody>
@@ -53,10 +54,19 @@
         <div class="table-scroll">
           <table>
             <caption class="visually-hidden">Сыгранные матчи турнира</caption>
-            <thead><tr><th scope="col">Победитель</th><th scope="col">Соперник</th></tr></thead>
+            <thead><tr><th scope="col">Дата</th><th scope="col">Победитель</th><th scope="col">Соперник</th><th scope="col">Счёт</th></tr></thead>
             <tbody>
+              <%
+              /* Стороны — ссылками на профили; обезличенный (id null) — текстом.
+                 Вывод имён только экранирующим тегом. */
+              %>
               <% matches.forEach(function (m) { %>
-                <tr><td><%= m.winner %></td><td><%= m.loser %></td></tr>
+                <tr>
+                  <td><%= m.playedOn %></td>
+                  <td><% m.winners.forEach(function (r, i) { %><%= i ? ' / ' : '' %><% if (r.id) { %><a href="/player/<%= r.id %>"><%= r.name %></a><% } else { %><%= r.name %><% } %><% }); %></td>
+                  <td><% m.losers.forEach(function (r, i) { %><%= i ? ' / ' : '' %><% if (r.id) { %><a href="/player/<%= r.id %>"><%= r.name %></a><% } else { %><%= r.name %><% } %><% }); %></td>
+                  <td><%= m.score || '—' %><%= m.kind === 'double' ? ' · пара' : '' %></td>
+                </tr>
               <% }); %>
             </tbody>
           </table>

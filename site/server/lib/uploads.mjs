@@ -283,4 +283,30 @@ export function sendUpload(res, row, dir) {
   return true;
 }
 
+/**
+ * ОТДАЧА ИЗОБРАЖЕНИЯ ВСТРОЕННО — для фотографии на публичном профиле. Отличия от
+ * sendUpload: Content-Disposition inline (браузер показывает, а не скачивает),
+ * Cache-Control no-cache + ETag по sha256 — прокси и браузер обязаны
+ * перепроверять: удалённая в кабинете фотография пропадает с профиля сразу,
+ * а не после истечения чужого кэша. Только для картинок; всё прочее — attachment.
+ */
+export function sendUploadInline(req, res, row, dir) {
+  if (row.kind !== 'image' || row.mime === 'image/svg+xml') return sendUpload(res, row, dir);
+  const path = storagePath(dir, row.stored_name);
+  if (!existsSync(path)) return false;
+  const etag = `"${row.sha256.slice(0, 32)}"`;
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('ETag', etag);
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  if (req.headers['if-none-match'] === etag) {
+    res.status(304).end();
+    return true;
+  }
+  res.setHeader('Content-Type', row.mime);
+  res.setHeader('Content-Length', statSync(path).size);
+  res.setHeader('Content-Disposition', 'inline');
+  res.sendFile(path);
+  return true;
+}
+
 export { join as joinPath };

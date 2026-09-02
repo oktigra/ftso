@@ -27,6 +27,7 @@ import mountRegister from './routes/register.mjs';
 import mountTournamentRequest from './routes/tournament-request.mjs';
 import mountCabinet from './routes/cabinet.mjs';
 import mountRating from './routes/rating.mjs';
+import mountPlayer from './routes/player.mjs';
 import mountAuth from './routes/auth.mjs';
 import mountAdmin from './routes/admin.mjs';
 import mountAdminContent from './routes/admin-content.mjs';
@@ -170,6 +171,7 @@ export function createApp(config) {
   mountAdmin(app, ctx);
   mountAdminContent(app, ctx);
   mountRating(app, ctx);
+  mountPlayer(app, ctx);
   mountRegister(app, ctx);
   mountTournamentRequest(app, ctx);
   mountCabinet(app, ctx);

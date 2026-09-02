@@ -40,7 +40,7 @@ import {
   rejectRequest,
   byId as tournamentRequestById,
 } from '../lib/tournament-requests.mjs';
-import { sendUpload, uploadById } from '../lib/uploads.mjs';
+import { sendUpload, uploadById, deleteUpload } from '../lib/uploads.mjs';
 import { attachRequestFiles } from '../lib/content.mjs';
 import { createAccount, issueResetToken } from '../lib/player-accounts.mjs';
 import {
@@ -255,6 +255,32 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       withConsentErasure(db, () => db.prepare('DELETE FROM players WHERE id = ?').run(id));
       logAction(db, req.session.user.id, 'player.delete', id, { consents_erased: wiped });
       flash(req, res, 'ok', 'Игрок удалён.', '/admin/players');
+    }),
+  );
+
+  /**
+   * УДАЛЕНИЕ ФОТОГРАФИИ УЧАСТНИКА УПОЛНОМОЧЕННЫМ ЛИЦОМ (ТЗ ред. 6 §7) — на случай
+   * неподобающего изображения. Та же механика, что в кабинете: файл с диска,
+   * строка uploads, ссылка в players — одной транзакцией; профиль и рейтинг не
+   * трогаются. Причина пишется в журнал действий.
+   */
+  app.post(
+    '/admin/players/:id/photo/delete',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const row = db.prepare('SELECT photo_upload_id FROM players WHERE id = ?').get(id);
+      if (!row) throw new ValidationError('Игрок не найден');
+      if (!row.photo_upload_id) throw new ValidationError('У игрока нет фотографии');
+      db.transaction(() => {
+        db.prepare('UPDATE players SET photo_upload_id = NULL WHERE id = ?').run(id);
+        deleteUpload(db, row.photo_upload_id, config.upload.dir);
+      })();
+      logAction(db, req.session.user.id, 'player.photo.delete', id, {
+        reason: String(req.body.reason || '').slice(0, 200) || null,
+      });
+      flash(req, res, 'ok', 'Фотография удалена.', '/admin/players');
     }),
   );
 
@@ -677,7 +703,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         .all(id),
       matches: db
         .prepare(
-          `SELECT m.id, w.full_name AS winner, l.full_name AS loser
+          `SELECT m.id, m.score, m.played_on, m.kind, w.full_name AS winner, l.full_name AS loser
              FROM matches m
              JOIN players w ON w.id = m.winner_player_id
              JOIN players l ON l.id = m.loser_player_id
@@ -757,12 +783,16 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const tournamentId = intAtLeast(req.params.id, 'Турнир');
       const winner = intAtLeast(req.body.winner_player_id, 'Победитель');
       const loser = intAtLeast(req.body.loser_player_id, 'Проигравший');
+      // Счёт и дата — для публичного профиля (ТЗ ред. 6 §5). Оба необязательны:
+      // пустая дата на витрине подменяется датой окончания турнира.
+      const score = str(req.body.score, 'Счёт', { max: 60, required: false }) || null;
+      const playedOn = String(req.body.played_on || '').trim() ? isoDate(req.body.played_on, 'Дата матча') : null;
       const back = `/admin/tournaments/${tournamentId}/results`;
       if (winner === loser) throw new ValidationError('Победитель и проигравший совпадают');
       try {
         db.prepare(
-          'INSERT INTO matches (tournament_id, winner_player_id, loser_player_id) VALUES (?, ?, ?)',
-        ).run(tournamentId, winner, loser);
+          'INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, played_on) VALUES (?, ?, ?, ?, ?)',
+        ).run(tournamentId, winner, loser, score, playedOn);
       } catch (err) {
         if (String(err.message).includes('UNIQUE')) {
           throw new ValidationError('Такой матч уже внесён (обратный матч вносится отдельно)');

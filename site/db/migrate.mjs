@@ -69,6 +69,72 @@ function upgradeConsents(db) {
 }
 
 /**
+ * РЕЗУЛЬТАТЫ ОБЗАВЕЛИСЬ РАЗРЯДОМ (одиночный/парный). Уникальность «турнир +
+ * игрок» стала «турнир + игрок + разряд»: в одном турнире игрок занимает место
+ * и в одиночке, и в паре. UNIQUE в SQLite через ALTER не правится — пересборка.
+ */
+function upgradeResults(db) {
+  const table = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'results'")
+    .get();
+  if (!table) return false;
+  if (table.sql.includes('discipline')) return false;
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE results_upgraded (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+        player_id     INTEGER NOT NULL REFERENCES players(id)     ON DELETE CASCADE,
+        place         INTEGER NOT NULL CHECK (place >= 1 AND place = CAST(place AS INTEGER)),
+        discipline    TEXT NOT NULL DEFAULT 'single' CHECK (discipline IN ('single','double')),
+        UNIQUE (tournament_id, player_id, discipline)
+      );
+      INSERT INTO results_upgraded (id, tournament_id, player_id, place, discipline)
+      SELECT id, tournament_id, player_id, place, 'single' FROM results;
+      DROP TABLE results;
+      ALTER TABLE results_upgraded RENAME TO results;
+    `);
+  })();
+  return true;
+}
+
+/**
+ * МАТЧИ ОБЗАВЕЛИСЬ СЧЁТОМ, ДАТОЙ, РАЗРЯДОМ И ПАРТНЁРАМИ ПО ПАРЕ. Уникальность
+ * «турнир + победитель + проигравший» стала «… + разряд»: те же двое могут в
+ * одном турнире встретиться и в одиночке, и в паре. Пересборка одной транзакцией.
+ */
+function upgradeMatches(db) {
+  const table = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'matches'")
+    .get();
+  if (!table) return false;
+  if (table.sql.includes('winner_partner_id')) return false;
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE matches_upgraded (
+        id               INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        tournament_id    INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+        winner_player_id INTEGER NOT NULL REFERENCES players(id)     ON DELETE CASCADE,
+        loser_player_id  INTEGER NOT NULL REFERENCES players(id)     ON DELETE CASCADE,
+        score            TEXT CHECK (score IS NULL OR length(score) <= 60),
+        played_on        TEXT CHECK (played_on IS NULL OR (played_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+                                                           AND played_on IS strftime('%Y-%m-%d', played_on))),
+        kind             TEXT NOT NULL DEFAULT 'single' CHECK (kind IN ('single','double')),
+        winner_partner_id INTEGER REFERENCES players(id) ON DELETE CASCADE,
+        loser_partner_id  INTEGER REFERENCES players(id) ON DELETE CASCADE,
+        CHECK (winner_player_id <> loser_player_id),
+        UNIQUE (tournament_id, winner_player_id, loser_player_id, kind)
+      );
+      INSERT INTO matches_upgraded (id, tournament_id, winner_player_id, loser_player_id)
+      SELECT id, tournament_id, winner_player_id, loser_player_id FROM matches;
+      DROP TABLE matches;
+      ALTER TABLE matches_upgraded RENAME TO matches;
+    `);
+  })();
+  return true;
+}
+
+/**
  * ПОЧТА АККАУНТА СТАЛА НЕОБЯЗАТЕЛЬНОЙ. Пока за ребёнка отвечает законный
  * представитель, своего входа у ребёнка нет вовсе: логин и пароль — у
  * представителя (таблица guardians), а player_accounts.email пуст. NOT NULL в
@@ -153,7 +219,14 @@ export function migrate() {
   addColumnIfMissing(db, 'player_accounts', 'transition_reminded_at', 'TEXT');
   addColumnIfMissing(db, 'player_accounts', 'transition_token', 'TEXT');
   addColumnIfMissing(db, 'player_accounts', 'frozen_at', 'TEXT');
+
+  // --- публичный профиль, матчи со счётом, парный разряд (ТЗ ред. 6) ---------
+  addColumnIfMissing(db, 'players', 'rni', 'TEXT');
+  const resultsRebuilt = upgradeResults(db);
+  const matchesRebuilt = upgradeMatches(db);
   db.exec(readFileSync(resolve(HERE, 'after-upgrade.sql'), 'utf8'));
+  if (resultsRebuilt) console.log('[migrate] результаты пересобраны: добавлен разряд (одиночный/парный)');
+  if (matchesRebuilt) console.log('[migrate] матчи пересобраны: счёт, дата, разряд и партнёры по паре');
   if (rebuilt) console.log('[migrate] журнал согласий пересобран: добавлены вид «представитель» и привязка guardian_id');
   if (accountsRebuilt) console.log('[migrate] аккаунты игроков пересобраны: почта стала необязательной (вход детей — через представителя)');
   return db;
