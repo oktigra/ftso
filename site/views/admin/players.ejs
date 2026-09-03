@@ -12,6 +12,7 @@
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="field"><label for="p-name">ФИО</label><input id="p-name" name="full_name" maxlength="120" required></div>
       <div class="field"><label for="p-city">Город</label><input id="p-city" name="city" maxlength="80" required></div>
+      <div class="field"><label for="p-rni">РНИ</label><input id="p-rni" name="rni" maxlength="32" pattern="[0-9A-Za-z-]+" placeholder="номер в РТТ, если есть"></div>
       <div class="field"><label for="p-sex">Пол</label>
         <select id="p-sex" name="sex" required>
           <% sexes.forEach(function (s) { %><option value="<%= s %>"><%= s === 'M' ? 'муж.' : 'жен.' %></option><% }); %>
@@ -70,13 +71,14 @@
     %>
     <div class="table-scroll">
       <table class="admin-table admin-table--edit">
-        <thead><tr><th>ID</th><th>ФИО</th><th>Город</th><th>Пол</th><th>Дата рождения</th><th>Группа</th><th>Публикация</th><th>Представитель</th><th>Действия</th></tr></thead>
+        <thead><tr><th>ID</th><th>ФИО</th><th>Город</th><th>РНИ</th><th>Пол</th><th>Дата рождения</th><th>Группа</th><th>Публикация</th><th>Представитель</th><th>Действия</th></tr></thead>
         <tbody>
           <% players.forEach(function (p) { %>
             <tr>
               <td><%= p.id %></td>
               <td><input form="edit-player-<%= p.id %>" name="full_name" value="<%= p.full_name %>" maxlength="120" required></td>
               <td><input form="edit-player-<%= p.id %>" name="city" value="<%= p.city %>" maxlength="80" required></td>
+              <td><input form="edit-player-<%= p.id %>" name="rni" value="<%= p.rni || '' %>" maxlength="32" pattern="[0-9A-Za-z-]+" size="8"></td>
               <td>
                 <select form="edit-player-<%= p.id %>" name="sex" required>
                   <% sexes.forEach(function (s) { %>

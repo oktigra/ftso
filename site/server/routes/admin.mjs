@@ -182,8 +182,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const data = playerInput(req.body);
       const publish = publicFlag(req.body);
       const info = db
-        .prepare('INSERT INTO players (full_name, city, sex, age_group, birth_date) VALUES (?, ?, ?, ?, ?)')
-        .run(data.full_name, data.city, data.sex, data.age_group, data.birth_date);
+        .prepare('INSERT INTO players (full_name, city, sex, age_group, birth_date, rni) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(data.full_name, data.city, data.sex, data.age_group, data.birth_date, data.rni);
       const id = Number(info.lastInsertRowid);
       // Публикация включается ТОЛЬКО событием журнала: секретарь отмечает, что
       // бумажное согласие на распространение получено. Прямой записи в is_public
@@ -213,9 +213,9 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // работает снятие гейта представителя.
       const info = db
         .prepare(
-          'UPDATE players SET full_name = ?, city = ?, sex = ?, age_group = ?, birth_date = COALESCE(?, birth_date) WHERE id = ?',
+          'UPDATE players SET full_name = ?, city = ?, sex = ?, age_group = ?, birth_date = COALESCE(?, birth_date), rni = ? WHERE id = ?',
         )
-        .run(data.full_name, data.city, data.sex, data.age_group, data.birth_date, id);
+        .run(data.full_name, data.city, data.sex, data.age_group, data.birth_date, data.rni, id);
       if (!info.changes) throw new ValidationError('Игрок не найден');
       // Смена публикации = событие журнала (выдача или ОТЗЫВ согласия на
       // распространение), а не правка флага. Отзыв по ч. 12-13 ст. 10.1 обязан

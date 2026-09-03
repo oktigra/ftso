@@ -136,7 +136,19 @@ export function playerInput(body) {
     // считается снятие гейта, и случайно очищенная дата тихо выключила бы
     // переход в 18. Стирается она в одном месте — при обезличивании по ст. 21.
     birth_date: body.birth_date ? birthDate(body.birth_date) : null,
+    // РНИ — регистрационный номер игрока в РТТ, публичный идентификатор (как в
+    // рейтингах тура). Необязателен; пустое поле = «РНИ нет» (в отличие от даты
+    // рождения, стирать безопасно — на нём не висит ни гейт, ни согласие).
+    rni: rniNumber(body.rni),
   };
+}
+
+/** РНИ: до 32 знаков, только цифры, латиница и дефис; пусто → null. */
+export function rniNumber(value, field = 'РНИ') {
+  const v = str(value, field, { max: 32, required: false });
+  if (!v) return null;
+  if (!/^[0-9A-Za-z-]+$/.test(v)) throw new ValidationError(`${field}: только цифры, латинские буквы и дефис`);
+  return v;
 }
 
 /**
