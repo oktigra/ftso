@@ -6,7 +6,7 @@
 // включённом CSP, localStorage, адаптив, экранирование XSS, локальные шрифты)
 // проверяются реальным Chromium через Playwright.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync, readFileSync, copyFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, copyFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -4165,6 +4165,67 @@ await new Promise((res) => {
 // ===========================================================================
 await stopApp(inst);
 closeDb();
+
+// ---------------------------------------------------------------------------
+// Выкат: дифф только из памяти не рестартит pm2 (deploy/deploy-watch.sh)
+// ---------------------------------------------------------------------------
+await check('deploy-watch: дифф только из памяти → ff без выката; код → выкат', async () => {
+  const WATCH = resolve(HERE, '..', 'deploy', 'deploy-watch.sh');
+  assert(existsSync(WATCH), 'нет deploy/deploy-watch.sh');
+  const tmp = mkdtempSync('/tmp/dw-');
+  try {
+    const git = (cwd, ...a) => {
+      const r = spawnSync('git', a, {
+        cwd, encoding: 'utf8',
+        env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' },
+      });
+      if (r.status !== 0) throw new Error(`git ${a.join(' ')}: ${r.stderr || r.stdout}`);
+      return r.stdout.trim();
+    };
+    const origin = resolve(tmp, 'origin.git');
+    const work = resolve(tmp, 'work');
+    const prod = resolve(tmp, 'prod');
+    const marker = resolve(tmp, 'deployed');
+    const deployScript = resolve(tmp, 'deploy-fake.sh');
+    writeFileSync(deployScript, `#!/usr/bin/env bash\necho called >> "${marker}"\n`);
+    git(tmp, 'init', '-q', '--bare', '-b', 'main', origin);
+    git(tmp, 'clone', '-q', origin, work);
+    mkdirSync(resolve(work, 'site'), { recursive: true });
+    mkdirSync(resolve(work, 'ritual'), { recursive: true });
+    writeFileSync(resolve(work, 'site', 'app.txt'), 'v1\n');
+    writeFileSync(resolve(work, 'ritual', '.gitkeep'), '');
+    writeFileSync(resolve(work, 'NEXT_CHAT_START.md'), '# start\n');
+    git(work, 'add', '-A');
+    git(work, 'commit', '-q', '-m', 'init');
+    git(work, 'branch', '-M', 'main');
+    git(work, 'push', '-q', '-u', origin, 'main');
+    git(tmp, 'clone', '-q', origin, prod);
+    const env = {
+      DEPLOY_ROOT: prod, DEPLOY_SCRIPT: deployScript, DEPLOY_RUNAS: '',
+      DEPLOY_LOG: resolve(tmp, 'log'), DEPLOY_STATE: resolve(tmp, 'state'), DEPLOY_LOCK: resolve(tmp, 'lock'),
+    };
+    const runWatch = () => spawnSync('bash', [WATCH], { env: { ...process.env, ...env }, encoding: 'utf8' });
+    // 1) коммит ТОЛЬКО памяти → выката быть не должно, HEAD должен догнать origin
+    writeFileSync(resolve(work, 'ritual', 'SESSION_2026-09-03-1.md'), 'снимок сессии\n');
+    writeFileSync(resolve(work, 'NEXT_CHAT_START.md'), '# start 2\n');
+    git(work, 'add', '-A');
+    git(work, 'commit', '-q', '-m', 'ритуал');
+    git(work, 'push', '-q', origin, 'main');
+    runWatch();
+    assert(!existsSync(marker), 'дифф только из памяти вызвал выкат pm2');
+    eq(git(prod, 'rev-parse', 'HEAD'), git(prod, 'rev-parse', 'origin/main'), 'память не подтянута fast-forward');
+    // 2) коммит кода → выкат обязан произойти
+    writeFileSync(resolve(work, 'site', 'app.txt'), 'v2\n');
+    git(work, 'add', '-A');
+    git(work, 'commit', '-q', '-m', 'код');
+    git(work, 'push', '-q', origin, 'main');
+    runWatch();
+    assert(existsSync(marker), 'дифф кода НЕ вызвал выкат');
+    return 'память: ff без deploy-A.sh, HEAD догнал origin; код: deploy-A.sh вызван';
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Отчёт
