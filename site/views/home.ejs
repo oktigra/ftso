@@ -122,7 +122,7 @@
             <% top5.forEach(function (p) { %>
               <tr>
                 <td class="rank"><%= p.rank %></td>
-                <td class="player<%= p.anonymized ? ' player--anonymized' : '' %>"><%= p.playerName %></td>
+                <td class="player<%= p.anonymized ? ' player--anonymized' : '' %>"><% if (p.anonymized) { %><%= p.playerName %><% } else { %><a href="/player/<%= p.playerId %>"><%= p.playerName %></a><% } %></td>
                 <td><%= p.city || '—' %></td>
                 <td class="pts"><%= p.ratingPoints %></td>
                 <td class="chg chg--<%= p.change.kind %>"><%= p.change.label %></td>

@@ -51,7 +51,7 @@ site/
   server/     Express: маршруты, middleware (сессия, роли, лимиты, CSRF, лог)
     lib/      пароли, конфиг, CSRF, стор сессий, валидация, сервис рейтинга, меню,
               журнал согласий, забвение, представители, переход в 18, единый вход
-    routes/   public, rating, auth, admin, register, cabinet
+    routes/   public, rating, player, auth, admin, register, cabinet
   db/         schema.sql, after-upgrade.sql (триггеры журнала), migrate.mjs,
               connect.mjs, seed.mjs
   views/      главная (из дизайна), /rating, вход, админ-страницы, ошибки
@@ -80,6 +80,7 @@ site/
 | Турниры | `/tournaments` | заглушка |
 | Страница турнира | `/tournaments/:id` | маршрут-заглушка, 404 на неизвестный id |
 | Рейтинг | `/rating` | **живой** |
+| Профиль игрока | `/player/:id`, `/player/:id/photo` | **живой** (ТЗ ред. 6, модель РТТ) |
 | Тренеры | `/coaches` | заглушка |
 | Теннисные корты | `/courts` | заглушка |
 | Теннисные клубы | `/clubs` | заглушка |

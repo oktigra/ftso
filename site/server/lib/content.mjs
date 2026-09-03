@@ -51,54 +51,66 @@ export function tournamentList(db) {
 }
 
 /**
- * УЧАСТНИКИ карточки турнира. Ссылок на профили НЕТ — публичной карточки
- * игрока в проекте нет, и заводить её здесь нельзя.
- *
- * Имена проходят ТУ ЖЕ логику обезличивания, что и рейтинг: нет согласия на
- * публикацию — «Скрыто по заявлению», обезличен по ст. 21 — «Игрок удалён».
- * Иначе протокол турнира стал бы обходным путём вокруг согласия.
+ * Участники турнира по местам. Ссылки ведут на публичный профиль /player/:id
+ * (ТЗ ред. 6, модель РТТ): результаты соревнований публикуются на основании
+ * участия, согласие на витрину не влияет. Обезличенный по ст. 21 — «Игрок
+ * удалён» без ссылки и без города. discipline: одиночный / парный разряд.
  */
-export function tournamentParticipants(db, tournamentId, { hiddenLabel, erasedLabel }) {
+export function tournamentParticipants(db, tournamentId, { erasedLabel }) {
   return db
     .prepare(
-      `SELECT r.place, p.id AS player_id, p.full_name, p.city, p.is_public, p.anonymized_at
+      `SELECT r.place, r.discipline, p.id AS player_id, p.full_name, p.city, p.anonymized_at
          FROM results r JOIN players p ON p.id = r.player_id
-        WHERE r.tournament_id = ? ORDER BY r.place`,
+        WHERE r.tournament_id = ? ORDER BY r.discipline, r.place`,
     )
     .all(tournamentId)
     .map((row) => {
       const erased = Boolean(row.anonymized_at);
-      const visible = row.is_public && !erased;
       return {
         place: row.place,
-        name: visible ? row.full_name : erased ? erasedLabel : hiddenLabel,
-        city: visible ? row.city : '',
-        anonymized: visible ? null : erased ? 'erased' : 'hidden',
+        discipline: row.discipline,
+        playerId: erased ? null : row.player_id,
+        name: erased ? erasedLabel : row.full_name,
+        city: erased ? '' : row.city,
+        anonymized: erased ? 'erased' : null,
       };
     });
 }
 
-/** Сетка: сыгранные матчи турнира, имена по тем же правилам. */
-export function tournamentMatches(db, tournamentId, { hiddenLabel, erasedLabel }) {
-  const label = (name, isPublic, anonymizedAt) => {
-    const erased = Boolean(anonymizedAt);
-    if (isPublic && !erased) return name;
-    return erased ? erasedLabel : hiddenLabel;
-  };
-  return db
+/** Сетка: сыгранные матчи турнира — стороны со ссылками, счёт, дата, разряд. */
+export function tournamentMatches(db, tournamentId, { erasedLabel }) {
+  const rows = db
     .prepare(
-      `SELECT wi.full_name AS winner, wi.is_public AS winner_public, wi.anonymized_at AS winner_erased,
-              lo.full_name AS loser,  lo.is_public AS loser_public,  lo.anonymized_at AS loser_erased
-         FROM matches m
-         JOIN players wi ON wi.id = m.winner_player_id
-         JOIN players lo ON lo.id = m.loser_player_id
-        WHERE m.tournament_id = ? ORDER BY m.id`,
+      `SELECT m.id, m.kind, m.score, COALESCE(m.played_on, t.end_date) AS played_on,
+              m.winner_player_id, m.loser_player_id, m.winner_partner_id, m.loser_partner_id
+         FROM matches m JOIN tournaments t ON t.id = m.tournament_id
+        WHERE m.tournament_id = ? ORDER BY played_on, m.id`,
     )
-    .all(tournamentId)
-    .map((m) => ({
-      winner: label(m.winner, m.winner_public, m.winner_erased),
-      loser: label(m.loser, m.loser_public, m.loser_erased),
-    }));
+    .all(tournamentId);
+  const ids = [...new Set(rows.flatMap((m) => [m.winner_player_id, m.loser_player_id, m.winner_partner_id, m.loser_partner_id]).filter(Boolean))];
+  const names = new Map();
+  if (ids.length) {
+    db.prepare(`SELECT id, full_name, anonymized_at FROM players WHERE id IN (${ids.map(() => '?').join(',')})`)
+      .all(...ids)
+      .forEach((p) => names.set(p.id, p));
+  }
+  const ref = (id) => {
+    if (!id) return null;
+    const p = names.get(id);
+    if (!p || p.anonymized_at) return { id: null, name: erasedLabel };
+    return { id: p.id, name: p.full_name };
+  };
+  return rows.map((m) => ({
+    id: m.id,
+    kind: m.kind,
+    score: m.score || '',
+    playedOn: m.played_on,
+    winners: [ref(m.winner_player_id), ref(m.winner_partner_id)].filter(Boolean),
+    losers: [ref(m.loser_player_id), ref(m.loser_partner_id)].filter(Boolean),
+    // Совместимость со старой витриной/тестами: имена сторон строкой.
+    winner: [ref(m.winner_player_id), ref(m.winner_partner_id)].filter(Boolean).map((r) => r.name).join(' / '),
+    loser: [ref(m.loser_player_id), ref(m.loser_partner_id)].filter(Boolean).map((r) => r.name).join(' / '),
+  }));
 }
 
 export function tournamentFiles(db, tournamentId) {

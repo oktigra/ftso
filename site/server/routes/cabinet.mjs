@@ -409,6 +409,26 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
   });
 
   /**
+   * УДАЛЕНИЕ ФОТОГРАФИИ (ТЗ ред. 6 §7): файл уходит с диска, строка uploads — из
+   * БД, ссылка в players обнуляется одной транзакцией. После этого /player/:id/photo
+   * отвечает 404 сразу, а профиль открывается без изображения. Всё остальное —
+   * рейтинг, результаты, матчи — не затрагивается.
+   */
+  app.post('/cabinet/photo/delete', requireCabinet, limitWrites, (req, res) => {
+    const profile = req.playerProfile;
+    if (!profile.photo_upload_id) return flash(req, res, 'error', 'Фотография не загружена.', '/cabinet');
+    const uploadId = profile.photo_upload_id;
+    db.transaction(() => {
+      db.prepare('UPDATE players SET photo_upload_id = NULL WHERE id = ?').run(profile.id);
+      deleteUpload(db, uploadId, config.upload.dir);
+    })();
+    logAction(db, null, 'cabinet.photo.delete', profile.id, {
+      by: req.actor.kind === 'guardian' ? 'guardian' : 'player',
+    });
+    return flash(req, res, 'ok', 'Фотография удалена.', '/cabinet');
+  });
+
+  /**
    * Согласие на публикацию игрок отзывает и возвращает САМ — это его право.
    * За несовершеннолетнего им распоряжается законный представитель: согласие на
    * распространение за ребёнка давал он, ему же принадлежит и отзыв.
@@ -427,8 +447,8 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
       res,
       'ok',
       wanted
-        ? 'Согласие на публикацию дано — результаты видны в открытом рейтинге.'
-        : 'Согласие на публикацию отозвано. В открытых таблицах на месте фамилии — «Скрыто по заявлению»; место и очки сохранены.',
+        ? 'Согласие на распространение записано в журнал.'
+        : 'Отзыв согласия на распространение записан в журнал. Результаты соревнований публикуются на основании участия и не меняются.',
       '/cabinet',
     );
   });

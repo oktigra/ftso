@@ -10,7 +10,9 @@
       <div class="rating-meta">
         <span class="tag"><%= statusText %></span>
         <span class="tag">актуальность: <%= standings.asOf %></span>
-        <span class="tag">пересчитан: <%= standings.computedAt %> UTC</span>
+        <span class="tag">обновлён: <%= standings.computedAt %> UTC</span>
+        <span class="tag">разряд: <%= disciplineRu[filters.discipline] %></span>
+        <% if (slice) { %><span class="tag">срез: <%= slice.label %></span><% } %>
       </div>
     <% } %>
   </div>
@@ -42,6 +44,26 @@
           </select>
         </div>
         <div class="field">
+          <label for="f-slice">Возраст (срез)</label>
+          <select id="f-slice" name="slice">
+            <option value="">все возрасты</option>
+            <% ageSlices.forEach(function (s) { %>
+              <option value="<%= s.id %>"<%= filters.slice === s.id ? ' selected' : '' %>><%= s.label %></option>
+            <% }); %>
+          </select>
+        </div>
+        <% if (hasDoubles) { %>
+        <div class="field">
+          <label for="f-discipline">Разряд</label>
+          <select id="f-discipline" name="discipline">
+            <option value="single"<%= filters.discipline === 'single' ? ' selected' : '' %>>одиночный</option>
+            <option value="double"<%= filters.discipline === 'double' ? ' selected' : '' %>>парный</option>
+          </select>
+        </div>
+        <% } else if (filters.discipline === 'double') { %>
+          <input type="hidden" name="discipline" value="double">
+        <% } %>
+        <div class="field">
           <label for="f-sex">Пол</label>
           <select id="f-sex" name="sex">
             <option value="">все</option>
@@ -64,19 +86,22 @@
       <% } else { %>
         <div class="table-scroll">
           <table class="rating-table">
-            <thead><tr><th>Место</th><th>Игрок</th><th>Город</th><th>Пол</th><th>Группа</th><th>Очки</th><th>Изменение</th></tr></thead>
+            <thead><tr><th>Место</th><th>Игрок</th><th>Город</th><th>Пол</th><th>Возраст</th><th>Группа</th><th>Очки</th><th>Изменение</th></tr></thead>
             <tbody>
               <% players.forEach(function (p) { %>
                 <tr>
-                  <td class="rank"><%= p.rank %></td>
+                  <td class="rank"><%= p.rank %><% if (p.overallRank && p.overallRank !== p.rank) { %> <span class="muted">(<%= p.overallRank %>)</span><% } %></td>
                   <%
                   /* ЭКРАНИРОВАНИЕ: вывод данных из БД — только экранирующим тегом,
                      никогда «сырым». Игрок с именем <script>alert(1)</script>
-                     покажется ТЕКСТОМ, скрипт не выполнится. */
+                     покажется ТЕКСТОМ, скрипт не выполнится.
+                     Строка ведёт на публичный профиль /player/:id (как у РТТ);
+                     обезличенный по ст. 21 — без ссылки. */
                   %>
-                  <td class="player<%= p.anonymized ? ' player--anonymized' : '' %>"><%= p.playerName %></td>
+                  <td class="player<%= p.anonymized ? ' player--anonymized' : '' %>"><% if (p.anonymized) { %><%= p.playerName %><% } else { %><a href="/player/<%= p.playerId %>"><%= p.playerName %></a><% } %></td>
                   <td><%= p.city || '—' %></td>
                   <td><%= sexRu[p.sex] || p.sex || '—' %></td>
+                  <td><%= p.ageLabel %></td>
                   <td><%= p.ageGroup || '—' %></td>
                   <td class="pts"><%= p.ratingPoints %></td>
                   <td class="chg chg--<%= p.change.kind %>"><%= p.change.label %></td>
@@ -91,6 +116,8 @@
         Учитываются <%= rules.countBest %> лучших турниров за последние 52 недели (окно <%= rules.windowDays %> дней),
         коэффициент категории A × <%= rules.categoryCoef.A %>, B × <%= rules.categoryCoef.B %>,
         шкала очков по местам 100 · 70 · 45 · 25 · 10.
+        Рейтинг пересчитывается в начале каждого месяца. Возраст — в полных годах на сегодня;
+        в возрастном срезе место считается внутри среза, в скобках — место в общей таблице.
         <% if (!standings.hasPrevious) { %>
           Предыдущего снимка ещё нет, поэтому колонка «Изменение» пуста («—»).
         <% } %>

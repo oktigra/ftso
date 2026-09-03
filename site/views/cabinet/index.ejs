@@ -87,17 +87,24 @@
           <label for="p-photo">Фотография</label>
           <input id="p-photo" name="photo" type="file" aria-describedby="p-photo-hint">
           <p class="field-hint" id="p-photo-hint">
-            Только изображение. Файл пересобирается на сервере: размер приводится к
-            разумному, а служебные данные снимка (в том числе геолокация и модель камеры)
-            удаляются. Фотографию видите только вы, ваш законный представитель и работники
-            федерации; в открытый доступ она не выводится.
+            Фотография отображается в вашем публичном профиле на сайте. Вы можете заменить
+            или удалить её в любой момент. Только изображение; файл пересобирается на
+            сервере: размер приводится к разумному, а служебные данные снимка (в том числе
+            геолокация и модель камеры) удаляются.
             <% if (profile.photo_upload_id) { %>
-              Сейчас загружена — <a href="/cabinet/photo">посмотреть</a>.
+              Сейчас загружена — <a href="/cabinet/photo">посмотреть</a>,
+              <a href="/player/<%= profile.id %>">открыть профиль</a>.
             <% } %>
           </p>
         </div>
         <button class="btn btn--primary" type="submit">Сохранить</button>
       </form>
+      <% if (profile.photo_upload_id) { %>
+        <form method="post" action="/cabinet/photo/delete" class="inline-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button class="btn btn--secondary btn--small" type="submit">Удалить фотографию</button>
+        </form>
+      <% } %>
       <p class="muted">
         Город и возрастную группу меняет секретарь Федерации — они влияют на рейтинговые
         группы. Рейтинг, очки и места не редактируются: их считает движок по результатам.
@@ -105,26 +112,32 @@
     </div>
 
     <div class="panel">
-      <h2>Публикация в открытом рейтинге</h2>
+      <h2>Публикация результатов</h2>
       <p>
-        Сейчас: <strong><%= profile.is_public ? 'публикуется' : 'не публикуется' %></strong>.
-        <% if (consent.distribution === 'revoked') { %><span class="muted">Согласие отозвано.</span><% } %>
+        Результаты соревнований — место в рейтинге, очки, сыгранные матчи — публикуются
+        на основании участия в соревнованиях Федерации и от согласия на распространение не
+        зависят: отзыв согласия строку в рейтинге не меняет (п. 2.7
+        <a href="/consent#distribution">Согласия</a>). Публичный профиль:
+        <a href="/player/<%= profile.id %>">/player/<%= profile.id %></a>.
+      </p>
+      <p>
+        Фотография публикуется только та, что загружена в кабинет, и ровно до тех пор, пока
+        она здесь есть: удаление — выше, в разделе профиля.
+      </p>
+      <p class="muted">
+        Согласие на распространение, данное при регистрации: <strong><%= profile.is_public ? 'действует' : 'не дано или отозвано' %></strong>.
+        <% if (consent.distribution === 'revoked') { %>Отзыв записан в журнал.<% } %>
       </p>
       <form method="post" action="/cabinet/publication" class="inline-form">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <input type="hidden" name="publish" value="<%= profile.is_public ? '0' : '1' %>">
         <button class="btn btn--secondary btn--small" type="submit">
-          <%= profile.is_public ? 'Отозвать согласие на публикацию' : 'Дать согласие на публикацию' %>
+          <%= profile.is_public ? 'Отозвать согласие на распространение' : 'Дать согласие на распространение' %>
         </button>
       </form>
-      <p class="muted">
-        Без согласия участник остаётся в рейтинге и участвует в соревнованиях, но в открытых
-        таблицах на месте фамилии стоит «Скрыто по заявлению» — место и очки сохраняются.
-        Подробнее — в <a href="/consent#distribution">тексте согласия</a>.
-        <% if (byGuardian) { %>
-          Согласие на распространение данных несовершеннолетнего даёте и отзываете вы.
-        <% } %>
-      </p>
+      <% if (byGuardian) { %>
+        <p class="muted">Согласием за несовершеннолетнего распоряжаетесь вы.</p>
+      <% } %>
     </div>
 
     <div class="panel form-panel">

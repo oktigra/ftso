@@ -59,17 +59,25 @@
           <% players.forEach(function (p) { %><option value="<%= p.id %>"><%= p.full_name %></option><% }); %>
         </select>
       </div>
+      <div class="field"><label for="m-score">Счёт</label>
+        <input id="m-score" name="score" type="text" maxlength="60" placeholder="6:4 3:6 10:8">
+      </div>
+      <div class="field"><label for="m-date">Дата матча</label>
+        <input id="m-date" name="played_on" type="date">
+      </div>
       <button class="btn btn--primary" type="submit">Добавить матч</button>
     </form>
     <p class="muted">Обратный матч (тот же турнир, победитель и проигравший поменялись местами) — отдельная запись, это разрешено.</p>
     <div class="table-scroll">
       <table class="admin-table">
-        <thead><tr><th>Победитель</th><th>Проигравший</th><th>Действия</th></tr></thead>
+        <thead><tr><th>Победитель</th><th>Проигравший</th><th>Счёт</th><th>Дата</th><th>Действия</th></tr></thead>
         <tbody>
           <% matches.forEach(function (m) { %>
             <tr>
               <td class="player"><%= m.winner %></td>
               <td><%= m.loser %></td>
+              <td><%= m.score || '—' %></td>
+              <td><%= m.played_on || '—' %></td>
               <td>
                 <form method="post" action="/admin/matches/<%= m.id %>/delete">
                   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
