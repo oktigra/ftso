@@ -482,6 +482,9 @@ CREATE TABLE IF NOT EXISTS gallery_items (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   title      TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 200),
   upload_id  INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+  -- Соревнование, на котором сделан снимок (репортажная съёмка, ст. 152.1 ГК);
+  -- турнир удалён -> фото остаётся без привязки.
+  tournament_id INTEGER REFERENCES tournaments(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

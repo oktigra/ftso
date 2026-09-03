@@ -3,7 +3,7 @@
 // Общая идея доступа к файлам: файл виден публично ТОЛЬКО если он привязан к
 // опубликованной сущности. Проверка одна (publicUploadIds) — иначе «а вот тут
 // ещё один маршрут» рано или поздно отдаст наружу документ с модерации.
-import { str, isoDate, oneOf, ValidationError } from './validate.mjs';
+import { str, isoDate, oneOf, intAtLeast, ValidationError } from './validate.mjs';
 
 // --- новости ---------------------------------------------------------------
 
@@ -150,8 +150,10 @@ export function federationDocuments(db) {
 export function galleryItems(db) {
   return db
     .prepare(
-      `SELECT g.id, g.title, u.id AS upload_id, u.original_name, u.mime
+      `SELECT g.id, g.title, u.id AS upload_id, u.original_name, u.mime,
+              g.tournament_id, t.name AS tournament_name, t.end_date AS tournament_date
          FROM gallery_items g JOIN uploads u ON u.id = g.upload_id
+         LEFT JOIN tournaments t ON t.id = g.tournament_id
         ORDER BY g.id DESC`,
     )
     .all();
@@ -184,7 +186,11 @@ export function documentInput(body) {
 }
 
 export function galleryInput(body) {
-  return { title: str(body.title, 'Подпись', { max: 200 }) };
+  return {
+    title: str(body.title, 'Подпись', { max: 200 }),
+    // Соревнование необязательно: общие снимки федерации тоже бывают.
+    tournament_id: body.tournament_id ? intAtLeast(body.tournament_id, 'Турнир') : null,
+  };
 }
 
 export { ValidationError };

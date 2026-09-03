@@ -40,10 +40,19 @@
     <form method="post" action="/admin/library/gallery" class="stacked-form" enctype="multipart/form-data">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="field"><label for="g-title">Подпись</label><input id="g-title" name="title" maxlength="200" required></div>
+      <div class="field"><label for="g-tournament">Соревнование</label>
+        <select id="g-tournament" name="tournament_id">
+          <option value="">— без привязки —</option>
+          <% tournaments.forEach(function (t) { %><option value="<%= t.id %>"><%= t.name %><%= t.end_date ? " (" + t.end_date + ")" : "" %></option><% }); %>
+        </select>
+      </div>
       <div class="field"><label for="g-file">Изображение</label><input id="g-file" name="file" type="file" required aria-describedby="g-hint">
         <p class="field-hint" id="g-hint">
-          Только изображение. Файл пересобирается на сервере: размер приводится к разумному,
-          служебные данные снимка (геолокация, модель камеры) удаляются.
+          Только репортажная съёмка соревнований: общий план, ход игры, награждение — по
+          подп. 2 п. 1 ст. 152.1 ГК РФ согласие изображённых не требуется. Снимок, где
+          конкретный человек — основной объект (портрет крупным планом), требует его согласия:
+          сюда не грузить. Только изображение; файл пересобирается на сервере: размер приводится
+          к разумному, служебные данные снимка (геолокация, модель камеры) удаляются.
         </p>
       </div>
       <button class="btn btn--primary" type="submit">Добавить</button>
@@ -57,6 +66,7 @@
       <% gallery.forEach(function (g) { %>
         <li>
           <a href="/files/<%= g.upload_id %>"><%= g.title %></a>
+          <% if (g.tournament_name) { %><span class="muted"> — <%= g.tournament_name %></span><% } %>
           <form method="post" action="/admin/library/gallery/<%= g.id %>/delete" class="inline-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <button class="btn btn--danger btn--small" type="submit">Удалить</button>
