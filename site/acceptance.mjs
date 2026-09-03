@@ -2275,6 +2275,40 @@ await check('черновик новости наружу не отдаётся'
   return 'черновик -> 404 и не в списке; опубликованная открывается и видна';
 });
 
+await check('аудит WGR 03.09.2026: robots, sitemap, llms, favicon, canonical, OG, Permissions-Policy, JSON-LD, реквизиты в подвале', async () => {
+  const robots = await http('/robots.txt');
+  eq(robots.status, 200, 'robots.txt');
+  assert(robots.text.includes('Disallow: /admin') && robots.text.includes('Sitemap: https://ftso67.ru/sitemap.xml'), 'robots.txt без админки или карты');
+  const sm = await http('/sitemap.xml');
+  eq(sm.status, 200, 'sitemap.xml');
+  assert(sm.headers.get('content-type').startsWith('application/xml'), 'тип sitemap');
+  const locs = [...sm.text.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  assert(locs.includes('https://ftso67.ru/rating') && locs.includes('https://ftso67.ru/privacy'), 'в карте нет разделов');
+  assert(locs.some((l) => /\/player\/\d+$/.test(l)), 'в карте нет профилей');
+  const erased = db.prepare('SELECT id FROM players WHERE anonymized_at IS NOT NULL LIMIT 1').get();
+  if (erased) assert(!locs.includes(`https://ftso67.ru/player/${erased.id}`), 'обезличенный игрок попал в карту сайта');
+  assert(!locs.some((l) => l.includes('/admin') || l.includes('/cabinet')), 'в карте служебные адреса');
+  eq((await http('/llms.txt')).status, 200, 'llms.txt');
+  const ico = await http('/favicon.ico');
+  eq(ico.status, 200, 'favicon.ico');
+  eq((await http('/static/img/favicon.svg')).status, 200, 'favicon.svg');
+  const og = await http('/static/img/og-ftso.png');
+  eq(og.status, 200, 'og-картинка');
+
+  const home = await http('/');
+  assert(home.text.includes('<link rel="canonical" href="https://ftso67.ru/">'), 'canonical на главной');
+  for (const tag of ['og:title', 'og:description', 'og:image', 'og:url']) assert(home.text.includes(`property="${tag}"`), `нет ${tag}`);
+  assert(home.text.includes('<link rel="icon" href="/static/img/favicon.svg"'), 'ссылки на значок нет');
+  assert(home.text.includes('application/ld+json') && home.text.includes('"@type":"SportsOrganization"'), 'JSON-LD организации на главной');
+  assert(home.text.includes('ОГРН 1176733009243, ИНН 6732145252'), 'в подвале нет ОГРН/ИНН');
+  eq(home.headers.get('permissions-policy'), 'camera=(), microphone=(), geolocation=(), payment=(), usb=()', 'Permissions-Policy');
+  const filtered = await http('/rating?slice=u15&sex=M');
+  assert(filtered.text.includes('<link rel="canonical" href="https://ftso67.ru/rating">'), 'canonical с фильтрами должен вести на /rating без query');
+  const contacts = await http('/contacts');
+  assert(contacts.text.includes('673201001') && contacts.text.includes('Лазаренков'), 'на контактах нет КПП или ответственного по ст. 22.1');
+  return `robots/sitemap(${locs.length} адресов)/llms/favicon 200; canonical, OG, JSON-LD, Permissions-Policy, ОГРН/ИНН в подвале, КПП и ст. 22.1 на контактах`;
+});
+
 await check('карточка турнира: участники и матчи со ссылками на профили, согласие не влияет', async () => {
   const t = db.prepare('SELECT id FROM tournaments ORDER BY id LIMIT 1').get();
   const page = await http(`/tournaments/${t.id}`);

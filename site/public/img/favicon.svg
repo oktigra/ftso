@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Значок ФТСО: теннисный мяч, оригинальный знак сайта. -->
+  <circle cx="32" cy="32" r="30" fill="#0e7a52"/>
+  <circle cx="32" cy="32" r="22" fill="#d9f26b"/>
+  <path d="M15 16c10 6 10 26 0 32" fill="none" stroke="#0e7a52" stroke-width="3" stroke-linecap="round"/>
+  <path d="M49 16c-10 6-10 26 0 32" fill="none" stroke="#0e7a52" stroke-width="3" stroke-linecap="round"/>
+</svg>

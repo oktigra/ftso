@@ -28,6 +28,7 @@ import mountTournamentRequest from './routes/tournament-request.mjs';
 import mountCabinet from './routes/cabinet.mjs';
 import mountRating from './routes/rating.mjs';
 import mountPlayer from './routes/player.mjs';
+import mountServiceFiles from './routes/service-files.mjs';
 import mountAuth from './routes/auth.mjs';
 import mountAdmin from './routes/admin.mjs';
 import mountAdminContent from './routes/admin-content.mjs';
@@ -50,6 +51,13 @@ export function createApp(config) {
   // nonce на запрос: инлайновый анти-FOUC скрипт темы должен пережить строгий CSP.
   app.use((req, res, next) => {
     res.locals.cspNonce = randomBytes(16).toString('base64');
+    next();
+  });
+
+  // Камера, микрофон и геолокация сайту не нужны — запрещаем явно: чужой скрипт,
+  // попади он на страницу, не сможет запросить их от имени сайта.
+  app.use((req, res, next) => {
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=()');
     next();
   });
 
@@ -108,6 +116,9 @@ export function createApp(config) {
     // как недостоверные сведения об операторе.
     res.locals.operator = OPERATOR;
     res.locals.currentPath = req.path;
+    // Канонический адрес: боевой домен из конфига + путь без query и без «/» в конце.
+    res.locals.siteUrl = config.siteUrl.replace(/\/$/, '');
+    res.locals.canonicalUrl = res.locals.siteUrl + (req.path === '/' ? '/' : req.path.replace(/\/+$/, ''));
     res.locals.year = new Date().getFullYear();
     res.locals.user = null;
     res.locals.csrfToken = '';
@@ -172,6 +183,7 @@ export function createApp(config) {
   mountAdminContent(app, ctx);
   mountRating(app, ctx);
   mountPlayer(app, ctx);
+  mountServiceFiles(app, { ...ctx, root: ROOT });
   mountRegister(app, ctx);
   mountTournamentRequest(app, ctx);
   mountCabinet(app, ctx);

@@ -4,7 +4,46 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title><%= title %></title>
-<meta name="description" content="Официальный сайт Федерации тенниса Смоленской области: календарь турниров, региональный рейтинг игроков, новости.">
+<meta name="description" content="<%= typeof metaDescription !== 'undefined' && metaDescription ? metaDescription : 'Официальный сайт Федерации тенниса Смоленской области: календарь турниров, региональный рейтинг игроков, новости.' %>">
+<%
+/* Канонический адрес — без query и без хвостового «/», один на страницу: копии
+   с www и с параметрами фильтров рейтинга поисковик считает одной страницей.
+   Карточка для соцсетей (Open Graph) — своя картинка 1200×630 в /static/img.
+   Значок — SVG, для старых браузеров /favicon.ico тем же маршрутом. */
+%>
+<link rel="canonical" href="<%= canonicalUrl %>">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ФТСО — Федерация тенниса Смоленской области">
+<meta property="og:title" content="<%= title %>">
+<meta property="og:description" content="<%= typeof metaDescription !== 'undefined' && metaDescription ? metaDescription : 'Официальный сайт Федерации тенниса Смоленской области: календарь турниров, региональный рейтинг игроков, новости.' %>">
+<meta property="og:url" content="<%= canonicalUrl %>">
+<meta property="og:image" content="<%= siteUrl %>/static/img/og-ftso.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="ru_RU">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="/static/img/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
+<% if (currentPath === '/' || currentPath === '/contacts' || currentPath === '/federation') { %>
+<script type="application/ld+json" nonce="<%= cspNonce %>"><%- JSON.stringify({
+  '@context': 'https://schema.org',
+  '@type': 'SportsOrganization',
+  name: operator.name,
+  alternateName: 'ФТСО',
+  url: siteUrl + '/',
+  logo: siteUrl + '/static/img/og-ftso.png',
+  email: operator.email,
+  telephone: operator.phoneHref,
+  address: { '@type': 'PostalAddress', streetAddress: 'ул. Попова, д. 31', addressLocality: 'Смоленск', postalCode: '214020', addressCountry: 'RU' },
+  identifier: [
+    { '@type': 'PropertyValue', propertyID: 'ОГРН', value: operator.ogrn },
+    { '@type': 'PropertyValue', propertyID: 'ИНН', value: operator.inn },
+  ],
+  sport: 'Tennis',
+  areaServed: 'Смоленская область',
+}) %></script>
+<% } %>
 <%
 /* Анти-FOUC: data-theme ставится на <html> ДО первого рендера. Инлайн переживает
    строгий CSP за счёт nonce — см. script-src в server/app.mjs. */
