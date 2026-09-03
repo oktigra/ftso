@@ -26,6 +26,8 @@ DEPLOY="${DEPLOY_SCRIPT:-/root/deploy-A.sh}"
 LOG="${DEPLOY_LOG:-/root/deploy-watch.log}"
 STATE="${DEPLOY_STATE:-/root/deploy-watch.last}"
 LOCK="${DEPLOY_LOCK:-/root/deploy-watch.lock}"
+# Копия этого скрипта, которую зовёт systemd; обновляется из origin/main (см. sync_copy).
+SELF="${DEPLOY_SELF:-/root/deploy-watch.sh}"
 # В бою git идёт от пользователя ftso; в приёмке DEPLOY_RUNAS="" отключает runuser.
 RUNAS="${DEPLOY_RUNAS-runuser -u $U --}"
 # Пути памяти: их дифф не требует рестарта pm2 (расширяемо через DEPLOY_MEM_RE).
@@ -60,6 +62,22 @@ if [ "$NEW" = "$LAST" ]; then
   exit 0   # этот SHA уже пробовали, он не встал — молчим до нового коммита
 fi
 echo "$NEW" >"$STATE"
+
+# Копии в /root (deploy-A.sh и этот скрипт) держим равными origin/main: правка через
+# PR доезжает сама. Файла в origin/main нет — копию не трогаем. Себя обновляем
+# атомарным mv: текущий процесс дочитывает старый inode, новая версия — со следующего тика.
+sync_copy(){ # $1 — путь в репо, $2 — копия
+  local new="$2.new"
+  gf cat-file -e "origin/main:$1" 2>/dev/null || return 0
+  gf show "origin/main:$1" >"$new" 2>>"$LOG" || { rm -f "$new"; return 0; }
+  if [ -s "$new" ] && ! cmp -s "$new" "$2"; then
+    chmod 700 "$new" && mv -f "$new" "$2" && echo "$(now) $2 обновлён из origin/main:$1" >>"$LOG"
+  else
+    rm -f "$new"
+  fi
+}
+sync_copy deploy/deploy-A.sh "$DEPLOY"
+[ -f "$SELF" ] && sync_copy deploy/deploy-watch.sh "$SELF"
 
 [ -f "$DEPLOY" ] || { echo "$(now) СТОП: нет $DEPLOY" >>"$LOG"; exit 0; }
 echo "$(now) $CUR -> $NEW: выкат" >>"$LOG"
