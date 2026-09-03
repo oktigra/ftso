@@ -250,7 +250,7 @@ export function currentStandings(db) {
 export function playerProfile(db, playerId) {
   const row = db
     .prepare(
-      `SELECT id, full_name, city, sex, age_group, birth_date, photo_upload_id, anonymized_at
+      `SELECT id, full_name, city, sex, age_group, birth_date, rni, photo_upload_id, anonymized_at
          FROM players WHERE id = ?`,
     )
     .get(playerId);
@@ -324,6 +324,7 @@ export function playerProfile(db, playerId) {
     city: row.city,
     sex: row.sex,
     ageGroup: row.age_group || null,
+    rni: row.rni || null,
     age,
     ageLabel: ageLabel(age),
     slices: slicesFor(age),

@@ -16,6 +16,7 @@
         <h1><%= profile.fullName %></h1>
         <div class="rating-meta">
           <span class="tag"><%= profile.city %></span>
+          <% if (profile.rni) { %><span class="tag">РНИ <%= profile.rni %></span><% } %>
           <span class="tag"><%= sexRu[profile.sex] || profile.sex %></span>
           <span class="tag">возраст: <%= profile.ageLabel %></span>
           <% if (profile.ageGroup) { %><span class="tag">группа: <%= profile.ageGroup %></span><% } %>

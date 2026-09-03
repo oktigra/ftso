@@ -4163,6 +4163,32 @@ await new Promise((res) => {
 });
 
 // ---------------------------------------------------------------------------
+// РНИ: поле в админке, вывод на публичном профиле
+// ---------------------------------------------------------------------------
+await check('РНИ: поле в админке → БД → профиль; пустое стирает; мусор отклоняется', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/players', { jar })).text);
+  const name = 'Рниев Тест Проверочный';
+  const r = await http('/admin/players', { method: 'POST', form: { _csrf, full_name: name, city: 'Смоленск', sex: 'M', rni: '4567-A' }, jar });
+  eq(r.status, 302, 'создание игрока с РНИ');
+  const row = db.prepare('SELECT id, rni FROM players WHERE full_name = ?').get(name);
+  assert(row, 'игрок не создан');
+  eq(row.rni, '4567-A', 'РНИ не записан в players.rni');
+  const profile = await http(`/player/${row.id}`);
+  eq(profile.status, 200, 'профиль недоступен');
+  assert(profile.text.includes('<span class="tag">РНИ 4567-A</span>'), 'РНИ не выведен на публичном профиле');
+  const list = await http('/admin/players', { jar });
+  assert(list.text.includes('name="rni" value="4567-A"'), 'в таблице админки нет поля РНИ со значением');
+  const upd = await http(`/admin/players/${row.id}/update`, { method: 'POST', form: { _csrf, full_name: name, city: 'Смоленск', sex: 'M', rni: '' }, jar });
+  eq(upd.status, 302, 'обновление с пустым РНИ');
+  eq(db.prepare('SELECT rni FROM players WHERE id = ?').get(row.id).rni, null, 'пустое поле должно стирать РНИ');
+  assert(!(await http(`/player/${row.id}`)).text.includes('<span class="tag">РНИ '), 'после стирания РНИ остался на профиле');
+  await http('/admin/players', { method: 'POST', form: { _csrf, full_name: `${name} Мусор`, city: 'Смоленск', sex: 'M', rni: '12 345!' }, jar });
+  eq(db.prepare('SELECT COUNT(*) AS n FROM players WHERE full_name = ?').get(`${name} Мусор`).n, 0, 'игрок с мусорным РНИ не должен создаваться');
+  return 'создан с РНИ 4567-A → в БД и на профиле; в админке поле со значением; пустое стёрло; мусор отклонён';
+});
+
+// ---------------------------------------------------------------------------
 // Здоровье выката: deploy/health.sh против живого приложения
 // ---------------------------------------------------------------------------
 await check('deploy/health.sh: /, /rating и первый профиль → 0; мёртвый порт → 1', async () => {
