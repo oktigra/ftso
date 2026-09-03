@@ -488,3 +488,10 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .profile-photo{width:160px; height:160px; object-fit:cover; border-radius:1.25rem; border:1px solid var(--border); box-shadow:var(--shadow-sm); background:var(--surface-2);}
 .rating-table tbody tr:has(a){cursor:pointer;}
 .match--won td:nth-child(2){color:var(--primary); font-weight:600;}
+
+/* Галерея соревнований */
+.gallery-grid{list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:1rem;}
+.gallery-grid figure{margin:0; background:var(--surface); border:1px solid var(--border); border-radius:1.25rem; overflow:hidden; box-shadow:var(--shadow-sm);}
+.gallery-grid img{display:block; width:100%; aspect-ratio:4/3; object-fit:cover; background:var(--surface-2);}
+.gallery-grid figcaption{padding:.6rem .9rem; font-size:.9rem;}
+.gallery-legal{margin-top:1.5rem;}

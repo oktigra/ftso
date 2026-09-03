@@ -222,6 +222,7 @@ export function migrate() {
 
   // --- публичный профиль, матчи со счётом, парный разряд (ТЗ ред. 6) ---------
   addColumnIfMissing(db, 'players', 'rni', 'TEXT');
+  addColumnIfMissing(db, 'gallery_items', 'tournament_id', 'INTEGER REFERENCES tournaments(id) ON DELETE SET NULL');
   const resultsRebuilt = upgradeResults(db);
   const matchesRebuilt = upgradeMatches(db);
   db.exec(readFileSync(resolve(HERE, 'after-upgrade.sql'), 'utf8'));

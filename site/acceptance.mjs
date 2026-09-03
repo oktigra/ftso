@@ -4163,6 +4163,56 @@ await new Promise((res) => {
 });
 
 // ---------------------------------------------------------------------------
+// Галерея соревнований: загрузка через админку, EXIF снят, показ картинкой, ст. 152.1 ГК
+// ---------------------------------------------------------------------------
+await check('галерея: снимок с EXIF → без EXIF, привязан к соревнованию, показан <img>, пометка ст. 152.1', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const lib = await http('/admin/library', { jar });
+  eq(lib.status, 200, 'библиотека админки');
+  assert(lib.text.includes('id="g-tournament"'), 'в форме галереи нет выбора соревнования');
+  assert(lib.text.includes('152.1'), 'в подсказке секретарю нет ссылки на ст. 152.1');
+  const _csrf = tokenFrom(lib.text);
+  let t = db.prepare('SELECT id, name FROM tournaments ORDER BY id LIMIT 1').get();
+  if (!t) {
+    const id = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Первенство области (галерея)', '2026-08-30', 'A')").run().lastInsertRowid);
+    t = { id, name: 'Первенство области (галерея)' };
+  }
+  const photo = await sharpLib({ create: { width: 2000, height: 1200, channels: 3, background: '#1d4ed8' } })
+    .jpeg().withExif({ IFD0: { Make: 'TestCam', Copyright: 'ФТСО' } }).toBuffer();
+  assert((await sharpLib(photo).metadata()).exif, 'исходный снимок должен нести EXIF');
+  const before = db.prepare('SELECT COUNT(*) AS n FROM gallery_items').get().n;
+  const up = await http('/admin/library/gallery', {
+    method: 'POST', jar,
+    multipart: { fields: { _csrf, title: 'Финал: общий план корта', tournament_id: String(t.id) },
+      files: [{ field: 'file', filename: 'court.jpg', type: 'image/jpeg', buffer: photo }] },
+  });
+  eq(up.status, 302, 'загрузка снимка в галерею');
+  const item = db.prepare('SELECT g.id, g.title, g.tournament_id, u.stored_name FROM gallery_items g JOIN uploads u ON u.id = g.upload_id ORDER BY g.id DESC LIMIT 1').get();
+  eq(db.prepare('SELECT COUNT(*) AS n FROM gallery_items').get().n, before + 1, 'запись галереи не добавилась');
+  eq(item.tournament_id, t.id, 'снимок не привязан к соревнованию');
+  const stored = readFileSync(resolve(UPLOAD_DIR, item.stored_name));
+  assert(!(await sharpLib(stored).metadata()).exif, 'EXIF остался в снимке галереи — утекли бы геолокация и модель камеры');
+  const page = await http('/gallery');
+  eq(page.status, 200, '/gallery');
+  assert(page.text.includes(`<img src="/gallery/${item.id}/image"`), 'снимок не показан картинкой');
+  assert(page.text.includes('Финал: общий план корта') && page.text.includes(t.name), 'на странице нет подписи или названия соревнования');
+  assert(page.text.includes('152.1') && page.text.includes('href="/contacts"'), 'нет правовой пометки ст. 152.1 или пути к удалению');
+  const img = await http(`/gallery/${item.id}/image`);
+  eq(img.status, 200, 'картинка галереи');
+  eq(img.headers.get('content-type'), 'image/jpeg', 'content-type картинки');
+  eq(img.headers.get('x-content-type-options'), 'nosniff', 'nosniff на картинке');
+  assert(!/attachment/i.test(img.headers.get('content-disposition') || ''), 'картинка ушла вложением, а не инлайн');
+  eq((await http('/gallery/999999/image')).status, 404, 'чужой id → 404');
+  await http('/admin/library/gallery', {
+    method: 'POST', jar,
+    multipart: { fields: { _csrf, title: 'Мусорный турнир', tournament_id: '999999' },
+      files: [{ field: 'file', filename: 'court2.jpg', type: 'image/jpeg', buffer: photo }] },
+  });
+  eq(db.prepare('SELECT COUNT(*) AS n FROM gallery_items WHERE title = ?').get('Мусорный турнир').n, 0, 'снимок с несуществующим турниром не должен сохраняться');
+  return `снимок ${item.id}: EXIF снят, соревнование «${t.name}», /gallery показывает <img>, image/jpeg + nosniff, пометка 152.1 и путь к удалению; чужой турнир отклонён`;
+});
+
+// ---------------------------------------------------------------------------
 // РНИ: поле в админке, вывод на публичном профиле
 // ---------------------------------------------------------------------------
 await check('РНИ: поле в админке → БД → профиль; пустое стирает; мусор отклоняется', async () => {

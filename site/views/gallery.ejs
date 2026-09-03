@@ -13,16 +13,33 @@
       <div class="panel notice">Фотографий пока нет.</div>
     <% } else { %>
       <%
-      /* Файлы отдаются ссылкой, а не <img src>: отдача идёт как attachment с
-         nosniff — так же, как все загруженные файлы. Инлайновый показ чужого
-         файла в нашем домене — это XSS через SVG, поэтому его нет. */
+      /* Снимки показываются картинками через /gallery/:id/image. Это безопасно:
+         профиль gallery пропускает только растровые изображения по сигнатуре
+         байтов (SVG не проходит), отдача — с nosniff и mime из базы. */
       %>
-      <ul class="doc-list">
+      <ul class="gallery-grid">
         <% items.forEach(function (g) { %>
-          <li><a href="/files/<%= g.upload_id %>"><%= g.title %></a></li>
+          <li>
+            <figure>
+              <img src="/gallery/<%= g.id %>/image" alt="<%= g.title %>" loading="lazy">
+              <figcaption>
+                <%= g.title %>
+                <% if (g.tournament_name) { %><span class="muted"> — <%= g.tournament_name %><%= g.tournament_date ? ", " + g.tournament_date : "" %></span><% } %>
+              </figcaption>
+            </figure>
+          </li>
         <% }); %>
       </ul>
     <% } %>
+    <div class="panel notice gallery-legal">
+      <p><strong>Репортажная съёмка соревнований.</strong> Снимки сделаны на открытых спортивных
+      мероприятиях Федерации и публикуются без отдельного согласия изображённых лиц на
+      основании подп. 2 п. 1 ст. 152.1 ГК РФ (съёмка на публичных мероприятиях, в том числе
+      спортивных соревнованиях). Перед публикацией файлы пересобираются: служебные данные
+      снимка (геолокация, модель камеры) удаляются.</p>
+      <p>Если вы есть на снимке и хотите его убрать — напишите нам через
+      <a href="/contacts">страницу контактов</a>, снимем.</p>
+    </div>
   </div>
 </section>
 </main>

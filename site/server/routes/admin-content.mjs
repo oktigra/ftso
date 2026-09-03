@@ -195,6 +195,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       title: 'Документы и галерея — админка ФТСО',
       documents: federationDocuments(db),
       gallery: galleryItems(db),
+      tournaments: db.prepare('SELECT id, name, end_date FROM tournaments ORDER BY end_date DESC, id DESC').all(),
     });
   });
 
@@ -242,9 +243,12 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       const { fields, upload } = await oneFile(req, { profile: 'gallery', field: 'file' });
       try {
         const data = galleryInput(fields);
+        if (data.tournament_id && !db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(data.tournament_id)) {
+          throw new ValidationError('Турнир не найден');
+        }
         const info = db
-          .prepare('INSERT INTO gallery_items (title, upload_id) VALUES (?, ?)')
-          .run(data.title, upload.id);
+          .prepare('INSERT INTO gallery_items (title, upload_id, tournament_id) VALUES (?, ?, ?)')
+          .run(data.title, upload.id, data.tournament_id);
         logAction(db, req.session.user.id, 'gallery.create', Number(info.lastInsertRowid), data);
       } catch (err) {
         deleteUpload(db, upload.id, config.upload.dir);

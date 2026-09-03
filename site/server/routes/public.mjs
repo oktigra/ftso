@@ -19,7 +19,7 @@ import {
   galleryItems,
   isPubliclyVisibleUpload,
 } from '../lib/content.mjs';
-import { uploadById, sendUpload } from '../lib/uploads.mjs';
+import { uploadById, sendUpload, sendUploadInline } from '../lib/uploads.mjs';
 
 const LABELS = { erasedLabel: ERASED_LABEL };
 const sectionFor = (path) => SECTIONS.find((s) => s.path === path);
@@ -133,6 +133,19 @@ export default function mountPublic(app, { db, config }) {
       items: galleryItems(db),
       section: sectionFor('/gallery'),
     });
+  });
+
+  /**
+   * Снимок галереи как картинка. Инлайн здесь безопасен: профиль gallery
+   * пропускает только растровые изображения по сигнатуре байтов (SVG не
+   * проходит), а sendUploadInline сам отдаёт SVG вложением с nosniff.
+   */
+  app.get('/gallery/:id/image', (req, res, next) => {
+    if (!/^\d+$/.test(req.params.id)) return next();
+    const row = db.prepare('SELECT upload_id FROM gallery_items WHERE id = ?').get(Number(req.params.id));
+    if (!row) return next();
+    const upload = uploadById(db, row.upload_id);
+    if (!upload || !sendUploadInline(req, res, upload, config.upload.dir)) return next();
   });
 
   app.get('/contacts', (req, res) => {
