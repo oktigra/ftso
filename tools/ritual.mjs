@@ -110,7 +110,8 @@ if (outside.length) {
   die(`в диффе ритуала чужие файлы: ${outside.join(', ')} — ритуал откачен, ветки нет`);
 }
 const sha = git('rev-parse', '--short=7', 'HEAD');
-const committedMd5 = md5(git('show', `HEAD:sessions/${snapName}`));
+// Без .trim(): md5 должен совпадать с `md5sum` файла из коммита байт в байт.
+const committedMd5 = md5(execFileSync('git', ['show', `HEAD:sessions/${snapName}`], { cwd: ROOT }));
 console.log(`ритуал ${N}: коммит ${sha}, ${touched.length} файла(ов): ${touched.join(', ')}`);
 console.log(`md5 снимка в коммите: ${committedMd5}`);
 if (NOPUSH) { console.log(`NOPUSH=1: ветка ${branch} осталась локально, main не тронут`); process.exit(0); }
