@@ -10,8 +10,20 @@
 </section>
 <section class="section-pad section-pad--tight">
   <div class="container stack">
+    <div class="panel">
+      <h2>Регистрационные документы</h2>
+      <p class="muted">Сведения из открытых реестров — ЕГРЮЛ, Минюст, ФНС.</p>
+      <ul class="doc-list">
+        <% publicDocuments.forEach(function (d) { %>
+          <li>
+            <a href="<%= d.file %>"><%= d.title %></a>
+            <span class="muted">— <%= d.issuer %>, <%= d.date %> (PDF)</span>
+          </li>
+        <% }); %>
+      </ul>
+    </div>
     <% if (!groups.length) { %>
-      <div class="panel notice">Документы пока не опубликованы.</div>
+      <div class="panel notice">Остальные документы Федерации пока не опубликованы.</div>
     <% } %>
     <% groups.forEach(function (group) { %>
       <div class="panel">

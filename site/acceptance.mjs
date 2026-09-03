@@ -2309,6 +2309,23 @@ await check('аудит WGR 03.09.2026: robots, sitemap, llms, favicon, canonica
   return `robots/sitemap(${locs.length} адресов)/llms/favicon 200; canonical, OG, JSON-LD, Permissions-Policy, ОГРН/ИНН в подвале, КПП и ст. 22.1 на контактах`;
 });
 
+await check('регистрационные документы из открытых реестров — на /documents и /federation, PDF отдаются', async () => {
+  const { PUBLIC_DOCUMENTS } = await import('./server/lib/legal.mjs');
+  eq(PUBLIC_DOCUMENTS.length, 3, 'три документа: Минюст, ФНС, лист ЕГРЮЛ');
+  const docs = await http('/documents');
+  const fed = await http('/federation');
+  for (const d of PUBLIC_DOCUMENTS) {
+    assert(docs.text.includes(`href="${d.file}"`), `на /documents нет ${d.file}`);
+    assert(fed.text.includes(`href="${d.file}"`), `на /federation нет ${d.file}`);
+    const r = await http(d.file);
+    eq(r.status, 200, d.file);
+    assert(r.headers.get('content-type').startsWith('application/pdf'), `${d.file}: тип ${r.headers.get('content-type')}`);
+    const size = Number(r.headers.get('content-length') || 0);
+    assert(size > 50_000 && size < 1_500_000, `${d.file}: размер ${size} вне 50 КБ…1,5 МБ`);
+  }
+  return `3 PDF на /documents и /federation, все 200 application/pdf`;
+});
+
 await check('карточка турнира: участники и матчи со ссылками на профили, согласие не влияет', async () => {
   const t = db.prepare('SELECT id FROM tournaments ORDER BY id LIMIT 1').get();
   const page = await http(`/tournaments/${t.id}`);

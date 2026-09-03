@@ -47,10 +47,15 @@
     </div>
 
     <div class="panel">
-      <h2>Уставные документы</h2>
+      <h2>Регистрационные и уставные документы</h2>
+      <ul class="doc-list">
+        <% publicDocuments.forEach(function (d) { %>
+          <li><a href="<%= d.file %>"><%= d.title %></a> <span class="muted">— <%= d.date %></span></li>
+        <% }); %>
+      </ul>
       <% if (!documents.length) { %>
         <p class="muted">
-          Документы публикуются в разделе <a href="/documents">Документы</a> —
+          Устав публикуется в разделе <a href="/documents">Документы</a> —
           категория «Уставные документы».
         </p>
       <% } else { %>

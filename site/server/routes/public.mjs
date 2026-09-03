@@ -6,7 +6,7 @@ import {
   ERASED_LABEL,
 } from '../lib/rating-service.mjs';
 import { HOME_STATS, HOME_NEXT_EVENT } from '../lib/home-content.mjs';
-import { OPERATOR, LEGAL_VERSION_LABEL } from '../lib/legal.mjs';
+import { OPERATOR, LEGAL_VERSION_LABEL, PUBLIC_DOCUMENTS } from '../lib/legal.mjs';
 import { DIRECTORIES, listDirectory } from '../lib/directories.mjs';
 import {
   publishedNews,
@@ -105,6 +105,7 @@ export default function mountPublic(app, { db, config }) {
       title: 'О Федерации — ФТСО',
       op: OPERATOR,
       documents: federationDocuments(db).filter((d) => /устав|учредит/i.test(d.category)),
+      publicDocuments: PUBLIC_DOCUMENTS,
       section: sectionFor('/federation'),
     });
   });
@@ -120,6 +121,8 @@ export default function mountPublic(app, { db, config }) {
     res.render('documents', {
       title: 'Документы — ФТСО',
       groups: [...byCategory.entries()],
+      // Регистрационные документы из открытых реестров — из кода, не из библиотеки.
+      publicDocuments: PUBLIC_DOCUMENTS,
       section: sectionFor('/documents'),
     });
   });
