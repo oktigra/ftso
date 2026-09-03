@@ -5,7 +5,7 @@
 // и проверяет каждый пункт раздела «Приёмка» ТЗ. Браузерные пункты (тема при
 // включённом CSP, localStorage, адаптив, экранирование XSS, локальные шрифты)
 // проверяются реальным Chromium через Playwright.
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, existsSync, readFileSync, copyFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
@@ -4162,6 +4162,32 @@ await new Promise((res) => {
   closedInst.server.close(res);
 });
 
+// ---------------------------------------------------------------------------
+// Здоровье выката: deploy/health.sh против живого приложения
+// ---------------------------------------------------------------------------
+await check('deploy/health.sh: /, /rating и первый профиль → 0; мёртвый порт → 1', async () => {
+  const HEALTH = resolve(HERE, '..', 'deploy', 'health.sh');
+  assert(existsSync(HEALTH), 'нет deploy/health.sh');
+  // ВАЖНО: не spawnSync — сервер живёт в этом же процессе, синхронное ожидание
+  // curl заморозит event loop, и curl не дождётся ответа (взаимная блокировка).
+  const run = (base) => new Promise((res) => {
+    const p = spawn('bash', [HEALTH, base]);
+    let stdout = '', stderr = '';
+    p.stdout.on('data', (d) => { stdout += d; });
+    p.stderr.on('data', (d) => { stderr += d; });
+    p.on('close', (status) => res({ status, stdout, stderr }));
+  });
+  const ok = await run(inst.base);
+  eq(ok.status, 0, `health.sh против живого приложения вернул ${ok.status}: ${ok.stdout.trim().replace(/\n/g, ' | ')} ${ok.stderr.trim()}`);
+  assert(/^HTTP \/ = 200$/m.test(ok.stdout) && /^HTTP \/rating = 200$/m.test(ok.stdout), `нет строк 200 для / и /rating: ${ok.stdout}`);
+  const profile = /^HTTP \/player\/\d+ = 200 /m.test(ok.stdout) ? 'первый профиль из рейтинга 200'
+    : /пропускаю/.test(ok.stdout) ? 'профилей в рейтинге нет — явный пропуск' : null;
+  assert(profile, `нет ни проверки профиля, ни явного пропуска: ${ok.stdout}`);
+  const dead = await run('http://127.0.0.1:1');
+  eq(dead.status, 1, `мёртвый порт должен дать код 1, а дал ${dead.status}`);
+  return `/ и /rating 200; ${profile}; мёртвый порт → код 1`;
+});
+
 // ===========================================================================
 await stopApp(inst);
 closeDb();
@@ -4221,7 +4247,18 @@ await check('deploy-watch: дифф только из памяти → ff без
     git(work, 'push', '-q', origin, 'main');
     runWatch();
     assert(existsSync(marker), 'дифф кода НЕ вызвал выкат');
-    return 'память: ff без deploy-A.sh, HEAD догнал origin; код: deploy-A.sh вызван';
+    // 3) deploy/deploy-A.sh появился в origin → копия обновлена из origin/main и исполнена именно она
+    const marker2 = resolve(tmp, 'deployed-synced');
+    mkdirSync(resolve(work, 'deploy'), { recursive: true });
+    writeFileSync(resolve(work, 'deploy', 'deploy-A.sh'), `#!/usr/bin/env bash\necho synced >> "${marker2}"\n`);
+    writeFileSync(resolve(work, 'site', 'app.txt'), 'v3\n');
+    git(work, 'add', '-A');
+    git(work, 'commit', '-q', '-m', 'deploy-A в репо');
+    git(work, 'push', '-q', origin, 'main');
+    runWatch();
+    assert(readFileSync(deployScript, 'utf8').includes('synced'), 'копия deploy-A.sh не обновлена из origin/main');
+    assert(existsSync(marker2), 'обновлённая копия deploy-A.sh не исполнена');
+    return 'память: ff без deploy-A.sh, HEAD догнал origin; код: deploy-A.sh вызван; deploy-A.sh в origin: копия обновлена и исполнена';
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
