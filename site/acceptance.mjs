@@ -3996,6 +3996,46 @@ try {
     return `${live.length} живых ссылок (регистрация, заявка на турнир, кабинет); ${portal.length} портальных = «#»; правовые ведут на ${legal.map((l) => l.href).join(', ')} (обе 200)`;
   });
 
+  await check('/contacts: реквизиты читаемы — на 998 px значение шире половины dl, на 390 px во всю ширину', async () => {
+    const page = await browser.newPage();
+    try {
+      const measure = async (w) => {
+        await page.setViewportSize({ width: w, height: 900 });
+        await page.goto(inst.base + '/contacts', { waitUntil: 'networkidle' });
+        return page.evaluate(() => {
+          const dl = document.querySelector('dl.legal-dl');
+          const dd = dl && dl.querySelector('dd');
+          return {
+            dlW: dl ? dl.getBoundingClientRect().width : 0,
+            ddW: dd ? dd.getBoundingClientRect().width : 0,
+            cols: dl ? getComputedStyle(dl).gridTemplateColumns : null,
+          };
+        });
+      };
+      const d = await measure(998);
+      assert(d.dlW > 0, 'нет dl.legal-dl на /contacts');
+      assert(d.ddW > d.dlW * 0.5, `на 998 px значение реквизита занимает ${Math.round(d.ddW)} из ${Math.round(d.dlW)} px (колонки: ${d.cols}) — текст ушёл в столбик по букве`);
+      const m = await measure(390);
+      assert(m.ddW > m.dlW * 0.9, `на 390 px значение должно быть во всю ширину, а занимает ${Math.round(m.ddW)} из ${Math.round(m.dlW)} px`);
+      return `998 px: dd ${Math.round(d.ddW)}/${Math.round(d.dlW)} px (${d.cols}); 390 px: dd ${Math.round(m.ddW)}/${Math.round(m.dlW)} px`;
+    } finally {
+      await page.close();
+    }
+  });
+
+  await check('тема: переход body не дольше 1 с (4.8 с выглядело как «не сработало»)', async () => {
+    const page = await browser.newPage();
+    try {
+      await page.goto(inst.base + '/', { waitUntil: 'networkidle' });
+      const durations = await page.evaluate(() => getComputedStyle(document.body).transitionDuration);
+      const max = Math.max(...durations.split(',').map((s) => parseFloat(s)));
+      assert(max <= 1, `transition body = ${durations}`);
+      return `transition body: ${durations}`;
+    } finally {
+      await page.close();
+    }
+  });
+
   await browser.close();
 } catch (err) {
   browserNote = err.message;
