@@ -16,6 +16,9 @@
         <dt>Адрес</dt><dd><%= op.address %></dd>
         <dt>ОГРН</dt><dd><%= op.ogrn %></dd>
         <dt>ИНН</dt><dd><%= op.inn %></dd>
+        <dt>КПП</dt><dd><%= op.kpp %></dd>
+        <dt><%= op.head.title %></dt><dd><%= op.head.name %></dd>
+        <dt>Ответственный за организацию обработки персональных данных (ст. 22.1 152-ФЗ)</dt><dd><%= op.responsible.name %>, <%= op.responsible.title %></dd>
         <dt>Электронная почта</dt><dd><a href="mailto:<%= op.email %>"><%= op.email %></a></dd>
         <dt>Телефон</dt><dd><a href="tel:<%= op.phoneHref %>"><%= op.phone %></a></dd>
       </dl>
