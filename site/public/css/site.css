@@ -54,7 +54,7 @@ img{max-width:100%; display:block;}
 :focus-visible{outline:3px solid var(--primary); outline-offset:3px; border-radius:6px;}
 
 body, .site-header, section, footer, .card, .btn, .badge, .status, .stat, .photo, table, th, td, .hero-panel, .info-card, .reg-card, .news-card, .theme-toggle, .brand-mark, .nav-menu, .nav-menu a{
-  transition:background-color 4.8s ease, color 4.8s ease, border-color 4.8s ease, box-shadow 4.8s ease, fill 4.8s ease, stroke 4.8s ease;
+  transition:background-color .45s ease, color .45s ease, border-color .45s ease, box-shadow .45s ease, fill .45s ease, stroke .45s ease;
 }
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto;}
@@ -460,7 +460,7 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 }
 .player--anonymized{color:var(--muted); font-style:italic;}
 .legal-statement{border-left:3px solid var(--primary); padding:.15rem 0 .15rem 1rem; margin:0;}
-.legal-dl{margin:0; display:grid; grid-template-columns:minmax(9rem,auto) 1fr; gap:.5rem 1rem;}
+.legal-dl{margin:0; display:grid; grid-template-columns:minmax(9rem,14rem) minmax(0,1fr); gap:.5rem 1rem;} /* dt — с потолком: длинный термин («Ответственный за организацию обработки ПДн…») переносится, а не съедает колонку значения; minmax(0,1fr) — чтобы overflow-wrap:anywhere у dd не ужимал её до буквы */
 .legal-dl dt{color:var(--muted);}
 .legal-dl dd{margin:0;}
 @media (max-width:520px){.legal-dl{grid-template-columns:1fr; gap:.15rem;} .legal-dl dd{margin-bottom:.6rem;}}
