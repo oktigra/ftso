@@ -3619,6 +3619,7 @@ try {
     '/', '/rating', '/news', '/tournaments', '/coaches', '/courts', '/clubs', '/referees',
     '/federation', '/gallery', '/documents', '/contacts', '/privacy', '/consent',
     '/register', '/tournament-request', '/cabinet/login',
+    `/player/${p19}`, `/tournaments/${t19}`,
   ];
 
   await check('адаптив: 360 и 768 px без горизонтального скролла', async () => {
@@ -3847,6 +3848,45 @@ try {
     eq(asText.scripts, 0, 'внутри ячейки оказался тег script');
     eq(asText.text, '<script>alert(1)</script>', 'текст в ячейке не совпал');
     return `в ячейке текст «${asText.text}», тегов script 0, alert не сработал`;
+  });
+
+  await check('профиль: фото грузится под CSP, «злое» имя в заголовке и ссылках — текст, alert не срабатывает', async () => {
+    const { jar, _csrf } = await cabLogin19();
+    const up = await http('/cabinet/profile', {
+      method: 'POST',
+      multipart: { fields: { _csrf, full_name: P19.name, email: P19.email }, files: [{ field: 'photo', filename: 'csp.jpg', type: 'image/jpeg', buffer: await jpeg19('#0e7a52') }] },
+      jar,
+    });
+    eq(up.status, 302, 'фото для проверки CSP');
+    const xss = db.prepare("SELECT id FROM players WHERE full_name LIKE '%alert(1)%' AND anonymized_at IS NULL").get();
+    assert(xss, 'игрока со «злым» именем нет в базе');
+    const t = db.prepare('SELECT id FROM tournaments ORDER BY id LIMIT 1').get();
+    db.prepare("INSERT OR IGNORE INTO matches (tournament_id, winner_player_id, loser_player_id, score) VALUES (?, ?, ?, '6:1 6:1')").run(t.id, xss.id, p19);
+
+    const page = await browser.newPage();
+    let alerted = false;
+    page.on('dialog', async (d) => { alerted = true; await d.dismiss(); });
+    const cspErrors = [];
+    page.on('console', (m) => { if (/Content Security Policy|Refused to (execute|apply|load)/i.test(m.text())) cspErrors.push(m.text()); });
+    await page.goto(`${inst.base}/player/${p19}`, { waitUntil: 'networkidle' });
+    const img = await page.evaluate(() => {
+      const i = document.querySelector('img.profile-photo');
+      return i ? { complete: i.complete, w: i.naturalWidth } : null;
+    });
+    assert(img && img.complete && img.w > 0, 'фотография на профиле не загрузилась в браузере');
+    const link = await page.evaluate(() => {
+      const a = [...document.querySelectorAll('a[href^="/player/"]')].find((x) => x.textContent.includes('alert(1)'));
+      return a ? { text: a.textContent.trim(), scripts: a.querySelectorAll('script').length } : null;
+    });
+    assert(link && link.scripts === 0 && link.text === '<script>alert(1)</script>', 'ссылка на соперника со «злым» именем не текст');
+    await page.goto(`${inst.base}/player/${xss.id}`, { waitUntil: 'networkidle' });
+    const h1 = await page.evaluate(() => ({ text: document.querySelector('h1').textContent.trim(), scripts: document.querySelectorAll('h1 script').length }));
+    await page.close();
+    eq(h1.text, '<script>alert(1)</script>', 'заголовок профиля со «злым» именем не текст');
+    eq(h1.scripts, 0, 'в заголовке тег script');
+    assert(!alerted, 'сработал alert — XSS выполнился на профиле');
+    eq(cspErrors.join(' | '), '', `CSP на профиле: ${cspErrors.join(' | ')}`);
+    return 'фото загрузилось под CSP; злое имя — текст в h1 и в ссылке; alert 0; нарушений CSP 0';
   });
 
   await check('регистрация живая, остальные портальные кнопки — заглушки', async () => {
