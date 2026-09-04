@@ -46,6 +46,32 @@
         <a href="/privacy">Политике обработки персональных данных</a>.
       </p>
     </div>
+    <div class="panel form-panel" id="feedback">
+      <h2>Написать нам</h2>
+      <% if (!intakeEnabled) { %>
+        <p class="muted">Приём обращений через сайт временно закрыт — пишите на <a href="mailto:<%= op.email %>"><%= op.email %></a>.</p>
+      <% } else if (sent) { %>
+        <p class="notice"><strong>Обращение отправлено.</strong> Ответим на указанный адрес; срок рассмотрения — до 30 дней (п. 12 Политики).</p>
+      <% } else { %>
+        <% if (feedbackError) { %><p class="notice notice--error"><%= feedbackError %></p><% } %>
+        <form method="post" action="/contacts/feedback" class="stacked-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <%
+          /* Honeypot: поле скрыто стилем, человек его не увидит; бот заполнит — отсев в маршруте. */
+          %>
+          <div class="hp-field" aria-hidden="true"><label for="fb-website">Сайт</label><input id="fb-website" name="website" tabindex="-1" autocomplete="off"></div>
+          <div class="field"><label for="fb-name">Как к вам обращаться</label><input id="fb-name" name="name" maxlength="120" required value="<%= feedbackDraft ? feedbackDraft.name : '' %>"></div>
+          <div class="field"><label for="fb-email">E-mail для ответа</label><input id="fb-email" name="email" type="email" maxlength="200" required value="<%= feedbackDraft ? feedbackDraft.email : '' %>"></div>
+          <div class="field"><label for="fb-message">Сообщение</label><textarea id="fb-message" name="message" rows="5" minlength="5" maxlength="2000" required></textarea></div>
+          <label class="check">
+            <input type="checkbox" name="consent_processing" value="1" required>
+            <span>Даю согласие на обработку указанных данных (имя, e-mail, текст) для ответа на обращение и ознакомлен с
+              <a href="/privacy" target="_blank" rel="noopener">Политикой обработки персональных данных</a>.</span>
+          </label>
+          <button class="btn btn--primary" type="submit">Отправить</button>
+        </form>
+      <% } %>
+    </div>
   </div>
 </section>
 </main>

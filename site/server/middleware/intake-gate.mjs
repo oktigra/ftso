@@ -37,6 +37,7 @@ export const CLOSED_GET = [
  * наполнять сайт содержимым закон не мешает.
  */
 export const CLOSED_POST = [
+  '/contacts/feedback', // форма обратной связи — приём ПДн
   // Публичные формы
   '/register',
   '/tournament-request',

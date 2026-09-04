@@ -4091,7 +4091,7 @@ section('18. Рубильник приёма ПДн, баннер разрабо
 // Отдельный экземпляр с ЗАКРЫТЫМ приёмом: основное приложение работает с
 // открытым, и переключать его на лету — значит ловить чужие эффекты.
 const closedInst = await (async () => {
-  const app = createApp({ ...config, intakeEnabled: false });
+  const app = createApp({ ...config, intakeEnabled: false, devNotice: true }); // плашка включена явно: по умолчанию с 04.09 её нет
   return new Promise((res) => {
     const server = app.listen(0, '127.0.0.1', () => {
       res({ app, server, base: `http://127.0.0.1:${server.address().port}` });
@@ -4240,6 +4240,15 @@ await check('реестр cookie полон: браузер не получае�
   return `реестр: ${[...known].join(', ')}; согласие не требуется; cookie вне реестра не обнаружено`;
 });
 
+await check('обратная связь при закрытом приёме: формы нет, POST отклонён рубильником', async () => {
+  const page = await closedHttp('/contacts');
+  eq(page.status, 200, '/contacts при закрытом приёме');
+  assert(!page.text.includes('action="/contacts/feedback"') && page.text.includes('временно закрыт'), 'при закрытом приёме форма показана');
+  const r = await closedHttp('/contacts/feedback', { method: 'POST', form: { name: 'A', email: 'a@example.com', message: 'тест тест', consent_processing: '1' } });
+  assert(r.status === 403, `POST при закрытом приёме должен дать 403, а дал ${r.status}`);
+  return 'формы нет, POST → 403';
+});
+
 await new Promise((res) => {
   closedInst.app.locals.closeStore();
   closedInst.server.close(res);
@@ -4385,6 +4394,66 @@ await check('ссылка в кабинет с экрана секретаря: 
   eq(form.status, 200, 'ссылка должна открыть форму установки пароля');
   assert(/name="password"/.test(form.text), 'по ссылке нет формы пароля');
   return `игрок ${withAcc.id}: ссылка показана, ${path.slice(0, 20)}… открывает форму; игрок ${noAcc.id} без кабинета — кнопки нет, POST отклонён`;
+});
+
+// ---------------------------------------------------------------------------
+// Плашка «режим разработки» по умолчанию выключена; форма обратной связи на /contacts
+// ---------------------------------------------------------------------------
+await check('плашка «режим разработки»: без DEV_NOTICE выключена, DEV_NOTICE=1 включает', async () => {
+  const { loadConfig } = await import('./server/lib/config.mjs');
+  const saved = process.env.DEV_NOTICE;
+  try {
+    delete process.env.DEV_NOTICE;
+    eq(loadConfig({ requireSecrets: false }).devNotice, false, 'без DEV_NOTICE плашка должна быть выключена');
+    process.env.DEV_NOTICE = '1';
+    eq(loadConfig({ requireSecrets: false }).devNotice, true, 'DEV_NOTICE=1 должна включать');
+    process.env.DEV_NOTICE = '0';
+    eq(loadConfig({ requireSecrets: false }).devNotice, false, 'DEV_NOTICE=0 выключает');
+  } finally {
+    if (saved === undefined) delete process.env.DEV_NOTICE; else process.env.DEV_NOTICE = saved;
+  }
+  return 'по умолчанию выключена; 1 — включена; 0 — выключена';
+});
+
+await check('обратная связь: форма на /contacts, честная запись, honeypot и без согласия — нет записи, письмо в очередь, админка отмечает и удаляет, чистка по сроку', async () => {
+  const { LEGAL_VERSION } = await import('./server/lib/legal.mjs');
+  const { purgeFeedback } = await import('./server/lib/feedback.mjs');
+  const jar = new Jar();
+  const page = await http('/contacts', { jar });
+  eq(page.status, 200, '/contacts');
+  assert(page.text.includes('action="/contacts/feedback"') && page.text.includes('name="consent_processing"') && page.text.includes('name="website"'), 'на /contacts нет формы с согласием и honeypot');
+  const _csrf = tokenFrom(page.text);
+  const before = db.prepare('SELECT COUNT(*) AS n FROM feedback_messages').get().n;
+  const noConsent = await http('/contacts/feedback', { method: 'POST', jar, form: { _csrf, name: 'Иван', email: 'ivan@example.com', message: 'Вопрос по турниру' } });
+  eq(noConsent.status, 302, 'без согласия — редирект с ошибкой');
+  assert(String(noConsent.location || '').includes('error='), 'без согласия ошибка не показана');
+  const bot = await http('/contacts/feedback', { method: 'POST', jar, form: { _csrf, name: 'Бот', email: 'bot@example.com', message: 'спам спам спам', consent_processing: '1', website: 'http://spam' } });
+  eq(bot.status, 302, 'honeypot — тихий редирект');
+  assert(String(bot.location || '').includes('sent=1'), 'honeypot должен выглядеть как успех');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM feedback_messages').get().n, before, 'без согласия или с honeypot запись не должна создаваться');
+  const ok = await http('/contacts/feedback', { method: 'POST', jar, form: { _csrf, name: 'Пётр Сидоров', email: 'petr@example.com', message: 'Хочу узнать про детские турниры', consent_processing: '1' } });
+  eq(ok.status, 302, 'честное обращение');
+  assert(String(ok.location || '').includes('sent=1'), 'после отправки нет подтверждения');
+  const row = db.prepare('SELECT id, status, legal_version FROM feedback_messages ORDER BY id DESC LIMIT 1').get();
+  assert(row && row.status === 'new' && row.legal_version === LEGAL_VERSION, `запись не та: ${JSON.stringify(row)}`);
+  const sentPage = await http('/contacts?sent=1');
+  assert(sentPage.text.includes('Обращение отправлено'), 'страница не подтверждает отправку');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE kind = 'feedback.new' AND status = 'queued'").get().n >= 1, true, 'письмо секретарю не в очереди');
+  const t = await login(TADMIN.user, TADMIN.pass);
+  const list = await http('/admin/feedback', { jar: t.jar });
+  eq(list.status, 200, '/admin/feedback для tournament-admin');
+  assert(list.text.includes('Пётр Сидоров') && list.text.includes('Хочу узнать про детские турниры') && list.text.includes('НОВОЕ'), 'обращение не в списке');
+  const c2 = tokenFrom(list.text);
+  eq((await http(`/admin/feedback/${row.id}/done`, { method: 'POST', form: { _csrf: c2 }, jar: t.jar })).status, 302, 'отметка обработано');
+  const after = db.prepare('SELECT status, handled_at FROM feedback_messages WHERE id = ?').get(row.id);
+  assert(after.status === 'done' && after.handled_at, 'статус не обновился');
+  db.prepare("UPDATE feedback_messages SET handled_at = datetime('now', '-400 days') WHERE id = ?").run(row.id);
+  eq(purgeFeedback(db, 365), 1, 'чистка не удалила обработанное старше года');
+  const fresh = db.prepare("INSERT INTO feedback_messages (name, email, message, legal_version) VALUES ('X', 'x@example.com', 'новое обращение', ?)").run(LEGAL_VERSION).lastInsertRowid;
+  eq(purgeFeedback(db, 365), 0, 'чистка не должна трогать новые');
+  eq((await http(`/admin/feedback/${fresh}/delete`, { method: 'POST', form: { _csrf: c2 }, jar: t.jar })).status, 302, 'удаление');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM feedback_messages WHERE id = ?').get(fresh).n, 0, 'не удалено');
+  return `форма есть; без согласия и honeypot — без записи; честное → new с ${LEGAL_VERSION}, письмо в очереди; секретарь отметил; чистка: старое done удалено, новое нет; удаление работает`;
 });
 
 // ---------------------------------------------------------------------------

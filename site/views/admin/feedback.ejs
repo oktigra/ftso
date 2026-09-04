@@ -1,0 +1,39 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Обращения с сайта</h1>
+  <%- include('_shell') %>
+
+  <div class="panel">
+    <p class="muted">Форма на странице «Контакты». Ответ — на указанный e-mail, срок по Политике — до 30 дней.
+      Обработанные обращения удаляются автоматически через год; новые не удаляются, пока не отмечены.</p>
+    <h2>Всего: <%= items.length %>, новых: <%= items.filter(function (i) { return i.status === 'new'; }).length %></h2>
+    <% if (!items.length) { %><p class="muted">Пока нет.</p><% } %>
+    <ul class="log-list">
+      <% items.forEach(function (f) { %>
+        <li class="<%= f.status === 'new' ? 'is-new' : '' %>">
+          <div>
+            <strong><%= f.name %></strong> — <a href="mailto:<%= f.email %>?subject=<%= encodeURIComponent('Ответ на обращение с сайта ФТСО') %>"><%= f.email %></a>
+            <span class="muted">· <%= f.created_at %> · <%= f.status === 'new' ? 'НОВОЕ' : 'обработано ' + (f.handled_at || '').slice(0, 16) + (f.handled_by ? ' (' + f.handled_by + ')' : '') %></span>
+          </div>
+          <p style="white-space:pre-wrap"><%= f.message %></p>
+          <div class="inline-form">
+            <% if (f.status === 'new') { %>
+              <form method="post" action="/admin/feedback/<%= f.id %>/done" class="inline-form">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button class="btn btn--secondary btn--small" type="submit">Обработано</button>
+              </form>
+            <% } %>
+            <form method="post" action="/admin/feedback/<%= f.id %>/delete" class="inline-form">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button class="btn btn--danger btn--small" type="submit">Удалить</button>
+            </form>
+          </div>
+        </li>
+      <% }); %>
+    </ul>
+  </div>
+</div>
+</main>
+<%- include('../partials/footer') %>
