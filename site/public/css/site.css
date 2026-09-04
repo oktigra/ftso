@@ -516,3 +516,4 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 
 /* Атрибут hidden обязан скрывать всегда: .field/.check/.consent-box задают display и иначе перебивают браузерный display:none. */
 [hidden]{display:none !important;}
+.small{font-size:.85rem;}
