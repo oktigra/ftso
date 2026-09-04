@@ -89,6 +89,20 @@
       <% } %>
     </div>
 
+    <div class="panel">
+      <h2>Фото</h2>
+      <% if (!gallery.length) { %>
+        <p class="muted">Фотографий с этого турнира пока нет.</p>
+      <% } else { %>
+        <ul class="gallery-grid">
+          <% gallery.forEach(function (g) { %>
+            <li><figure><img src="/gallery/<%= g.id %>/image" alt="<%= g.title %>" loading="lazy"><figcaption><%= g.title %></figcaption></figure></li>
+          <% }); %>
+        </ul>
+        <p class="muted">Репортажная съёмка соревнования, публикуется без согласия изображённых (подп. 2 п. 1 ст. 152.1 ГК РФ). Подробнее и как убрать снимок — в <a href="/gallery">галерее</a>.</p>
+      <% } %>
+    </div>
+
     <p class="table-foot"><a class="link-more" href="/tournaments">Все турниры <span aria-hidden="true">→</span></a></p>
   </div>
 </section>

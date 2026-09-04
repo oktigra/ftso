@@ -147,16 +147,18 @@ export function federationDocuments(db) {
     .all();
 }
 
-export function galleryItems(db) {
+/** Снимки галереи; с { tournamentId } — только привязанные к этому соревнованию (карточка турнира). */
+export function galleryItems(db, { tournamentId = null } = {}) {
   return db
     .prepare(
       `SELECT g.id, g.title, u.id AS upload_id, u.original_name, u.mime,
               g.tournament_id, t.name AS tournament_name, t.end_date AS tournament_date
          FROM gallery_items g JOIN uploads u ON u.id = g.upload_id
          LEFT JOIN tournaments t ON t.id = g.tournament_id
+        WHERE (? IS NULL OR g.tournament_id = ?)
         ORDER BY g.id DESC`,
     )
-    .all();
+    .all(tournamentId, tournamentId);
 }
 
 /**

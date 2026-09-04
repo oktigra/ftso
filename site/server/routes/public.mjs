@@ -83,6 +83,8 @@ export default function mountPublic(app, { db, config }) {
       participants: tournamentParticipants(db, tournament.id, LABELS),
       matches: tournamentMatches(db, tournament.id, LABELS),
       documents: tournamentFiles(db, tournament.id),
+      // Снимки с этого соревнования (репортажная съёмка, ст. 152.1 ГК) — те же, что на /gallery.
+      gallery: galleryItems(db, { tournamentId: tournament.id }),
       section: sectionFor('/tournaments'),
     });
   });
