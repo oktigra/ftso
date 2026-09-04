@@ -10,7 +10,11 @@
     <h2>Добавить игрока</h2>
     <form method="post" action="/admin/players" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <div class="field"><label for="p-name">ФИО</label><input id="p-name" name="full_name" maxlength="120" required></div>
+      <div class="field-row">
+        <div class="field"><label for="p-last">Фамилия</label><input id="p-last" name="last_name" maxlength="60" required></div>
+        <div class="field"><label for="p-first">Имя</label><input id="p-first" name="first_name" maxlength="60" required></div>
+        <div class="field"><label for="p-middle">Отчество</label><input id="p-middle" name="middle_name" maxlength="60"></div>
+      </div>
       <div class="field"><label for="p-city">Город</label><input id="p-city" name="city" maxlength="80" required></div>
       <div class="field"><label for="p-rni">РНИ</label><input id="p-rni" name="rni" maxlength="32" pattern="[0-9A-Za-z-]+" placeholder="номер в РТТ, если есть"></div>
       <div class="field"><label for="p-sex">Пол</label>
@@ -70,7 +74,11 @@
           <% players.forEach(function (p) { %>
             <tr>
               <td><%= p.id %></td>
-              <td><input form="edit-player-<%= p.id %>" name="full_name" value="<%= p.full_name %>" maxlength="120" required></td>
+              <td class="name-cell">
+                <input form="edit-player-<%= p.id %>" name="last_name" value="<%= p.nameParts.last %>" maxlength="60" required placeholder="Фамилия" aria-label="Фамилия">
+                <input form="edit-player-<%= p.id %>" name="first_name" value="<%= p.nameParts.first %>" maxlength="60" required placeholder="Имя" aria-label="Имя">
+                <input form="edit-player-<%= p.id %>" name="middle_name" value="<%= p.nameParts.middle %>" maxlength="60" placeholder="Отчество" aria-label="Отчество">
+              </td>
               <td><input form="edit-player-<%= p.id %>" name="city" value="<%= p.city %>" maxlength="80" required></td>
               <td><input form="edit-player-<%= p.id %>" name="rni" value="<%= p.rni || '' %>" maxlength="32" pattern="[0-9A-Za-z-]+" size="8"></td>
               <td>
@@ -145,8 +153,16 @@
                     <form method="post" action="/admin/players/<%= p.id %>/guardian" class="stacked-form">
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                       <div class="field">
-                        <label for="g-name-<%= p.id %>">ФИО представителя</label>
-                        <input id="g-name-<%= p.id %>" name="guardian_full_name" maxlength="120" required>
+                        <label for="g-last-<%= p.id %>">Фамилия представителя</label>
+                        <input id="g-last-<%= p.id %>" name="guardian_last_name" maxlength="60" required>
+                      </div>
+                      <div class="field">
+                        <label for="g-first-<%= p.id %>">Имя</label>
+                        <input id="g-first-<%= p.id %>" name="guardian_first_name" maxlength="60" required>
+                      </div>
+                      <div class="field">
+                        <label for="g-middle-<%= p.id %>">Отчество</label>
+                        <input id="g-middle-<%= p.id %>" name="guardian_middle_name" maxlength="60">
                       </div>
                       <div class="field">
                         <label for="g-rel-<%= p.id %>">Кем приходится</label>

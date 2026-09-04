@@ -1,7 +1,8 @@
 import express from 'express';
 import session from 'express-session';
 import helmet from 'helmet';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -92,6 +93,14 @@ export function createApp(config) {
   // ЛИМИТ ТЕЛА ЗАПРОСА: гигантский POST не должен класть память.
   app.use(express.urlencoded({ extended: false, limit: config.bodyLimit }));
   app.use(express.json({ limit: config.bodyLimit }));
+
+  // ВЕРСИЯ СТАТИКИ: кэш /static живёт 30 дней, поэтому app.js и site.css подключаются
+  // с ?v=<хэш содержимого> — после выката адрес меняется и браузеры берут свежий файл.
+  const assetVersion = createHash('md5')
+    .update(readFileSync(resolve(ROOT, 'public/js/app.js')))
+    .update(readFileSync(resolve(ROOT, 'public/css/site.css')))
+    .digest('hex').slice(0, 8);
+  app.locals.assetVersion = assetVersion;
 
   app.use(
     '/static',

@@ -61,9 +61,10 @@
       <h2>Профиль</h2>
       <form method="post" action="/cabinet/profile" class="stacked-form" enctype="multipart/form-data">
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-        <div class="field">
-          <label for="p-full-name">Фамилия, имя, отчество</label>
-          <input id="p-full-name" name="full_name" maxlength="120" required value="<%= profile.full_name %>">
+        <div class="field-row">
+          <div class="field"><label for="p-last">Фамилия</label><input id="p-last" name="last_name" maxlength="60" required value="<%= nameParts.last %>"></div>
+          <div class="field"><label for="p-first">Имя</label><input id="p-first" name="first_name" maxlength="60" required value="<%= nameParts.first %>"></div>
+          <div class="field"><label for="p-middle">Отчество</label><input id="p-middle" name="middle_name" maxlength="60" value="<%= nameParts.middle %>"></div>
         </div>
         <% if (!byGuardian) { %>
           <div class="field">

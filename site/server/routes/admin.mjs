@@ -13,6 +13,7 @@ import {
   SEXES,
   CATEGORIES,
   ValidationError,
+  splitName,
 } from '../lib/validate.mjs';
 import {
   recompute,
@@ -164,6 +165,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         consent: consentState(db, p.id),
         // Кабинет: есть ли аккаунт — для кнопки «ссылка для входа» (когда почта не доходит).
         account: accountByPlayer(db, p.id) || null,
+        nameParts: splitName(p.full_name),
         // ОТМЕТКА В КАРТОЧКЕ: чем и от какой даты подтверждена публикация.
         proof: db
           .prepare(
