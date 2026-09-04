@@ -1,0 +1,23 @@
+# /etc/logrotate.d/ftso — ротация логов ФТСО. ИСТОЧНИК — deploy/logrotate-ftso в репо,
+# ставит install-logrotate.sh. nginx ротирует свой пакетный /etc/logrotate.d/nginx.
+# В логах pm2 и nginx есть IP посетителей (152-ФЗ, минимизация): держим 14 дней и не больше.
+# copytruncate — pm2 держит файлы открытыми, перезапуск ради ротации не нужен.
+/home/ftso/.pm2/logs/*.log /home/ftso/.pm2/pm2.log {
+    daily
+    rotate 14
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    su ftso ftso
+}
+/root/deploy-watch.log /root/deploy-A.log /root/backup.log {
+    weekly
+    rotate 8
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}
