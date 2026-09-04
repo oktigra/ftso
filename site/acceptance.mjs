@@ -4552,12 +4552,23 @@ await check('сброс пароля админа: временный показ
     const t = await login(TADMIN.user, m[1]);
     eq(t.res.status, 302, 'вход по временному');
     assert(String(t.res.location || '').includes('/admin/account'), `вход ведёт не на смену: ${t.res.location}`);
+    // СЕБЕ: временный выдаётся, ведёт сразу на смену, временный подходит как «текущий».
+    const mine = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(me.id);
     const self = await http(`/admin/users/${me.id}/password`, { method: 'POST', form: { _csrf }, jar });
-    eq(self.status, 302, 'себе — редирект с ошибкой');
-    eq(db.prepare('SELECT must_change_password AS f FROM users WHERE id = ?').get(me.id).f, 0, 'себе временный выдаваться не должен');
-    return `временный для ${TADMIN.user} показан один раз, флаг 1, вход → /admin/account; себе — отказ`;
+    eq(self.status + ' ' + self.location, '302 /admin/account?change=1', 'себе — сразу на смену пароля');
+    eq(db.prepare('SELECT must_change_password AS f FROM users WHERE id = ?').get(me.id).f, 1, 'себе флаг смены не выставлен');
+    const acct = await http('/admin/account?change=1', { jar });
+    const ms = acct.text.match(/class="flash-secret__value">([A-Za-z0-9]{14})<\/code>/);
+    assert(ms, 'свой временный пароль не показан на странице смены');
+    eq((await http('/admin/users', { jar })).location, '/admin/account?change=1', 'до смены остальная админка закрыта');
+    const chg = await http('/admin/account/password', { method: 'POST', form: { _csrf: tokenFrom(acct.text), current_password: ms[1], new_password: 'новый-свой-пароль-2026' }, jar });
+    eq(chg.status + ' ' + chg.location, '302 /admin', 'смена по временному как «текущему»');
+    eq(db.prepare('SELECT must_change_password AS f FROM users WHERE id = ?').get(me.id).f, 0, 'после смены флаг не снят');
+    db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(mine.password_hash, me.id);
+    return `временный для ${TADMIN.user} показан один раз, флаг 1, вход → /admin/account; себе — временный показан на странице смены, принят как текущий, новый задан`;
   } finally {
     db.prepare('UPDATE users SET password_hash = ?, must_change_password = ? WHERE id = ?').run(target.password_hash, target.must_change_password, target.id);
+    db.prepare('UPDATE users SET must_change_password = 0 WHERE id = ?').run(me.id);
   }
 });
 

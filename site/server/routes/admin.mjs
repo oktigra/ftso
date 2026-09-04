@@ -910,12 +910,17 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // super-admin сбрасывает пароль ДРУГОГО пользователя БЕЗ его текущего:
       // выдаётся ВРЕМЕННЫЙ пароль, показывается один раз, при входе обязательна смена.
       const id = intAtLeast(req.params.id, 'id');
-      if (id === req.session.user.id) throw new ValidationError('Свой пароль меняется в «Мой аккаунт»');
       const target = db.prepare('SELECT username FROM users WHERE id = ?').get(id);
       if (!target) throw new ValidationError('Пользователь не найден');
       const password = temporaryPassword();
       db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?').run(hashPassword(password), id);
       logAction(db, req.session.user.id, 'user.password.reset', id, null);
+      // СЕБЕ (решение владельца 05.09.2026): временный выдаётся так же, сессия остаётся,
+      // но тут же ведёт на смену — временный вводится как «текущий», новый — свой.
+      if (id === req.session.user.id) {
+        req.session.user.mustChangePassword = true;
+        return flash(req, res, 'ok', 'Ваш временный пароль — введите его ниже как текущий и задайте новый. Больше он не покажется.', '/admin/account?change=1', password);
+      }
       flash(req, res, 'ok', `Временный пароль для «${target.username}» — сообщите лично; при входе сайт потребует его сменить. Больше он не покажется.`, '/admin/users', password);
     }),
   );
