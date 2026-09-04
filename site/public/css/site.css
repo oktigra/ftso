@@ -121,9 +121,11 @@ body, .site-header, section, footer, .card, .btn, .badge, .status, .stat, .photo
 .theme-toggle{width:42px; height:42px; border-radius:999px; border:1.5px solid var(--border); background:var(--surface); color:var(--text); display:grid; place-items:center; cursor:pointer; flex:none;}
 .theme-toggle:hover{border-color:var(--primary); color:var(--primary);}
 .theme-toggle svg{width:20px; height:20px;}
-.theme-toggle .i-moon{display:none;}
-html[data-theme="dark"] .theme-toggle .i-sun{display:none;}
-html[data-theme="dark"] .theme-toggle .i-moon{display:block;}
+/* Иконка показывает, КУДА переключишь (решение владельца 05.09.2026):
+   на светлой теме — луна, на тёмной — солнце. */
+.theme-toggle .i-sun{display:none;}
+html[data-theme="dark"] .theme-toggle .i-moon{display:none;}
+html[data-theme="dark"] .theme-toggle .i-sun{display:block;}
 .burger{display:none; width:42px; height:42px; border-radius:12px; border:1.5px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; padding:0;}
 .burger svg{width:22px; height:22px; margin:auto;}
 
