@@ -161,8 +161,9 @@
     var syncMinor = function () {
       var v = birth.value;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-        // Даты ещё нет — оба блока спрятаны: показываем только то, что заполнять точно нужно.
-        Array.prototype.forEach.call(blocks, function (el) { setBlock(el, true); });
+        // Даты ещё нет — форма ВЗРОСЛОГО целиком (почта и чекбокс согласия видны сразу:
+        // аудит формы ищет чекбокс, не заполняя её), блок представителя добавится по дате.
+        Array.prototype.forEach.call(blocks, function (el) { setBlock(el, el.getAttribute('data-minor') === 'minor'); });
         return;
       }
       var p = v.split('-');
