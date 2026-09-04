@@ -175,6 +175,19 @@
     syncMinor();
   }
 
+  // Кнопка «Скопировать» у одноразового секрета (data-copy).
+  Array.prototype.forEach.call(document.querySelectorAll('[data-copy]'), function (btn) {
+    btn.addEventListener('click', function () {
+      var value = btn.getAttribute('data-copy');
+      var done = function () { btn.textContent = 'Скопировано'; btn.disabled = true; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(value).then(done, function () { window.prompt('Скопируйте вручную:', value); });
+      } else {
+        window.prompt('Скопируйте вручную:', value);
+      }
+    });
+  });
+
   // Показать/скрыть пароль: кнопка у каждого поля пароля. Живёт здесь, а не в
   // шаблонах: CSP разрешает скрипты только из этого файла.
   Array.prototype.forEach.call(document.querySelectorAll('input[type="password"]'), function (input) {

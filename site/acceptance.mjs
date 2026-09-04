@@ -4357,8 +4357,10 @@ await check('сброс пароля админа: временный показ
     const r = await http(`/admin/users/${target.id}/password`, { method: 'POST', form: { _csrf }, jar });
     eq(r.status, 302, 'выдача временного пароля');
     const after = await http('/admin/users', { jar });
-    const m = after.text.replace(/\s+/g, ' ').match(new RegExp(`Временный пароль для «${TADMIN.user}»: ([A-Za-z0-9]{14})`));
-    assert(m, 'временный пароль не показан во flash');
+    assert(after.text.includes(`Временный пароль для «${TADMIN.user}»`), 'нет сообщения о временном пароле');
+    const m = after.text.match(/class="flash-secret__value">([A-Za-z0-9]{14})<\/code>/);
+    assert(m, 'временный пароль не показан крупным блоком');
+    assert(after.text.includes(`data-copy="${m[1]}"`), 'нет кнопки «Скопировать» с паролем');
     eq(db.prepare('SELECT must_change_password AS f FROM users WHERE id = ?').get(target.id).f, 1, 'флаг обязательной смены не выставлен');
     const again = await http('/admin/users', { jar });
     assert(!again.text.includes(m[1]), 'временный пароль показался второй раз');
@@ -4387,8 +4389,9 @@ await check('ссылка в кабинет с экрана секретаря: 
   const r = await http(`/admin/players/${withAcc.id}/cabinet-link`, { method: 'POST', form: { _csrf }, jar });
   eq(r.status, 302, 'выдача ссылки');
   const after = (await http('/admin/players', { jar })).text.replace(/\s+/g, ' ');
-  const m = after.match(/Ссылка для входа в кабинет[^:]*: (https?:\/\/[^\s<"]+\/cabinet\/reset\/[A-Za-z0-9_-]+)/);
-  assert(m, 'ссылка не показана во flash');
+  const m = after.match(/class="flash-secret__value">(https?:\/\/[^<\s]+\/cabinet\/reset\/[A-Za-z0-9_-]+)<\/code>/);
+  assert(m, 'ссылка не показана крупным блоком');
+  assert(after.includes(`data-copy="${m[1]}"`), 'нет кнопки «Скопировать» со ссылкой');
   const path = m[1].replace(/^https?:\/\/[^/]+/, '');
   const form = await http(path);
   eq(form.status, 200, 'ссылка должна открыть форму установки пароля');
