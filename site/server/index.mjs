@@ -8,6 +8,7 @@ import { purgeExpired } from './lib/consent-journal.mjs';
 import { purgeRegistrations } from './lib/registrations.mjs';
 import { purgeRequests } from './lib/tournament-requests.mjs';
 import { purgeGuardians } from './lib/guardians.mjs';
+import { purgeFeedback } from './lib/feedback.mjs';
 import { runAdulthoodCheck } from './lib/adulthood.mjs';
 import { setTransport, configureMailer, scheduleMailFlush } from './lib/mailer.mjs';
 import { createSmtpTransport, smtpConfigured } from './lib/smtp.mjs';
@@ -62,6 +63,7 @@ if (config.intakeEnabled) {
 // СРОКИ ХРАНЕНИЯ: при старте и дальше раз в сутки.
 scheduleDailyPurge('журнал согласий', () => purgeExpired(db, config.consent.retentionDays));
 scheduleDailyPurge('заявки на регистрацию', () => purgeRegistrations(db, config.register.retentionDays));
+scheduleDailyPurge('обращения', () => purgeFeedback(db, config.feedback.retentionDays));
 // Заявки на турниры чистятся ВМЕСТЕ С ФАЙЛАМИ: снести строку и оставить
 // документы на диске значит хранить чужие данные без основания и без срока.
 scheduleDailyPurge('заявки на турниры', () =>

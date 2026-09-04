@@ -479,6 +479,21 @@ CREATE TABLE IF NOT EXISTS federation_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_federation_documents_cat ON federation_documents (category, id DESC);
 
+-- ОБРАЩЕНИЯ ЧЕРЕЗ ФОРМУ ОБРАТНОЙ СВЯЗИ (/contacts). Основание — согласие (редакция
+-- Политики в legal_version). Обработанные чистятся через config.feedback.retentionDays.
+CREATE TABLE IF NOT EXISTS feedback_messages (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  name          TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 120),
+  email         TEXT NOT NULL CHECK (length(email) BETWEEN 3 AND 200),
+  message       TEXT NOT NULL CHECK (length(trim(message)) BETWEEN 1 AND 2000),
+  legal_version TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','done')),
+  handled_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  handled_at    TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback_messages (status, id DESC);
+
 -- ЗАКРЫТЫЕ ДОКУМЕНТЫ ФЕДЕРАЦИИ: справки 152-ФЗ, приказы, уведомления РКН, договоры.
 -- Видны и скачиваются ТОЛЬКО super-admin (/admin/vault); в isPubliclyVisibleUpload
 -- НЕ входят — публичный /files/:id их не отдаёт. Хранятся в uploads -> попадают в бэкап.

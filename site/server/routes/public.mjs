@@ -6,7 +6,10 @@ import {
   ERASED_LABEL,
 } from '../lib/rating-service.mjs';
 import { HOME_STATS, HOME_NEXT_EVENT } from '../lib/home-content.mjs';
-import { OPERATOR, LEGAL_VERSION_LABEL, PUBLIC_DOCUMENTS } from '../lib/legal.mjs';
+import { OPERATOR, LEGAL_VERSION, LEGAL_VERSION_LABEL, PUBLIC_DOCUMENTS } from '../lib/legal.mjs';
+import { feedbackInput, createFeedback } from '../lib/feedback.mjs';
+import { queueMail } from '../lib/mailer.mjs';
+import { ValidationError } from '../lib/validate.mjs';
 import { DIRECTORIES, listDirectory } from '../lib/directories.mjs';
 import {
   publishedNews,
@@ -24,7 +27,7 @@ import { uploadById, sendUpload, sendUploadInline } from '../lib/uploads.mjs';
 const LABELS = { erasedLabel: ERASED_LABEL };
 const sectionFor = (path) => SECTIONS.find((s) => s.path === path);
 
-export default function mountPublic(app, { db, config }) {
+export default function mountPublic(app, { db, config, limitFeedback }) {
   // Главная — по утверждённому дизайну. Живой блок один: ТОП-5 рейтинга.
   app.get('/', (req, res) => {
     const standings = currentStandings(db);
@@ -155,7 +158,39 @@ export default function mountPublic(app, { db, config }) {
       title: 'Контакты — ФТСО',
       op: OPERATOR,
       section: sectionFor('/contacts'),
+      sent: req.query.sent === '1',
+      feedbackError: req.query.error ? String(req.query.error).slice(0, 200) : null,
+      feedbackDraft: req.query.error ? { name: req.query.name || '', email: req.query.email || '' } : null,
     });
+  });
+
+  /**
+   * ФОРМА ОБРАТНОЙ СВЯЗИ (ТЗ п. 8, 4.10). Приём ПДн — закрыт рубильником при
+   * INTAKE_ENABLED=0 (intake-gate, CLOSED_POST). Лимит как у регистрации, honeypot
+   * «website», согласие обязательно, редакция Политики пишется в запись.
+   * Письмо секретарю — в очередь; при закрытой почте обращения видны в админке.
+   */
+  const feedbackChain = limitFeedback ? [limitFeedback] : [];
+  app.post('/contacts/feedback', ...feedbackChain, (req, res, next) => {
+    // Honeypot: бот заполнил скрытое поле — отвечаем как при успехе, ничего не пишем.
+    if (String(req.body.website || '').trim() !== '') return res.redirect('/contacts?sent=1');
+    try {
+      const data = feedbackInput(req.body);
+      const id = createFeedback(db, { ...data, legalVersion: LEGAL_VERSION });
+      queueMail(db, {
+        to: OPERATOR.email,
+        kind: 'feedback.new',
+        subject: `Обращение с сайта № ${id}: ${data.name}`,
+        body: `Имя: ${data.name}\nE-mail: ${data.email}\n\n${data.message}\n\nОтветить и отметить: /admin/feedback`,
+      });
+      return res.redirect('/contacts?sent=1');
+    } catch (err) {
+      if (err instanceof ValidationError) {
+        const q = new URLSearchParams({ error: err.message, name: String(req.body.name || '').slice(0, 120), email: String(req.body.email || '').slice(0, 200) });
+        return res.redirect(`/contacts?${q}#feedback`);
+      }
+      return next(err);
+    }
   });
 
   /**

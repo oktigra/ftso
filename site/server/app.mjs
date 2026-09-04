@@ -166,11 +166,13 @@ export function createApp(config) {
   // Счётчик СВОЙ (ключ «t»): поток заявок на турниры не должен съедать лимит
   // регистрации игроков и наоборот.
   const limitTournamentRequest = publicFormLimiter(db, { ...config.tournamentRequest, key: 't' });
+  // Форма обратной связи — те же лимиты, что у регистрации, свой ключ.
+  const limitFeedback = publicFormLimiter(db, { ...config.register, key: 'f' });
   // И у кабинета свой (ключ «c»): подбор пароля не должен закрывать приём заявок.
   const limitCabinet = publicFormLimiter(db, { ...config.cabinet, key: 'c' });
 
   const ctx = {
-    db, config, attempts, limitWrites, limitRegister, limitTournamentRequest, limitCabinet, store,
+    db, config, attempts, limitWrites, limitRegister, limitTournamentRequest, limitFeedback, limitCabinet, store,
   };
 
   // РУБИЛЬНИК — до монтирования маршрутов, чтобы ни один обработчик приёма ПДн

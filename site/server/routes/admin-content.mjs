@@ -32,6 +32,7 @@ import {
   internalDocInput,
   INTERNAL_DOC_CATEGORIES,
 } from '../lib/content.mjs';
+import { listFeedback, markFeedbackDone, deleteFeedback } from '../lib/feedback.mjs';
 
 const CONTENT_ROLES = ['super-admin', 'content-manager', 'tournament-admin'];
 const NEWS_ROLES = ['super-admin', 'news-editor', 'content-manager'];
@@ -234,6 +235,37 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       if (row) deleteUpload(db, row.upload_id, config.upload.dir);
       logAction(db, req.session.user.id, 'document.delete', id, null);
       flash(req, res, 'ok', 'Документ удалён.', '/admin/library');
+    }),
+  );
+
+  // --- ОБРАЩЕНИЯ С ФОРМЫ ОБРАТНОЙ СВЯЗИ: секретарь и super-admin ---------------------
+  const FEEDBACK_ROLES = ['super-admin', 'tournament-admin'];
+
+  app.get('/admin/feedback', requireRole(...FEEDBACK_ROLES), (req, res) => {
+    res.render('admin/feedback', { title: 'Обращения — админка ФТСО', items: listFeedback(db) });
+  });
+
+  app.post(
+    '/admin/feedback/:id/done',
+    requireRole(...FEEDBACK_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      if (!markFeedbackDone(db, id, req.session.user.id)) throw new ValidationError('Обращение не найдено или уже обработано');
+      logAction(db, req.session.user.id, 'feedback.done', id, null);
+      flash(req, res, 'ok', 'Обращение отмечено обработанным.', '/admin/feedback');
+    }),
+  );
+
+  app.post(
+    '/admin/feedback/:id/delete',
+    requireRole(...FEEDBACK_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      if (!deleteFeedback(db, id)) throw new ValidationError('Обращение не найдено');
+      logAction(db, req.session.user.id, 'feedback.delete', id, null);
+      flash(req, res, 'ok', 'Обращение удалено.', '/admin/feedback');
     }),
   );
 
