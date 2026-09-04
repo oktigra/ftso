@@ -97,6 +97,8 @@ export const UPLOAD_PROFILES = {
   gallery: { kinds: ['image'], maxBytes: 8 * 1024 * 1024 },
   // Раздел «Документы» федерации.
   documents: { kinds: ['pdf', 'document'], maxBytes: 20 * 1024 * 1024 },
+  // Закрытые документы федерации (только super-admin): сканы могут быть картинками.
+  'internal-doc': { kinds: ['pdf', 'document', 'image'], maxBytes: 20 * 1024 * 1024 },
 };
 
 const OOXML_EXTS = { docx: 'docx', xlsx: 'xlsx', pptx: 'pptx' };

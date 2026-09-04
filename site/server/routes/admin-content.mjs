@@ -10,7 +10,7 @@ import { safeRefererPath } from '../lib/safe-path.mjs';
 import { logAction } from '../lib/action-log.mjs';
 import { intAtLeast, str, ValidationError } from '../lib/validate.mjs';
 import { parseMultipart } from '../lib/multipart.mjs';
-import { storeUpload, deleteUpload } from '../lib/uploads.mjs';
+import { storeUpload, deleteUpload, uploadById, sendUpload } from '../lib/uploads.mjs';
 import {
   DIRECTORIES,
   directoryByKey,
@@ -28,6 +28,9 @@ import {
   galleryInput,
   federationDocuments,
   galleryItems,
+  internalDocuments,
+  internalDocInput,
+  INTERNAL_DOC_CATEGORIES,
 } from '../lib/content.mjs';
 
 const CONTENT_ROLES = ['super-admin', 'content-manager', 'tournament-admin'];
@@ -231,6 +234,60 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       if (row) deleteUpload(db, row.upload_id, config.upload.dir);
       logAction(db, req.session.user.id, 'document.delete', id, null);
       flash(req, res, 'ok', 'Документ удалён.', '/admin/library');
+    }),
+  );
+
+  // --- ЗАКРЫТЫЕ ДОКУМЕНТЫ ФЕДЕРАЦИИ: только super-admin; наружу не отдаются ---------
+  const VAULT_ROLE = ['super-admin'];
+
+  app.get('/admin/vault', requireRole(...VAULT_ROLE), (req, res) => {
+    res.render('admin/vault', {
+      title: 'Закрытые документы — админка ФТСО',
+      documents: internalDocuments(db),
+      categories: INTERNAL_DOC_CATEGORIES,
+    });
+  });
+
+  app.post(
+    '/admin/vault',
+    requireRole(...VAULT_ROLE),
+    limitWrites,
+    guard(async (req, res) => {
+      const { fields, upload } = await oneFile(req, { profile: 'internal-doc', field: 'file' });
+      try {
+        const data = internalDocInput(fields);
+        const info = db
+          .prepare('INSERT INTO internal_documents (title, category, note, upload_id) VALUES (?, ?, ?, ?)')
+          .run(data.title, data.category, data.note, upload.id);
+        logAction(db, req.session.user.id, 'vault.create', Number(info.lastInsertRowid), { title: data.title, category: data.category });
+      } catch (err) {
+        deleteUpload(db, upload.id, config.upload.dir);
+        throw err;
+      }
+      flash(req, res, 'ok', 'Документ сохранён в закрытый раздел.', '/admin/vault');
+    }),
+  );
+
+  /** Скачивание — вложением, только super-admin. Публичный /files/:id эти файлы не видит. */
+  app.get('/admin/vault/:id/file', requireRole(...VAULT_ROLE), (req, res, next) => {
+    if (!/^\d+$/.test(req.params.id)) return next();
+    const row = db.prepare('SELECT upload_id FROM internal_documents WHERE id = ?').get(Number(req.params.id));
+    if (!row) return next();
+    const upload = uploadById(db, row.upload_id);
+    if (!upload || !sendUpload(res, upload, config.upload.dir)) return next();
+  });
+
+  app.post(
+    '/admin/vault/:id/delete',
+    requireRole(...VAULT_ROLE),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const row = db.prepare('SELECT upload_id FROM internal_documents WHERE id = ?').get(id);
+      db.prepare('DELETE FROM internal_documents WHERE id = ?').run(id);
+      if (row) deleteUpload(db, row.upload_id, config.upload.dir);
+      logAction(db, req.session.user.id, 'vault.delete', id, null);
+      flash(req, res, 'ok', 'Документ удалён.', '/admin/vault');
     }),
   );
 

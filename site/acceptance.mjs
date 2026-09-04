@@ -4282,6 +4282,53 @@ await check('галерея: снимок с EXIF → без EXIF, привяз�
 });
 
 // ---------------------------------------------------------------------------
+// Закрытые документы федерации (/admin/vault): только super-admin, наружу не отдаются
+// ---------------------------------------------------------------------------
+await check('vault: загрузка super-admin → скачивание вложением; /files и tournament-admin не видят; мусор не сиротит файл; удаление', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/vault', { jar });
+  eq(page.status, 200, '/admin/vault для super-admin');
+  assert(page.text.includes('id="v-category"') && page.text.includes('152-ФЗ'), 'нет формы с категориями');
+  assert(page.text.includes('href="/admin/vault"'), 'в меню админки нет пункта');
+  const _csrf = tokenFrom(page.text);
+  const pdf = Buffer.from('%PDF-1.7\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n');
+  const uploadsBefore = db.prepare('SELECT COUNT(*) AS n FROM uploads').get().n;
+  const up = await http('/admin/vault', {
+    method: 'POST', jar,
+    multipart: { fields: { _csrf, title: 'Справка о местоположении сервера № 1633', category: '152-ФЗ', note: 'Timeweb, 04.09.2026' },
+      files: [{ field: 'file', filename: 'spravka-1633.pdf', type: 'application/pdf', buffer: pdf }] },
+  });
+  eq(up.status, 302, 'загрузка в закрытый раздел');
+  const doc = db.prepare('SELECT id, upload_id, category, note FROM internal_documents ORDER BY id DESC LIMIT 1').get();
+  assert(doc && doc.category === '152-ФЗ' && doc.note === 'Timeweb, 04.09.2026', 'запись не создана или поля не те');
+  const list = await http('/admin/vault', { jar });
+  assert(list.text.includes('Справка о местоположении сервера № 1633') && list.text.includes(`/admin/vault/${doc.id}/file`), 'документ не в списке');
+  const file = await http(`/admin/vault/${doc.id}/file`, { jar });
+  eq(file.status, 200, 'скачивание super-admin');
+  assert(/attachment/i.test(file.headers.get('content-disposition') || ''), 'файл должен уходить вложением');
+  eq(file.headers.get('content-type'), 'application/pdf', 'content-type файла');
+  eq((await http(`/files/${doc.upload_id}`)).status, 404, 'публичный /files/:id не должен отдавать закрытый документ');
+  const anon = await http(`/admin/vault/${doc.id}/file`);
+  assert(anon.status !== 200, `без сессии файл отдан: ${anon.status}`);
+  const t = await login(TADMIN.user, TADMIN.pass);
+  eq((await http('/admin/vault', { jar: t.jar })).status, 403, 'tournament-admin должен получить 403');
+  eq((await http(`/admin/vault/${doc.id}/file`, { jar: t.jar })).status, 403, 'tournament-admin не должен скачивать');
+  const bad = await http('/admin/vault', {
+    method: 'POST', jar,
+    multipart: { fields: { _csrf, title: 'Мусор', category: 'Не из списка' },
+      files: [{ field: 'file', filename: 'x.pdf', type: 'application/pdf', buffer: pdf }] },
+  });
+  eq(bad.status, 302, 'мусорная категория — редирект с ошибкой');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM internal_documents WHERE title = ?').get('Мусор').n, 0, 'документ с мусорной категорией не должен сохраняться');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM uploads').get().n, uploadsBefore + 1, 'отклонённая загрузка оставила файл-сироту');
+  const del = await http(`/admin/vault/${doc.id}/delete`, { method: 'POST', form: { _csrf }, jar });
+  eq(del.status, 302, 'удаление');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM internal_documents WHERE id = ?').get(doc.id).n, 0, 'запись не удалена');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM uploads WHERE id = ?').get(doc.upload_id).n, 0, 'файл не удалён вместе с записью');
+  return 'загружен → в списке → скачан вложением (pdf); /files → 404; без сессии — нет; tournament-admin → 403; мусорная категория без сирот; удалён с файлом';
+});
+
+// ---------------------------------------------------------------------------
 // РНИ: поле в админке, вывод на публичном профиле
 // ---------------------------------------------------------------------------
 await check('РНИ: поле в админке → БД → профиль; пустое стирает; мусор отклоняется', async () => {
