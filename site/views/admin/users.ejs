@@ -44,14 +44,15 @@
               <td><%= u.created_at %></td>
               <td>
                 <%
-                /* super-admin сбрасывает пароль ДРУГОГО пользователя БЕЗ его
-                   текущего — это корректно именно для админ-сброса. */
+                /* super-admin выдаёт ДРУГОМУ пользователю временный пароль без его
+                   текущего: покажется один раз, при входе обязательна смена. */
                 %>
+                <% if (user && u.id !== user.id) { %>
                 <form method="post" action="/admin/users/<%= u.id %>/password" class="inline-form">
                   <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                  <input name="password" type="password" placeholder="новый пароль" minlength="10" required>
-                  <button class="btn btn--secondary btn--small" type="submit">Сбросить</button>
+                  <button class="btn btn--secondary btn--small" type="submit">Выдать временный пароль</button>
                 </form>
+                <% } else { %><span class="muted">свой — в «Мой аккаунт»</span><% } %>
               </td>
               <td>
                 <% if (u.id !== user.id) { %>

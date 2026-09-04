@@ -495,3 +495,9 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .gallery-grid img{display:block; width:100%; aspect-ratio:4/3; object-fit:cover; background:var(--surface-2);}
 .gallery-grid figcaption{padding:.6rem .9rem; font-size:.9rem;}
 .gallery-legal{margin-top:1.5rem;}
+
+/* Поле пароля с кнопкой «Показать/Скрыть» (кнопку добавляет app.js) */
+.pw-field{display:flex; gap:.4rem; align-items:center; width:100%;}
+.pw-field input{flex:1 1 auto; min-width:0;}
+.pw-toggle{flex:0 0 auto; font:inherit; font-size:.85rem; padding:.35rem .6rem; border:1px solid var(--border); border-radius:.6rem; background:var(--surface-2); color:var(--text); cursor:pointer;}
+.pw-toggle[aria-pressed="true"]{background:var(--surface); font-weight:600;}

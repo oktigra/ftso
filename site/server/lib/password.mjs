@@ -33,6 +33,15 @@ export function parseHash(stored) {
 }
 
 /** Сверка через timingSafeEqual. Кривая строка в БД -> false, не падение. */
+/** Временный пароль: 14 знаков из букв и цифр, показывается один раз, при входе обязательна смена. */
+export function temporaryPassword(length = 14) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const bytes = randomBytes(length);
+  let out = '';
+  for (let i = 0; i < length; i += 1) out += alphabet[bytes[i] % alphabet.length];
+  return out;
+}
+
 export function verifyPassword(plain, stored) {
   const parsed = parseHash(stored);
   if (!parsed) return false;

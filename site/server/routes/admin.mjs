@@ -1,6 +1,6 @@
 import { requireRole, ROLES, ACTIVE_ROLES } from '../middleware/auth.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
-import { hashPassword, verifyPassword } from '../lib/password.mjs';
+import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
 import { logAction, recentActions } from '../lib/action-log.mjs';
 import {
   playerInput,
@@ -42,7 +42,7 @@ import {
 } from '../lib/tournament-requests.mjs';
 import { sendUpload, uploadById, deleteUpload } from '../lib/uploads.mjs';
 import { attachRequestFiles } from '../lib/content.mjs';
-import { createAccount, issueResetToken } from '../lib/player-accounts.mjs';
+import { createAccount, issueResetToken, accountByPlayer } from '../lib/player-accounts.mjs';
 import {
   activeGuardianFor,
   attachGuardian,
@@ -161,6 +161,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         guardian: activeGuardianFor(db, p.id) || null,
         guardianHistory: guardianHistoryFor(db, p.id),
         consent: consentState(db, p.id),
+        // Кабинет: есть ли аккаунт — для кнопки «ссылка для входа» (когда почта не доходит).
+        account: accountByPlayer(db, p.id) || null,
         // ОТМЕТКА В КАРТОЧКЕ: чем и от какой даты подтверждена публикация.
         proof: db
           .prepare(
@@ -926,21 +928,41 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     }),
   );
 
+  /**
+   * Ссылка для входа в кабинет — на экран секретарю. Нужна, когда письмо не
+   * доходит (почта закрыта или адрес неверный): ссылку передают лично.
+   * Тот же механизм, что в письме: одноразовый токен, 72 часа.
+   */
+  app.post(
+    '/admin/players/:id/cabinet-link',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const account = accountByPlayer(db, id);
+      if (!account) throw new ValidationError('У игрока нет кабинета — он появляется при одобрении заявки');
+      const token = issueResetToken(db, account.id, { hours: 72 });
+      const url = `${req.protocol}://${req.get('host')}/cabinet/reset/${token}`;
+      logAction(db, req.session.user.id, 'player.cabinet.link', id, null);
+      flash(req, res, 'ok', `Ссылка для входа в кабинет (действует 72 часа, один раз; передайте игроку лично): ${url}`, '/admin/players');
+    }),
+  );
+
   app.post(
     '/admin/users/:id/password',
     requireRole(...OWNER_ROLE),
     limitWrites,
     guard((req, res) => {
-      // super-admin сбрасывает пароль ДРУГОГО пользователя БЕЗ его текущего —
-      // это корректно для админ-сброса и прописано явно.
+      // super-admin сбрасывает пароль ДРУГОГО пользователя БЕЗ его текущего:
+      // выдаётся ВРЕМЕННЫЙ пароль, показывается один раз, при входе обязательна смена.
       const id = intAtLeast(req.params.id, 'id');
-      const password = str(req.body.password, 'Новый пароль', { min: 10, max: 200 });
-      const info = db
-        .prepare('UPDATE users SET password_hash = ? WHERE id = ?')
-        .run(hashPassword(password), id);
-      if (!info.changes) throw new ValidationError('Пользователь не найден');
+      if (id === req.session.user.id) throw new ValidationError('Свой пароль меняется в «Мой аккаунт»');
+      const target = db.prepare('SELECT username FROM users WHERE id = ?').get(id);
+      if (!target) throw new ValidationError('Пользователь не найден');
+      const password = temporaryPassword();
+      db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?').run(hashPassword(password), id);
       logAction(db, req.session.user.id, 'user.password.reset', id, null);
-      flash(req, res, 'ok', 'Пароль пользователя сброшен.', '/admin/users');
+      flash(req, res, 'ok', `Временный пароль для «${target.username}»: ${password} — сообщите лично; при входе сайт потребует его сменить. Больше он не покажется.`, '/admin/users');
     }),
   );
 

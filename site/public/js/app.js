@@ -175,6 +175,30 @@
     syncMinor();
   }
 
+  // Показать/скрыть пароль: кнопка у каждого поля пароля. Живёт здесь, а не в
+  // шаблонах: CSP разрешает скрипты только из этого файла.
+  Array.prototype.forEach.call(document.querySelectorAll('input[type="password"]'), function (input) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pw-toggle';
+    btn.setAttribute('aria-pressed', 'false');
+    btn.setAttribute('aria-label', 'Показать пароль');
+    btn.textContent = 'Показать';
+    btn.addEventListener('click', function () {
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.setAttribute('aria-pressed', show ? 'true' : 'false');
+      btn.setAttribute('aria-label', show ? 'Скрыть пароль' : 'Показать пароль');
+      btn.textContent = show ? 'Скрыть' : 'Показать';
+      input.focus();
+    });
+    var wrap = document.createElement('span');
+    wrap.className = 'pw-field';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    wrap.appendChild(btn);
+  });
+
   // Строки таблицы турниров — кликабельны целиком (в макете row как ссылка).
   Array.prototype.forEach.call(document.querySelectorAll('tr[data-href]'), function (row) {
     row.addEventListener('click', function (e) {

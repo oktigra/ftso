@@ -4044,6 +4044,28 @@ try {
     }
   });
 
+  await check('пароль: у каждого поля кнопка «Показать/Скрыть», клик меняет тип поля', async () => {
+    const page = await browser.newPage();
+    try {
+      await page.goto(inst.base + '/login', { waitUntil: 'networkidle' });
+      const r = await page.evaluate(() => {
+        const input = document.querySelector('input[name="password"]');
+        const btn = input && input.parentElement.querySelector('button.pw-toggle');
+        if (!btn) return { btn: false };
+        const t0 = input.type; btn.click(); const t1 = input.type; const l1 = btn.textContent; btn.click(); const t2 = input.type;
+        return { btn: true, t0, t1, l1, t2 };
+      });
+      assert(r.btn, 'нет кнопки .pw-toggle у поля пароля на /login');
+      eq(`${r.t0}→${r.t1}→${r.t2}`, 'password→text→password', 'клики не переключают тип поля');
+      eq(r.l1, 'Скрыть', 'подпись кнопки после показа');
+      const count = await page.evaluate(() => document.querySelectorAll('input[type="password"] + button.pw-toggle, .pw-field > button.pw-toggle').length);
+      assert(count >= 1, 'кнопка не привязана к полю');
+      return 'на /login: password → text → password, подпись «Скрыть»';
+    } finally {
+      await page.close();
+    }
+  });
+
   await check('тема: переход body не дольше 1 с (4.8 с выглядело как «не сработало»)', async () => {
     const page = await browser.newPage();
     try {
@@ -4308,6 +4330,61 @@ await check('временный пароль: вход ведёт на смен�
   } finally {
     db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(saved.password_hash, saved.id);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Пароли: сброс админов временным паролем; ссылка для входа игроку на экране секретаря
+// ---------------------------------------------------------------------------
+await check('сброс пароля админа: временный показан один раз, вход по нему ведёт на смену; себе — отказ', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const me = db.prepare('SELECT id FROM users WHERE username = ?').get(ADMIN.user);
+  const target = db.prepare('SELECT id, username, password_hash, must_change_password FROM users WHERE username = ?').get(TADMIN.user);
+  assert(target, 'нет пользователя turnir');
+  const page = await http('/admin/users', { jar });
+  eq(page.status, 200, '/admin/users');
+  assert(page.text.includes('Выдать временный пароль'), 'нет кнопки выдачи временного пароля');
+  const _csrf = tokenFrom(page.text);
+  try {
+    const r = await http(`/admin/users/${target.id}/password`, { method: 'POST', form: { _csrf }, jar });
+    eq(r.status, 302, 'выдача временного пароля');
+    const after = await http('/admin/users', { jar });
+    const m = after.text.replace(/\s+/g, ' ').match(new RegExp(`Временный пароль для «${TADMIN.user}»: ([A-Za-z0-9]{14})`));
+    assert(m, 'временный пароль не показан во flash');
+    eq(db.prepare('SELECT must_change_password AS f FROM users WHERE id = ?').get(target.id).f, 1, 'флаг обязательной смены не выставлен');
+    const again = await http('/admin/users', { jar });
+    assert(!again.text.includes(m[1]), 'временный пароль показался второй раз');
+    const t = await login(TADMIN.user, m[1]);
+    eq(t.res.status, 302, 'вход по временному');
+    assert(String(t.res.location || '').includes('/admin/account'), `вход ведёт не на смену: ${t.res.location}`);
+    const self = await http(`/admin/users/${me.id}/password`, { method: 'POST', form: { _csrf }, jar });
+    eq(self.status, 302, 'себе — редирект с ошибкой');
+    eq(db.prepare('SELECT must_change_password AS f FROM users WHERE id = ?').get(me.id).f, 0, 'себе временный выдаваться не должен');
+    return `временный для ${TADMIN.user} показан один раз, флаг 1, вход → /admin/account; себе — отказ`;
+  } finally {
+    db.prepare('UPDATE users SET password_hash = ?, must_change_password = ? WHERE id = ?').run(target.password_hash, target.must_change_password, target.id);
+  }
+});
+
+await check('ссылка в кабинет с экрана секретаря: только для игрока с аккаунтом, ссылка открывает форму пароля', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/players', { jar })).text);
+  const noAcc = db.prepare('SELECT p.id FROM players p LEFT JOIN player_accounts a ON a.player_id = p.id WHERE a.player_id IS NULL AND p.anonymized_at IS NULL LIMIT 1').get();
+  const withAcc = db.prepare('SELECT p.id FROM players p JOIN player_accounts a ON a.player_id = p.id WHERE p.anonymized_at IS NULL LIMIT 1').get();
+  assert(noAcc && withAcc, 'нужны игрок без кабинета и игрок с кабинетом');
+  const list = await http('/admin/players', { jar });
+  assert(list.text.includes(`form="link-player-${withAcc.id}"`), 'у игрока с кабинетом нет кнопки «Ссылка в кабинет»');
+  assert(!list.text.includes(`form="link-player-${noAcc.id}"`), 'у игрока без кабинета кнопка не должна показываться');
+  eq((await http(`/admin/players/${noAcc.id}/cabinet-link`, { method: 'POST', form: { _csrf }, jar })).status, 302, 'без кабинета — редирект с ошибкой');
+  const r = await http(`/admin/players/${withAcc.id}/cabinet-link`, { method: 'POST', form: { _csrf }, jar });
+  eq(r.status, 302, 'выдача ссылки');
+  const after = (await http('/admin/players', { jar })).text.replace(/\s+/g, ' ');
+  const m = after.match(/Ссылка для входа в кабинет[^:]*: (https?:\/\/[^\s<"]+\/cabinet\/reset\/[A-Za-z0-9_-]+)/);
+  assert(m, 'ссылка не показана во flash');
+  const path = m[1].replace(/^https?:\/\/[^/]+/, '');
+  const form = await http(path);
+  eq(form.status, 200, 'ссылка должна открыть форму установки пароля');
+  assert(/name="password"/.test(form.text), 'по ссылке нет формы пароля');
+  return `игрок ${withAcc.id}: ссылка показана, ${path.slice(0, 20)}… открывает форму; игрок ${noAcc.id} без кабинета — кнопки нет, POST отклонён`;
 });
 
 // ---------------------------------------------------------------------------
