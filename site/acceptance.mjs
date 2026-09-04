@@ -4070,6 +4070,17 @@ try {
     }
   });
 
+  await check('регистрация: поля возрастной группы нет, дата рождения идёт сразу после пола; группу подсунуть нельзя', async () => {
+    const { registrationInput } = await import('./server/lib/validate.mjs');
+    const html = (await http('/register')).text;
+    assert(!html.includes('name="age_group"'), 'в форме регистрации осталось поле возрастной группы');
+    const order = ['full_name', 'city', 'sex', 'birth_date'].map((n) => html.indexOf(`name="${n}"`));
+    assert(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1])), `порядок полей не ФИО→город→пол→дата: ${order}`);
+    const data = registrationInput({ full_name: 'Тест Тестов', city: 'Смоленск', sex: 'M', birth_date: '1990-01-01', email: 't@example.com', age_group: '35-44', consent_processing: '1' });
+    eq(data.age_group, null, 'подсунутая группа должна игнорироваться');
+    return 'поля нет; порядок ФИО→город→пол→дата; подсунутая группа → null';
+  });
+
   await check('пароль: у каждого поля кнопка «Показать/Скрыть», клик меняет тип поля', async () => {
     const page = await browser.newPage();
     try {
