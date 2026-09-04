@@ -4044,7 +4044,7 @@ try {
     }
   });
 
-  await check('регистрация: блоки представителя/взрослого скрыты до даты рождения, появляются по возрасту и отключаются при скрытии', async () => {
+  await check('регистрация: по умолчанию форма взрослого с чекбоксом согласия; блок представителя добавляется по дате ребёнка; скрытый блок отключён', async () => {
     const page = await browser.newPage();
     try {
       await page.goto(inst.base + '/register', { waitUntil: 'networkidle' });
@@ -4056,7 +4056,7 @@ try {
         return { minorHidden: gone(minor), adultHidden: gone(adult), guardianDisabled: q('#r-g-last').disabled, emailDisabled: q('#r-email').disabled };
       });
       const s0 = await state();
-      assert(s0.minorHidden && s0.adultHidden, `до ввода даты оба блока должны быть скрыты: ${JSON.stringify(s0)}`);
+      assert(s0.minorHidden && !s0.adultHidden && !s0.emailDisabled, `до ввода даты форма взрослого видна, представитель скрыт: ${JSON.stringify(s0)}`);
       const y = new Date().getFullYear();
       await page.fill('#r-birth', `${y - 12}-05-10`);
       await page.dispatchEvent('#r-birth', 'change');
@@ -4078,11 +4078,11 @@ try {
       // согласия: до даты на экране ни одного чекбокса, у взрослого — ровно одно (на обработку); «распространения» в форме нет
       await page.fill('#r-birth', ''); await page.dispatchEvent('#r-birth', 'change');
       const visibleBoxes = () => page.evaluate(() => Array.from(document.querySelectorAll('input[type="checkbox"]')).filter((i) => i.getBoundingClientRect().height > 0).map((i) => i.name));
-      eq((await visibleBoxes()).length, 0, 'до даты не должно быть видимых чекбоксов');
+      eq((await visibleBoxes()).join(','), 'consent_processing', 'до даты виден ровно один чекбокс — согласие на обработку (аудит формы ищет его сразу)');
       await page.fill('#r-birth', `${y - 30}-05-10`); await page.dispatchEvent('#r-birth', 'change');
       eq((await visibleBoxes()).join(','), 'consent_processing', 'у взрослого должно быть ровно одно согласие — на обработку');
       assert(!(await page.content()).includes('name="consent_distribution"'), 'в форме остался чекбокс распространения');
-      return `без даты — оба скрыты и ни одного чекбокса; ребёнок — представитель виден; взрослый — одно согласие; ряды ФИО ровные (${rows.length} ряда)`;
+      return `без даты — форма взрослого с чекбоксом согласия, представитель скрыт; ребёнок — представитель виден, взрослые поля отключены; взрослый — одно согласие; ряды ФИО ровные (${rows.length} ряда)`;
     } finally {
       await page.close();
     }
