@@ -476,6 +476,19 @@ CREATE TABLE IF NOT EXISTS federation_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_federation_documents_cat ON federation_documents (category, id DESC);
 
+-- ЗАКРЫТЫЕ ДОКУМЕНТЫ ФЕДЕРАЦИИ: справки 152-ФЗ, приказы, уведомления РКН, договоры.
+-- Видны и скачиваются ТОЛЬКО super-admin (/admin/vault); в isPubliclyVisibleUpload
+-- НЕ входят — публичный /files/:id их не отдаёт. Хранятся в uploads -> попадают в бэкап.
+CREATE TABLE IF NOT EXISTS internal_documents (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  title      TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 200),
+  category   TEXT NOT NULL CHECK (length(trim(category)) BETWEEN 1 AND 80),
+  note       TEXT,
+  upload_id  INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_internal_documents_cat ON internal_documents (category, id DESC);
+
 -- ГАЛЕРЕЯ. Изображение проходит общий слой загрузки: ресайз и снятие EXIF
 -- (в снимке с телефона лежат координаты) делает lib/uploads.mjs.
 CREATE TABLE IF NOT EXISTS gallery_items (

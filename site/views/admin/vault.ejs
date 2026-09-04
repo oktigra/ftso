@@ -1,0 +1,46 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Закрытые документы</h1>
+  <%- include('_shell') %>
+
+  <div class="panel form-panel">
+    <h2>Добавить документ</h2>
+    <p class="muted">Справки 152-ФЗ, уведомления РКН, приказы, договоры, счета. Видит и скачивает только супер-администратор;
+      на публичном сайте эти файлы не появляются нигде. Файлы входят в ежедневный бэкап сервера.</p>
+    <form method="post" action="/admin/vault" class="stacked-form" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="v-title">Название</label><input id="v-title" name="title" maxlength="200" required placeholder="Справка о местоположении сервера № 1633 от 04.09.2026"></div>
+      <div class="field"><label for="v-category">Категория</label>
+        <select id="v-category" name="category" required>
+          <% categories.forEach(function (c) { %><option value="<%= c %>"><%= c %></option><% }); %>
+        </select>
+      </div>
+      <div class="field"><label for="v-note">Примечание</label><input id="v-note" name="note" maxlength="500" placeholder="кто выдал, срок действия, к чему относится"></div>
+      <div class="field"><label for="v-file">Файл</label><input id="v-file" name="file" type="file" required accept=".pdf,.docx,.xlsx,.pptx,.jpg,.jpeg,.png"></div>
+      <p class="field-hint">PDF, документы Office или изображения до 20 МБ. Тип проверяется по содержимому файла, не по расширению.</p>
+      <button class="btn btn--primary" type="submit">Сохранить</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Документы (<%= documents.length %>)</h2>
+    <% if (!documents.length) { %><p class="muted">Пока нет.</p><% } %>
+    <ul class="log-list">
+      <% documents.forEach(function (d) { %>
+        <li>
+          <code><%= d.category %></code> — <a href="/admin/vault/<%= d.id %>/file"><%= d.title %></a>
+          <span class="muted">(<%= d.original_name %>, <%= Math.max(1, Math.round(d.size_bytes / 1024)) %> КБ, <%= d.created_at.slice(0, 10) %>)</span>
+          <% if (d.note) { %><div class="muted"><%= d.note %></div><% } %>
+          <form method="post" action="/admin/vault/<%= d.id %>/delete" class="inline-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn btn--danger btn--small" type="submit">Удалить</button>
+          </form>
+        </li>
+      <% }); %>
+    </ul>
+  </div>
+</div>
+</main>
+<%- include('../partials/footer') %>

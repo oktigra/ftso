@@ -187,6 +187,30 @@ export function documentInput(body) {
   };
 }
 
+/** Категории закрытых документов — фиксированный список, чтобы папка не расползалась. */
+export const INTERNAL_DOC_CATEGORIES = ['152-ФЗ', 'РКН', 'Приказы', 'Договоры', 'Хостинг и домен', 'Прочее'];
+
+export function internalDocuments(db) {
+  return db
+    .prepare(
+      `SELECT d.id, d.title, d.category, d.note, d.created_at,
+              u.id AS upload_id, u.original_name, u.mime, u.size_bytes
+         FROM internal_documents d JOIN uploads u ON u.id = d.upload_id
+        ORDER BY d.category, d.id DESC`,
+    )
+    .all();
+}
+
+export function internalDocInput(body) {
+  const category = str(body.category, 'Категория', { max: 80 });
+  if (!INTERNAL_DOC_CATEGORIES.includes(category)) throw new ValidationError('Категория: выберите из списка');
+  return {
+    title: str(body.title, 'Название', { max: 200 }),
+    category,
+    note: str(body.note, 'Примечание', { max: 500, required: false }) || null,
+  };
+}
+
 export function galleryInput(body) {
   return {
     title: str(body.title, 'Подпись', { max: 200 }),
