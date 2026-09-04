@@ -28,6 +28,8 @@ STATE="${DEPLOY_STATE:-/root/deploy-watch.last}"
 LOCK="${DEPLOY_LOCK:-/root/deploy-watch.lock}"
 # Копия этого скрипта, которую зовёт systemd; обновляется из origin/main (см. sync_copy).
 SELF="${DEPLOY_SELF:-/root/deploy-watch.sh}"
+# Копия ежедневного бэкапа (ставится install-backup.sh); есть — тоже держим равной origin/main.
+BACKUP_COPY="${DEPLOY_BACKUP_COPY:-/root/backup.sh}"
 # В бою git идёт от пользователя ftso; в приёмке DEPLOY_RUNAS="" отключает runuser.
 RUNAS="${DEPLOY_RUNAS-runuser -u $U --}"
 # Пути памяти: их дифф не требует рестарта pm2 (расширяемо через DEPLOY_MEM_RE).
@@ -78,6 +80,7 @@ sync_copy(){ # $1 — путь в репо, $2 — копия
 }
 sync_copy deploy/deploy-A.sh "$DEPLOY"
 [ -f "$SELF" ] && sync_copy deploy/deploy-watch.sh "$SELF"
+[ -f "$BACKUP_COPY" ] && sync_copy deploy/backup.sh "$BACKUP_COPY"
 
 [ -f "$DEPLOY" ] || { echo "$(now) СТОП: нет $DEPLOY" >>"$LOG"; exit 0; }
 echo "$(now) $CUR -> $NEW: выкат" >>"$LOG"

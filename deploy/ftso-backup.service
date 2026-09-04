@@ -1,0 +1,6 @@
+[Unit]
+Description=FTSO: kopiya BD i zagruzok v /var/backups/ftso
+
+[Service]
+Type=oneshot
+ExecStart=/root/backup.sh
