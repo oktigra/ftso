@@ -36,6 +36,18 @@ import mountAdminContent from './routes/admin-content.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
+/**
+ * Показывать ли плашку «режим разработки»: принудительно по DEV_NOTICE=1 либо
+ * автоматически, пока на сайте нет ни одного результата соревнований —
+ * «наполнение» меряется по факту, а не по флагу, который на бою некому снять.
+ * Запрос — LIMIT 1 по таблице, микросекунды; кэша нарочно нет, чтобы плашка
+ * ушла тем же запросом, что показал первый результат.
+ */
+export function devNoticeOn(db, config) {
+  if (config.devNotice) return true;
+  return !db.prepare('SELECT 1 AS ok FROM results LIMIT 1').get();
+}
+
 export function createApp(config) {
   const db = getDb();
   const app = express();
@@ -135,8 +147,10 @@ export function createApp(config) {
     // Состояние рубильника — в шаблоны: от него зависит текст баннера.
     res.locals.intakeEnabled = config.intakeEnabled;
     // Баннер только на публичной части: в админке он бесполезен, а на узких
-    // админ-таблицах ещё и мешает.
-    res.locals.devNotice = config.devNotice && !req.path.startsWith('/admin');
+    // админ-таблицах ещё и мешает. Держится САМ, пока сайт не наполнен
+    // (решение владельца 04.09: «до наполнения»), — переменной на сервере
+    // крутить некому. DEV_NOTICE=1 — принудительно.
+    res.locals.devNotice = !req.path.startsWith('/admin') && devNoticeOn(db, config);
     next();
   });
 
