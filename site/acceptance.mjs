@@ -4243,13 +4243,21 @@ await check('галерея: снимок с EXIF → без EXIF, привяз�
   eq(img.headers.get('x-content-type-options'), 'nosniff', 'nosniff на картинке');
   assert(!/attachment/i.test(img.headers.get('content-disposition') || ''), 'картинка ушла вложением, а не инлайн');
   eq((await http('/gallery/999999/image')).status, 404, 'чужой id → 404');
+  const card = await http(`/tournaments/${t.id}`);
+  eq(card.status, 200, 'карточка турнира');
+  assert(card.text.includes(`<img src="/gallery/${item.id}/image"`) && card.text.includes('152.1'), 'снимок не показан на карточке своего турнира');
+  const other = db.prepare('SELECT id FROM tournaments WHERE id != ? ORDER BY id LIMIT 1').get(t.id);
+  if (other) {
+    const otherCard = await http(`/tournaments/${other.id}`);
+    assert(!otherCard.text.includes(`/gallery/${item.id}/image`) && otherCard.text.includes('Фотографий с этого турнира пока нет'), 'снимок утёк на карточку чужого турнира');
+  }
   await http('/admin/library/gallery', {
     method: 'POST', jar,
     multipart: { fields: { _csrf, title: 'Мусорный турнир', tournament_id: '999999' },
       files: [{ field: 'file', filename: 'court2.jpg', type: 'image/jpeg', buffer: photo }] },
   });
   eq(db.prepare('SELECT COUNT(*) AS n FROM gallery_items WHERE title = ?').get('Мусорный турнир').n, 0, 'снимок с несуществующим турниром не должен сохраняться');
-  return `снимок ${item.id}: EXIF снят, соревнование «${t.name}», /gallery показывает <img>, image/jpeg + nosniff, пометка 152.1 и путь к удалению; чужой турнир отклонён`;
+  return `снимок ${item.id}: EXIF снят, соревнование «${t.name}», /gallery и карточка турнира показывают <img>, чужая карточка — нет; image/jpeg + nosniff, пометка 152.1 и путь к удалению; чужой турнир отклонён`;
 });
 
 // ---------------------------------------------------------------------------
