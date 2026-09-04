@@ -5,7 +5,7 @@
 //
 // Все загрузки идут через ОБЩИЙ слой (lib/uploads.mjs). Своих проверок файлов
 // здесь нет и быть не должно — за этим следит проверка приёмки.
-import { requireRole } from '../middleware/auth.mjs';
+import { requireRole, rolesFor } from '../middleware/auth.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { logAction } from '../lib/action-log.mjs';
 import { intAtLeast, str, ValidationError } from '../lib/validate.mjs';
@@ -34,8 +34,8 @@ import {
 } from '../lib/content.mjs';
 import { listFeedback, markFeedbackDone, deleteFeedback } from '../lib/feedback.mjs';
 
-const CONTENT_ROLES = ['super-admin', 'content-manager', 'tournament-admin'];
-const NEWS_ROLES = ['super-admin', 'news-editor', 'content-manager'];
+const CONTENT_ROLES = rolesFor('library'); // справочники, документы, галерея
+const NEWS_ROLES = rolesFor('news');
 
 const flash = (req, res, kind, text, back) => {
   req.session.flash = { kind, text };
@@ -239,7 +239,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
   );
 
   // --- ОБРАЩЕНИЯ С ФОРМЫ ОБРАТНОЙ СВЯЗИ: секретарь и super-admin ---------------------
-  const FEEDBACK_ROLES = ['super-admin', 'tournament-admin'];
+  const FEEDBACK_ROLES = rolesFor('feedback');
 
   app.get('/admin/feedback', requireRole(...FEEDBACK_ROLES), (req, res) => {
     res.render('admin/feedback', { title: 'Обращения — админка ФТСО', items: listFeedback(db) });
@@ -270,7 +270,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
   );
 
   // --- ЗАКРЫТЫЕ ДОКУМЕНТЫ ФЕДЕРАЦИИ: только super-admin; наружу не отдаются ---------
-  const VAULT_ROLE = ['super-admin'];
+  const VAULT_ROLE = rolesFor('vault');
 
   app.get('/admin/vault', requireRole(...VAULT_ROLE), (req, res) => {
     res.render('admin/vault', {

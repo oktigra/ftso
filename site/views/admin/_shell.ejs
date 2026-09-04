@@ -4,16 +4,18 @@
 %>
 <div class="admin-bar">
   <a href="/admin"<%= currentPath === '/admin' ? ' aria-current="page"' : '' %>>Сводка</a>
+  <% if (sections.includes('players')) { %>
   <a href="/admin/players"<%= currentPath === '/admin/players' ? ' aria-current="page"' : '' %>>Игроки</a>
   <a href="/admin/registrations"<%= currentPath.indexOf('/admin/registrations') === 0 ? ' aria-current="page"' : '' %>>Заявки<%= typeof pendingCount !== 'undefined' && pendingCount ? ` (${pendingCount})` : '' %></a>
   <a href="/admin/tournaments"<%= currentPath === '/admin/tournaments' ? ' aria-current="page"' : '' %>>Турниры</a>
   <a href="/admin/tournament-requests"<%= currentPath.indexOf('/admin/tournament-requests') === 0 ? ' aria-current="page"' : '' %>>Заявки на турниры<%= typeof pendingTournamentCount !== 'undefined' && pendingTournamentCount ? ` (${pendingTournamentCount})` : '' %></a>
-  <a href="/admin/news"<%= currentPath.indexOf('/admin/news') === 0 ? ' aria-current="page"' : '' %>>Новости</a>
-  <a href="/admin/directories/coaches"<%= currentPath.indexOf('/admin/directories') === 0 ? ' aria-current="page"' : '' %>>Справочники</a>
-  <a href="/admin/library"<%= currentPath.indexOf('/admin/library') === 0 ? ' aria-current="page"' : '' %>>Документы и галерея</a>
-  <a href="/admin/feedback"<%= currentPath.indexOf('/admin/feedback') === 0 ? ' aria-current="page"' : '' %>>Обращения</a>
+  <% } %>
+  <% if (sections.includes('news')) { %><a href="/admin/news"<%= currentPath.indexOf('/admin/news') === 0 ? ' aria-current="page"' : '' %>>Новости</a><% } %>
+  <% if (sections.includes('directories')) { %><a href="/admin/directories/coaches"<%= currentPath.indexOf('/admin/directories') === 0 ? ' aria-current="page"' : '' %>>Справочники</a><% } %>
+  <% if (sections.includes('library')) { %><a href="/admin/library"<%= currentPath.indexOf('/admin/library') === 0 ? ' aria-current="page"' : '' %>>Документы и галерея</a><% } %>
+  <% if (sections.includes('feedback')) { %><a href="/admin/feedback"<%= currentPath.indexOf('/admin/feedback') === 0 ? ' aria-current="page"' : '' %>>Обращения</a><% } %>
   <a href="/admin/account"<%= currentPath === '/admin/account' ? ' aria-current="page"' : '' %>>Мой аккаунт</a>
-  <% if (user && user.role === 'super-admin') { %>
+  <% if (sections.includes('vault')) { %>
     <a href="/admin/vault"<%= currentPath.indexOf('/admin/vault') === 0 ? ' aria-current="page"' : '' %>>Закрытые документы</a>
     <a href="/admin/users"<%= currentPath === '/admin/users' ? ' aria-current="page"' : '' %>>Пользователи</a>
   <% } %>

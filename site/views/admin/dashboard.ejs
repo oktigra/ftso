@@ -26,6 +26,7 @@
     /* Пересчёт ПО КНОПКЕ, не cron. Лок защищает от двойного нажатия;
        протухший лок (пересчёт упал) сбрасывается автоматически. */
     %>
+    <% if (sections.includes('rating')) { %>
     <form method="post" action="/admin/rating/recompute" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <button class="btn btn--primary" type="submit">Пересчитать рейтинг</button>
@@ -33,6 +34,7 @@
         <span class="muted">Идёт пересчёт с <%= lock.started_at %> UTC</span>
       <% } %>
     </form>
+    <% } %>
 
     <% if (snapshots.length) { %>
       <h3>Последние снимки</h3>

@@ -10,7 +10,7 @@ import { SqliteStore } from './lib/session-store.mjs';
 import { csrfMiddleware } from './lib/csrf.mjs';
 import { LoginAttempts } from './lib/login-attempts.mjs';
 import { writeLimiter, publicFormLimiter } from './middleware/write-limit.mjs';
-import { currentUser } from './middleware/auth.mjs';
+import { currentUser, ROLE_SECTIONS } from './middleware/auth.mjs';
 import { intakeGate } from './middleware/intake-gate.mjs';
 import {
   HEADER_PRIMARY,
@@ -121,6 +121,7 @@ export function createApp(config) {
     res.locals.canonicalUrl = res.locals.siteUrl + (req.path === '/' ? '/' : req.path.replace(/\/+$/, ''));
     res.locals.year = new Date().getFullYear();
     res.locals.user = null;
+    res.locals.sections = [];
     res.locals.csrfToken = '';
     // Состояние рубильника — в шаблоны: от него зависит текст баннера.
     res.locals.intakeEnabled = config.intakeEnabled;
@@ -159,6 +160,7 @@ export function createApp(config) {
   // Текущий пользователь — только когда сессия уже разобрана.
   app.use((req, res, next) => {
     res.locals.user = currentUser(req);
+    res.locals.sections = res.locals.user ? ROLE_SECTIONS[res.locals.user.role] || [] : [];
     next();
   });
 
