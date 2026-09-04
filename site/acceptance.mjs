@@ -4134,6 +4134,7 @@ try {
       await page.evaluate(() => { document.documentElement.setAttribute('data-theme', 'light'); });
       const inputBg = await page.evaluate(() => getComputedStyle(document.querySelector('#r-last')).backgroundColor);
       eq(inputBg, 'rgb(255, 255, 255)', 'поле ввода в светлой теме не белое');
+      db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
       const jar = new Jar(); const html = (await http('/register', { jar })).text;
       const bad = await http('/register', { method: 'POST', jar, form: { _csrf: tokenFrom(html), last_name: '', first_name: 'A', city: 'Смоленск', sex: 'M', birth_date: ADULT_BIRTH, email: 'x@example.com', consent_processing: '1' } });
       eq(bad.status, 400, 'ошибочная заявка');
@@ -4607,6 +4608,7 @@ await check('роли: content-manager и news-editor входят, видят �
 // ФИО тремя полями: регистрация, представитель, админка, кабинет; статика с версией
 // ---------------------------------------------------------------------------
 await check('ФИО тремя полями: собирается в full_name, отчество необязательно, без фамилии — ошибка; представитель так же; админка; статика с версией', async () => {
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run(); // лимит 5 заявок/час с адреса — здесь их четыре подряд
   const jar = new Jar();
   const page = await http('/register', { jar });
   for (const n of ['last_name', 'first_name', 'middle_name', 'guardian_last_name', 'guardian_first_name', 'guardian_middle_name']) assert(page.text.includes(`name="${n}"`), `в форме нет поля ${n}`);
