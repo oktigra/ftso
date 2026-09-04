@@ -30,6 +30,10 @@ export function requireRole(...allowed) {
       err.publicMessage = 'Недостаточно прав для этого раздела.';
       return next(err);
     }
+    // Временный пароль (выдан скриптом): пока не сменён — только страница смены.
+    if (user.mustChangePassword && !req.path.startsWith('/admin/account') && req.path !== '/logout') {
+      return res.redirect('/admin/account?change=1');
+    }
     return next();
   };
 }

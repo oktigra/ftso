@@ -22,7 +22,7 @@ export default function mountAuth(app, { db, config, attempts, limitWrites }) {
   app.post('/login', limitWrites, (req, res, next) => {
     const username = String(req.body.username || '').trim().slice(0, 120);
     const password = String(req.body.password || '');
-    const target = safeNext(req.body.next);
+    let target = safeNext(req.body.next);
     const ip = req.ip;
 
     const deny = (error, status = 401) =>
@@ -39,7 +39,7 @@ export default function mountAuth(app, { db, config, attempts, limitWrites }) {
     }
 
     const user = db
-      .prepare('SELECT id, username, password_hash, role FROM users WHERE username = ?')
+      .prepare('SELECT id, username, password_hash, role, must_change_password FROM users WHERE username = ?')
       .get(username);
 
     // Несуществующий логин: ВСЁ РАВНО считаем scrypt от dummy-значения, чтобы
@@ -55,7 +55,8 @@ export default function mountAuth(app, { db, config, attempts, limitWrites }) {
     req.session.regenerate((err) => {
       if (err) return next(err);
       attempts.registerSuccess(username, ip);
-      req.session.user = { id: user.id, username: user.username, role: user.role };
+      req.session.user = { id: user.id, username: user.username, role: user.role, mustChangePassword: Boolean(user.must_change_password) };
+      if (user.must_change_password) target = '/admin/account?change=1';
       logAction(db, user.id, 'login', user.id, null);
       req.session.save((saveErr) => (saveErr ? next(saveErr) : res.redirect(target)));
     });

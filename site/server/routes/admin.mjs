@@ -881,12 +881,13 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       if (!row || !verifyPassword(current, row.password_hash)) {
         throw new ValidationError('Текущий пароль неверен');
       }
-      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(
+      db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(
         hashPassword(next),
         req.session.user.id,
       );
       logAction(db, req.session.user.id, 'user.password.self', req.session.user.id, null);
-      flash(req, res, 'ok', 'Пароль изменён.', '/admin/account');
+      req.session.user.mustChangePassword = false;
+      flash(req, res, 'ok', 'Пароль изменён.', '/admin');
     }),
   );
 
