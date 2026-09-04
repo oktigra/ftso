@@ -4830,7 +4830,7 @@ await check('deploy-watch: дифф только из памяти → ff без
 // ---------------------------------------------------------------------------
 // Ежедневный бэкап: deploy/backup.sh — копия WAL-БД открывается, загрузки в архиве, ротация
 // ---------------------------------------------------------------------------
-await check('backup.sh: копия WAL-БД читается, загрузки в архиве, ротация KEEP, без БД → код 1', async () => {
+await check('backup.sh: копия WAL-БД в архиве, загрузки — инкрементные снимки на жёстких ссылках, ротация KEEP, без БД → код 1', async () => {
   const SCRIPT = resolve(HERE, '..', 'deploy', 'backup.sh');
   assert(existsSync(SCRIPT), 'нет deploy/backup.sh');
   const tmp = mkdtempSync('/tmp/bk-');
@@ -4840,7 +4840,7 @@ await check('backup.sh: копия WAL-БД читается, загрузки �
     src.exec('CREATE TABLE p (id INTEGER PRIMARY KEY, n TEXT)');
     src.prepare('INSERT INTO p (n) VALUES (?)').run('Иванов');
     mkdirSync(resolve(tmp, 'upl', 'x'), { recursive: true });
-    writeFileSync(resolve(tmp, 'upl', 'x', 'f.txt'), 'hello');
+    writeFileSync(resolve(tmp, 'upl', 'x', 'big.bin'), Buffer.alloc(300 * 1024, 7));
     mkdirSync(resolve(tmp, 'docs'));
     writeFileSync(resolve(tmp, 'docs', 'spravka.pdf'), '%PDF-1.7');
     const env = {
@@ -4849,23 +4849,29 @@ await check('backup.sh: копия WAL-БД читается, загрузки �
     };
     const run = (extra = {}) => spawnSync('bash', [SCRIPT], { env: { ...env, ...extra }, encoding: 'utf8' });
     for (let i = 0; i < 3; i++) {
+      if (i === 2) writeFileSync(resolve(tmp, 'upl', 'x', 'new.txt'), 'new');
       eq(run().status, 0, `прогон ${i + 1} упал: ${readFileSync(resolve(tmp, 'log'), 'utf8')}`);
-      await new Promise((r) => setTimeout(r, 1100)); // имя архива с точностью до секунды
+      await new Promise((r) => setTimeout(r, 1100)); // имена с точностью до секунды
     }
-    const archives = spawnSync('ls', ['-1t', resolve(tmp, 'dest')], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean);
-    eq(archives.length, 2, `ротация KEEP=2 после трёх прогонов оставила ${archives.length}`);
-    const last = resolve(tmp, 'dest', archives[0]);
-    const list = spawnSync('tar', ['-tzf', last], { encoding: 'utf8' }).stdout;
-    assert(list.includes('ftso.sqlite') && list.includes('uploads/x/f.txt') && list.includes('152fz/spravka.pdf'), `в архиве нет БД, загрузок или документов 152-ФЗ: ${list}`);
+    const archives = spawnSync('ls', ['-1t', resolve(tmp, 'dest')], { encoding: 'utf8' }).stdout.trim().split('\n').filter((f) => f.endsWith('.tar.gz'));
+    eq(archives.length, 2, `ротация KEEP=2 оставила ${archives.length} архивов`);
+    const list = spawnSync('tar', ['-tzf', resolve(tmp, 'dest', archives[0])], { encoding: 'utf8' }).stdout;
+    assert(list.includes('ftso.sqlite') && list.includes('152fz/spravka.pdf') && !list.includes('uploads/'), `архив должен нести БД и 152-ФЗ, но не загрузки: ${list}`);
     mkdirSync(resolve(tmp, 'chk'));
-    eq(spawnSync('tar', ['-C', resolve(tmp, 'chk'), '-xzf', last]).status, 0, 'архив не распаковался');
+    eq(spawnSync('tar', ['-C', resolve(tmp, 'chk'), '-xzf', resolve(tmp, 'dest', archives[0])]).status, 0, 'архив не распаковался');
     const copy = new Database(resolve(tmp, 'chk', 'ftso.sqlite'), { readonly: true });
     eq(copy.prepare('SELECT count(*) AS n FROM p').get().n, 1, 'копия БД пуста или битая');
     copy.close(); src.close();
+    const snaps = spawnSync('ls', ['-1', resolve(tmp, 'dest', 'uploads')], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean).sort();
+    eq(snaps.length, 2, `ротация снимков KEEP=2 оставила ${snaps.length}`);
+    const { statSync } = await import('node:fs');
+    const ino = snaps.map((d) => statSync(resolve(tmp, 'dest', 'uploads', d, 'x', 'big.bin')).ino);
+    eq(ino[0], ino[1], 'один и тот же файл в двух снимках должен быть одной жёсткой ссылкой (дедупликация)');
+    assert(existsSync(resolve(tmp, 'dest', 'uploads', snaps[1], 'x', 'new.txt')) && !existsSync(resolve(tmp, 'dest', 'uploads', snaps[0], 'x', 'new.txt')), 'новый файл должен быть только в последнем снимке');
     const bad = run({ BACKUP_DB: resolve(tmp, 'none.sqlite'), BACKUP_LOG: resolve(tmp, 'log2') });
     eq(bad.status, 1, 'без БД должен быть код 1');
     assert(readFileSync(resolve(tmp, 'log2'), 'utf8').includes('СТОП: нет БД'), 'нет понятной причины в логе');
-    return `3 прогона → 2 архива (KEEP=2); копия WAL-БД читается (1 строка); загрузки и папка 152-ФЗ в архиве; без БД → код 1 со СТОП в логе`;
+    return `3 прогона → 2 архива и 2 снимка (KEEP=2); БД читается; big.bin в снимках — одна жёсткая ссылка; новый файл только в последнем; без БД → код 1`;
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
