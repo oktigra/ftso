@@ -357,7 +357,14 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 .admin-table--edit{min-width:860px;}
 .admin-table--edit td{padding:.6rem .75rem;}
 .admin-table--edit input, .admin-table--edit select{min-width:0; width:100%; padding:.45rem .6rem; font-size:.92rem;}
-.admin-table--edit .inline-form{gap:.4rem; flex-wrap:nowrap;}
+.admin-table--edit .inline-form{gap:.4rem; flex-wrap:wrap; max-width:14rem;}
+/* Колонка «Действия» ПРИКЛЕЕНА к правому краю прокрутки: таблица игроков шире
+   контейнера, и кнопки «Сохранить / Удалить / Ссылка в кабинет» уезжали за
+   экран — секретарь их не находил (05.09.2026, снимок владельца). */
+.admin-table--edit th:last-child, .admin-table--edit td:last-child{position:sticky; right:0; background:var(--surface); box-shadow:-10px 0 14px -10px rgba(0,0,0,.35);}
+.admin-table--edit thead th:last-child{background:var(--surface);}
+/* Админ-таблицам тесно в 1200px — на широком экране даём контейнеру больше. */
+.admin-shell .container{max-width:1600px;}
 .stack{display:flex; flex-direction:column; gap:1.5rem;}
 .log-list{list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:.5rem; font-size:.9rem;}
 .log-list li{color:var(--muted); border-bottom:1px solid var(--border); padding-bottom:.5rem;}
