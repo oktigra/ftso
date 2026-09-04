@@ -27,9 +27,13 @@
 
         <% if (registration.status === 'pending') { %>
           <p class="muted">
-            Заявка передана секретарю Федерации. Решение придёт письмом на указанную вами почту,
-            здесь оно тоже появится — сохраните эту ссылку.
+            Заявка передана секретарю Федерации. Решение появится на этой странице; если вы
+            указали почту, мы также напишем. Сохраните ссылку на эту страницу:
           </p>
+          <div class="flash-secret" role="status">
+            <code class="flash-secret__value"><%= statusUrl %></code>
+            <button type="button" class="btn btn--primary btn--small" data-copy="<%= statusUrl %>">Скопировать ссылку</button>
+          </div>
         <% } else if (registration.status === 'approved') { %>
           <p class="muted">
             Вы включены в рейтинг Федерации: результаты соревнований публикуются в
