@@ -3412,6 +3412,27 @@ await check('§8.3 из матчей ведут ссылки на профили
   return 'ссылки на 3 профиля и турнир; /rating и /tournaments/:id ведут на профиль';
 });
 
+await check('/privacy раздел 13: ответственный по ст. 22.1 назван (ФИО и должность из OPERATOR)', async () => {
+  const { OPERATOR } = await import('./server/lib/legal.mjs');
+  const r = await http('/privacy');
+  eq(r.status, 200, '/privacy');
+  assert(r.text.includes('Ответственный за организацию обработки персональных данных'), 'нет раздела 13');
+  assert(r.text.replace(/\s+/g, ' ').includes(`Ответственный — ${OPERATOR.responsible.name}, ${OPERATOR.responsible.title}`), 'ФИО и должность ответственного не выведены в Политике');
+  return `в разделе 13: ${OPERATOR.responsible.name}, ${OPERATOR.responsible.title}`;
+});
+
+await check('срез по году рождения (РТТ, решение 04.09): день рождения группу не меняет', async () => {
+  const { ageOn, sliceAge, slicesFor } = await import('./server/lib/age.mjs');
+  const on = '2026-09-04';
+  eq(ageOn('2012-12-31', on), 13, 'полных лет у родившегося 31.12.2012');
+  eq(sliceAge('2012-12-31', on), 14, 'для среза — по году: 2026 − 2012');
+  eq(sliceAge('2012-01-01', on), 14, 'тот же год рождения — тот же срез');
+  eq(slicesFor(sliceAge('2012-12-31', on)).join(','), 'y14,u15,u17,u19', 'срезы четырнадцатилетнего по году');
+  eq(sliceAge('2013-01-01', on), 13, 'следующий год рождения — следующая группа');
+  eq(sliceAge(null, on), null, 'без даты рождения — нет среза');
+  return 'родившиеся в 2012-м оба в «14 лет» (полных 13 и 14), 2013-й — «13 лет»';
+});
+
 await check('§8.4 игрок стоит во всех подходящих возрастных срезах, место считается внутри среза', async () => {
   const st = currentStandings(db);
   const row = st.players.find((p) => p.playerId === p19);
