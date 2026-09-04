@@ -2851,7 +2851,9 @@ await check('переход в 18: детект догоняет просроч�
   const during = await http('/cabinet', { jar });
   assert(during.status === 200, 'детект выкинул активную сессию');
   assert(/исполнилось 18/i.test(during.text), 'представителю не объяснили, почему кабинет закрыт');
-  assert(!during.text.includes('/cabinet/login'), 'вместо объяснения показан вход');
+  // Смотрим ТЕЛО страницы: в шапке «Вход» есть на каждой странице сайта.
+  const duringMain = during.text.slice(during.text.indexOf('<main'), during.text.indexOf('</main>'));
+  assert(!duringMain.includes('/cabinet/login'), 'вместо объяснения показан вход');
 
   const letter = db.prepare("SELECT * FROM mail_outbox WHERE kind = 'cabinet.adult.start' ORDER BY id DESC LIMIT 1").get();
   assert(letter, 'письмо о переходе не поставлено в очередь');
@@ -4021,6 +4023,29 @@ try {
     for (const path of ['/register', '/tournament-request']) {
       const r = await http(path);
       eq(r.status, 200, `страница ${path}`);
+    }
+    // «Вход» в шапке — справа, рядом с «Регистрацией»: без сессии ведёт на
+    // /cabinet/login, у вошедшего игрока превращается в «Кабинет» → /cabinet.
+    const hdr = await page.evaluate(() => {
+      const a = document.querySelector('.header-actions a.btn--login');
+      const r = document.querySelector('.header-actions a.btn--register');
+      return a && r ? { href: a.getAttribute('href'), text: a.textContent.trim(), before: a.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : 0 } : null;
+    });
+    assert(hdr, 'в шапке нет кнопки входа рядом с «Регистрацией»');
+    eq(hdr.href + ' ' + hdr.text + ' ' + hdr.before, '/cabinet/login Вход 1', 'кнопка входа: адрес, подпись, место перед «Регистрацией»');
+    assert(!(await http('/')).text.includes('href="/login"'), 'в публичной шапке появился вход в админку — его там быть не должно');
+    {
+      resetCabinetLimit();
+      const jar = new Jar();
+      const lp = await http('/cabinet/login', { jar });
+      // Кабинет CAB_EMAIL к этому месту уже стёрт тестом «ЗАБВЕНИЕ» — входим взрослым из перехода в 18.
+      const li = await http('/cabinet/login', { method: 'POST', form: { _csrf: tokenFrom(lp.text), email: 'timofey@example.com', password: 'своя-жизнь-2026-корт' }, jar });
+      eq(li.status, 302, 'вход в кабинет для проверки шапки');
+      const home = await http('/', { jar });
+      const m = home.text.match(/<a class="btn btn--secondary btn--login" href="([^"]+)">[\s\S]*?<span class="btn-label">([^<]+)</);
+      assert(m, 'после входа кнопки в шапке нет');
+      eq(m[1] + ' ' + m[2].trim(), '/cabinet Кабинет', 'после входа кнопка должна стать «Кабинет» → /cabinet');
+      resetCabinetLimit();
     }
     // Кабинет без входа отдаёт 403 со страницей «нужен вход» — это рабочая
     // страница, а не заглушка: пустой ответ здесь был бы неотличим от «#».
