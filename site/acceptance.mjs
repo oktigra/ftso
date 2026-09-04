@@ -4127,6 +4127,26 @@ try {
     }
   });
 
+  await check('формы: в светлой теме поля ввода белые, блок ошибок заявки красный', async () => {
+    const page = await browser.newPage();
+    try {
+      await page.goto(inst.base + '/register', { waitUntil: 'networkidle' });
+      await page.evaluate(() => { document.documentElement.setAttribute('data-theme', 'light'); });
+      const inputBg = await page.evaluate(() => getComputedStyle(document.querySelector('#r-last')).backgroundColor);
+      eq(inputBg, 'rgb(255, 255, 255)', 'поле ввода в светлой теме не белое');
+      const jar = new Jar(); const html = (await http('/register', { jar })).text;
+      const bad = await http('/register', { method: 'POST', jar, form: { _csrf: tokenFrom(html), last_name: '', first_name: 'A', city: 'Смоленск', sex: 'M', birth_date: ADULT_BIRTH, email: 'x@example.com', consent_processing: '1' } });
+      eq(bad.status, 400, 'ошибочная заявка');
+      await page.setContent(bad.text.replace('<html', '<html data-theme="light"'), { waitUntil: 'load' });
+      await page.addStyleTag({ url: inst.base + '/static/css/site.css' });
+      const errColor = await page.evaluate(() => { const el = document.querySelector('.form-errors strong'); return el ? getComputedStyle(el).color : null; });
+      assert(errColor && /^rgb\((1[7-9]\d|2\d\d), (\d|[1-9]\d), (\d|[1-9]\d)\)$/.test(errColor), `текст ошибок должен быть красным: ${errColor}`);
+      return `поле #fff; ошибки ${errColor}`;
+    } finally {
+      await page.close();
+    }
+  });
+
   await check('тема: переход body не дольше 1 с (4.8 с выглядело как «не сработало»)', async () => {
     const page = await browser.newPage();
     try {
