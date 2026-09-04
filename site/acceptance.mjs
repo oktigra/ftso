@@ -4282,6 +4282,35 @@ await check('галерея: снимок с EXIF → без EXIF, привяз�
 });
 
 // ---------------------------------------------------------------------------
+// Временный пароль: до смены — только /admin/account; смена снимает флаг
+// ---------------------------------------------------------------------------
+await check('временный пароль: вход ведёт на смену, остальная админка закрыта, после смены открыта', async () => {
+  const { hashPassword } = await import('./server/lib/password.mjs');
+  const saved = db.prepare("SELECT id, password_hash FROM users WHERE username = ?").get(ADMIN.user);
+  assert(saved, 'нет пользователя admin');
+  const temp = 'Temp-Pass-2026x';
+  db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?').run(hashPassword(temp), saved.id);
+  try {
+    const { res: first, jar } = await login(ADMIN.user, temp);
+    eq(first.status, 302, 'вход по временному паролю');
+    assert(String(first.location || '').includes('/admin/account'), `после входа ждал /admin/account, а ушло на ${first.location}`);
+    const blocked = await http('/admin/vault', { jar });
+    eq(blocked.status, 302, 'до смены пароля /admin/vault должен редиректить');
+    assert(String(blocked.location || '').includes('/admin/account'), 'редирект не на смену пароля');
+    const acc = await http('/admin/account', { jar });
+    eq(acc.status, 200, '/admin/account должна быть доступна');
+    assert(acc.text.includes('Вы вошли по временному паролю'), 'нет подсказки о временном пароле');
+    const chg = await http('/admin/account/password', { method: 'POST', form: { _csrf: tokenFrom(acc.text), current_password: temp, new_password: 'My-Own-Pass-2026' }, jar });
+    eq(chg.status, 302, 'смена пароля');
+    eq(db.prepare('SELECT must_change_password AS f FROM users WHERE id = ?').get(saved.id).f, 0, 'флаг не снят');
+    eq((await http('/admin/vault', { jar })).status, 200, 'после смены /admin/vault должна открыться');
+    return 'вход → /admin/account; /admin/vault → редирект; смена → флаг 0, /admin/vault 200';
+  } finally {
+    db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(saved.password_hash, saved.id);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Закрытые документы федерации (/admin/vault): только super-admin, наружу не отдаются
 // ---------------------------------------------------------------------------
 await check('vault: загрузка super-admin → скачивание вложением; /files и tournament-admin не видят; мусор не сиротит файл; удаление', async () => {
@@ -4537,26 +4566,32 @@ await check('logrotate-ftso: dry-run без ошибок, принудитель
 // ---------------------------------------------------------------------------
 // set-secrets.sh: пароль супер-админа и флаг приёма пишутся в .env, короткий пароль отклоняется
 // ---------------------------------------------------------------------------
-await check('set-secrets.sh: пароль ≥12 и --intake пишутся; короткий/со спецсимволом — код 1, файл не тронут; все deploy/*.sh проходят bash -n', async () => {
+await check('set-secrets.sh: временный пароль в базу (хэш подходит, флаг 1), --intake в .env, вывод без хэша; все deploy/*.sh проходят bash -n', async () => {
   const SCRIPT = resolve(HERE, '..', 'deploy', 'set-secrets.sh');
   assert(existsSync(SCRIPT), 'нет deploy/set-secrets.sh');
+  const { verifyPassword } = await import('./server/lib/password.mjs');
   const tmp = mkdtempSync('/tmp/ss-');
   try {
+    const dbFile = resolve(tmp, 't.sqlite');
+    const t = new Database(dbFile); t.exec(readFileSync(resolve(HERE, 'db', 'schema.sql'), 'utf8')); t.close();
     const envFile = resolve(tmp, 'env');
-    writeFileSync(envFile, 'SESSION_SECRET=x\nSUPER_ADMIN_PASSWORD=old\nINTAKE_ENABLED=0\n');
-    const run = (input, args = []) => spawnSync('bash', [SCRIPT, ...args], { input, encoding: 'utf8', env: { ...process.env, ENV_FILE: envFile, SET_SECRETS_RESTART: '' } });
-    const ok = run('Secure_Pass_2026\n', ['--intake', '1']);
-    eq(ok.status, 0, `скрипт упал: ${ok.stdout}${ok.stderr}`);
-    const after = readFileSync(envFile, 'utf8');
-    assert(/^SUPER_ADMIN_PASSWORD=Secure_Pass_2026$/m.test(after) && /^INTAKE_ENABLED=1$/m.test(after), `в .env не то: ${after}`);
-    assert(!/Secure_Pass_2026/.test(ok.stdout), 'пароль попал в вывод скрипта');
-    eq(run('short\n').status, 1, 'короткий пароль должен дать код 1');
-    eq(run('bad space pass\n').status, 1, 'пароль с пробелом должен дать код 1');
-    eq(run('Secure_Pass_2026\n', ['--intake', '7']).status, 1, '--intake 7 должен дать код 1');
-    assert(/^SUPER_ADMIN_PASSWORD=Secure_Pass_2026$/m.test(readFileSync(envFile, 'utf8')), 'отклонённые прогоны изменили .env');
+    writeFileSync(envFile, 'SESSION_SECRET=x\nINTAKE_ENABLED=0\n');
+    const env = { ...process.env, SITE_DIR: HERE, DB_FILE: dbFile, ENV_FILE: envFile, SET_SECRETS_RUNAS: '', SET_SECRETS_RESTART: '' };
+    const r = spawnSync('bash', [SCRIPT, '--intake', '1'], { encoding: 'utf8', env });
+    eq(r.status, 0, `скрипт упал: ${r.stdout}${r.stderr}`);
+    const m = r.stdout.match(/ПАРОЛЬ для admin: ([A-Za-z0-9]{14})/);
+    assert(m, `нет временного пароля в выводе: ${r.stdout}`);
+    const t2 = new Database(dbFile, { readonly: true });
+    const u = t2.prepare("SELECT role, password_hash, must_change_password FROM users WHERE username = 'admin'").get();
+    t2.close();
+    assert(u && u.role === 'super-admin' && u.must_change_password === 1, 'пользователь admin не создан или без флага');
+    assert(verifyPassword(m[1], u.password_hash), 'временный пароль не подходит к хэшу в базе');
+    assert(!r.stdout.includes('scrypt$'), 'хэш попал в вывод');
+    assert(/^INTAKE_ENABLED=1$/m.test(readFileSync(envFile, 'utf8')), 'INTAKE_ENABLED не записан');
+    eq(spawnSync('bash', [SCRIPT, '--intake', '7'], { encoding: 'utf8', env }).status, 1, '--intake 7 должен дать код 1');
     const scripts = spawnSync('sh', ['-c', `ls ${resolve(HERE, '..', 'deploy')}/*.sh`], { encoding: 'utf8' }).stdout.trim().split('\n');
     for (const f of scripts) eq(spawnSync('bash', ['-n', f]).status, 0, `bash -n не прошёл: ${f}`);
-    return `пароль и INTAKE записаны, вывод без пароля; короткий/пробел/--intake 7 → 1 без изменений; bash -n: ${scripts.length} скриптов`;
+    return `admin создан, флаг 1, хэш подходит, вывод без хэша, INTAKE=1; --intake 7 → 1; bash -n: ${scripts.length} скриптов`;
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

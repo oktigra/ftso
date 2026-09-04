@@ -9,7 +9,10 @@ CREATE TABLE IF NOT EXISTS users (
   -- самодостаточная строка scrypt$N$r$p$<соль_b64>$<хэш_b64>
   password_hash TEXT NOT NULL CHECK (password_hash LIKE 'scrypt$%'),
   role          TEXT NOT NULL CHECK (role IN ('super-admin','content-manager','news-editor','tournament-admin')),
-  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  -- 1 — пароль временный (выдан скриптом deploy/set-secrets.sh): до смены
+  -- пользователь видит только /admin/account. Сбрасывается сменой пароля.
+  must_change_password INTEGER NOT NULL DEFAULT 0
 );
 
 -- Игрок — сущность БД: имя одно на игрока, движок не ругается на разные имена.
