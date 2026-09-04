@@ -4399,6 +4399,17 @@ await check('ссылка в кабинет с экрана секретаря: 
 // ---------------------------------------------------------------------------
 // Плашка «режим разработки» по умолчанию выключена; форма обратной связи на /contacts
 // ---------------------------------------------------------------------------
+await check('подпись редакции Политики совпадает с LEGAL_VERSION (машинная и человеческая версии не расходятся)', async () => {
+  const { LEGAL_VERSION, LEGAL_VERSION_LABEL } = await import('./server/lib/legal.mjs');
+  const [y, m, d] = LEGAL_VERSION.split('-');
+  eq(LEGAL_VERSION_LABEL, `Редакция от ${d}.${m}.${y}`, 'подпись не выведена из LEGAL_VERSION');
+  const priv = await http('/privacy');
+  assert(priv.text.includes(LEGAL_VERSION_LABEL), 'на /privacy другая подпись редакции');
+  const cons = await http('/consent');
+  assert(cons.text.includes(LEGAL_VERSION_LABEL), 'на /consent другая подпись редакции');
+  return `${LEGAL_VERSION} ↔ «${LEGAL_VERSION_LABEL}» на /privacy и /consent`;
+});
+
 await check('плашка «режим разработки»: без DEV_NOTICE выключена, DEV_NOTICE=1 включает', async () => {
   const { loadConfig } = await import('./server/lib/config.mjs');
   const saved = process.env.DEV_NOTICE;
