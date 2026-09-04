@@ -531,3 +531,5 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 /* Кнопка формы: по ширине надписи, по центру (в .stacked-form дети растягиваются на всю ширину) */
 .form-actions{display:flex; justify-content:center;}
 .form-actions .btn{width:auto; padding-inline:2rem;}
+
+/* 05.09.2026: повторный выкат — липкая колонка «Действия» (PR #71) не перезапустила процесс */
