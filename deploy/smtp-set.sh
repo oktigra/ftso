@@ -3,13 +3,16 @@
 # Пароль ящика не трогает: пароль приложения — отдельный ключ рядом с обычным.
 # Читается с терминала без эха, в вывод и в лог не попадает. После записи —
 # рестарт pm2, проверка авторизации у почтового сервера и размер очереди писем.
-# Запуск root: bash /tmp/smtp-set.sh
+# Запуск root: bash /tmp/smtp-set.sh          — спросить пароль, записать, перезапустить, проверить
+#              bash /tmp/smtp-set.sh --check  — только проверить авторизацию и очередь (пароль не спрашивает)
 set -u
 SITE="${SITE_DIR:-/var/www/ftso/site}"; E="${ENV_FILE:-$SITE/.env}"
 RUNAS="${SMTP_SET_RUNAS-runuser -u ftso -- env HOME=/home/ftso}"
 RESTART="${SMTP_SET_RESTART-runuser -u ftso -- env HOME=/home/ftso PM2_HOME=/home/ftso/.pm2 bash -lc 'pm2 restart all >/dev/null; sleep 4'}"
 VERIFY="${SMTP_SET_VERIFY-1}"
+CHECK_ONLY=0; [ "${1:-}" = "--check" ] && CHECK_ONLY=1
 [ -f "$E" ] || { echo "СТОП: нет $E"; exit 1; }
+if [ "$CHECK_ONLY" = 0 ]; then
 read -rsp 'пароль приложения Яндекса для info@ (ввод скрыт): ' P; echo
 P=$(printf '%s' "$P" | tr -d ' \r')
 case "$P" in "") echo "СТОП: пусто"; exit 1;; *[!A-Za-z0-9]*) echo "СТОП: пароль приложения — только латинские буквы и цифры"; exit 1;; esac
@@ -19,6 +22,7 @@ grep -qE '^SMTP_USER=' "$E" || echo "SMTP_USER=info@ftso67.ru" >> "$E"
 echo "записано: SMTP_USER=$(grep -oE '^SMTP_USER=.*' "$E" | cut -d= -f2-), пароль ${#P} зн."
 unset P
 [ -n "$RESTART" ] && bash -c "$RESTART"
+fi
 [ "$VERIFY" = 1 ] || exit 0
 $RUNAS bash -c "cd '$SITE' && node -e '
 import(process.cwd() + \"/server/lib/config.mjs\").then(async (c) => {
