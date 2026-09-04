@@ -507,7 +507,9 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .flash-secret__value{font-size:1.25rem; font-weight:700; letter-spacing:.04em; word-break:break-all; color:var(--text);}
 
 /* Три поля ФИО в ряд; на узком экране — столбиком */
-.field-row{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.75rem 1rem;}
+.field-row{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.75rem 1rem; align-items:end;}
+.field-row .field{display:flex; flex-direction:column; justify-content:flex-end; min-width:0;}
+.field-row .field label{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 @media (max-width:640px){.field-row{grid-template-columns:1fr;}}
 .name-cell{display:grid; gap:.25rem; min-width:11rem;}
 .name-cell input{width:100%;}

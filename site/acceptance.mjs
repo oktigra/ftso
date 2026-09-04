@@ -4064,7 +4064,16 @@ try {
       await page.dispatchEvent('#r-birth', 'change');
       const s2 = await state();
       assert(s2.minorHidden && !s2.adultHidden && s2.guardianDisabled && !s2.emailDisabled, `взрослый: ждал скрытый и отключённый блок представителя: ${JSON.stringify(s2)}`);
-      return 'без даты — оба скрыты; ребёнок — представитель виден, e-mail взрослого отключён; взрослый — наоборот';
+      // ряды ФИО: три поля на одной линии (нижние края равны) — метка не должна ронять поле
+      await page.setViewportSize({ width: 998, height: 900 });
+      await page.fill('#r-birth', `${y - 12}-05-10`);
+      await page.dispatchEvent('#r-birth', 'change');
+      const rows = await page.evaluate(() => Array.from(document.querySelectorAll('.field-row')).map((row) => {
+        const bottoms = Array.from(row.querySelectorAll('input')).map((i) => Math.round(i.getBoundingClientRect().bottom));
+        return { n: bottoms.length, spread: Math.max(...bottoms) - Math.min(...bottoms) };
+      }));
+      assert(rows.length >= 2 && rows.every((r) => r.n === 3 && r.spread <= 2), `поля в рядах ФИО не на одной линии: ${JSON.stringify(rows)}`);
+      return `без даты — оба скрыты; ребёнок — представитель виден, e-mail взрослого отключён; взрослый — наоборот; ряды ФИО ровные (${rows.length} ряда)`;
     } finally {
       await page.close();
     }
