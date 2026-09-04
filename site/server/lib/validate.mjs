@@ -200,7 +200,8 @@ export function registrationInput(body) {
     full_name: str(body.full_name, 'ФИО', { max: 120 }),
     city: str(body.city, 'Город', { max: 80 }),
     sex: oneOf(body.sex, 'Пол', SEXES),
-    age_group: oneOf(body.age_group, 'Возрастная группа', AGE_GROUPS, { required: false }),
+    // Возрастная группа НЕ вводится: считается от даты рождения (решение федерации 23.08).
+    age_group: null,
     birth_date: birthDate(body.birth_date),
   };
   if (!isMinor(base.birth_date)) {

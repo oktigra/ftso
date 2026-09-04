@@ -57,17 +57,6 @@
         </div>
 
         <div class="field">
-          <label for="r-age">Возрастная группа</label>
-          <select id="r-age" name="age_group" aria-describedby="r-age-hint">
-            <option value="">не указана</option>
-            <% ['до 19','19-34','35-44','45-54','55+'].forEach(function (g) { %>
-              <option value="<%= g %>"<%= values.age_group === g ? ' selected' : '' %>><%= g %></option>
-            <% }); %>
-          </select>
-          <p class="field-hint" id="r-age-hint">Необязательно — если не уверены, оставьте пустым, уточнит секретарь.</p>
-        </div>
-
-        <div class="field">
           <label for="r-birth">Дата рождения <span class="req" aria-hidden="true">*</span></label>
           <input id="r-birth" name="birth_date" type="date" required aria-describedby="r-birth-hint"
                  value="<%= values.birth_date || '' %>">
