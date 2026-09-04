@@ -12,6 +12,8 @@ set -u
 SITE="${BACKUP_SITE:-/var/www/ftso/site}"
 DB="${BACKUP_DB:-$SITE/db/ftso.sqlite}"
 UPL="${BACKUP_UPLOADS:-$SITE/storage/uploads}"
+# Папка документов 152-ФЗ (справки, приказы, уведомления) — вне git и вне webroot; берём, если есть.
+DOCS="${BACKUP_DOCS:-/home/ftso/152fz}"
 DEST="${BACKUP_DEST:-/var/backups/ftso}"
 KEEP="${BACKUP_KEEP:-14}"
 LOG="${BACKUP_LOG:-/root/backup.log}"
@@ -32,10 +34,13 @@ TMP=$(mktemp -d "${TMPDIR:-/tmp}/ftso-backup.XXXXXX"); trap 'rm -rf "$TMP"' EXIT
 # 2. загрузки
 if [ -d "$UPL" ]; then cp -a "$UPL" "$TMP/uploads"; else mkdir "$TMP/uploads"; fi
 
+# 2а. документы 152-ФЗ (если папка заведена)
+if [ -d "$DOCS" ]; then cp -a "$DOCS" "$TMP/152fz"; else mkdir "$TMP/152fz"; fi
+
 # 3. архив с датой и временем
 STAMP=$(date +%Y-%m-%d_%H%M%S)
 OUT="$DEST/ftso-$STAMP.tar.gz"
-tar -C "$TMP" -czf "$OUT" ftso.sqlite uploads && chmod 600 "$OUT" \
+tar -C "$TMP" -czf "$OUT" ftso.sqlite uploads 152fz && chmod 600 "$OUT" \
   || { echo "$(now) СТОП: архив не собрался" >>"$LOG"; rm -f "$OUT"; exit 1; }
 
 # 4. ротация: оставить KEEP самых свежих

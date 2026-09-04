@@ -4423,8 +4423,10 @@ await check('backup.sh: копия WAL-БД читается, загрузки �
     src.prepare('INSERT INTO p (n) VALUES (?)').run('Иванов');
     mkdirSync(resolve(tmp, 'upl', 'x'), { recursive: true });
     writeFileSync(resolve(tmp, 'upl', 'x', 'f.txt'), 'hello');
+    mkdirSync(resolve(tmp, 'docs'));
+    writeFileSync(resolve(tmp, 'docs', 'spravka.pdf'), '%PDF-1.7');
     const env = {
-      ...process.env, BACKUP_SITE: HERE, BACKUP_DB: resolve(tmp, 'src.sqlite'), BACKUP_UPLOADS: resolve(tmp, 'upl'),
+      ...process.env, BACKUP_SITE: HERE, BACKUP_DB: resolve(tmp, 'src.sqlite'), BACKUP_UPLOADS: resolve(tmp, 'upl'), BACKUP_DOCS: resolve(tmp, 'docs'),
       BACKUP_DEST: resolve(tmp, 'dest'), BACKUP_KEEP: '2', BACKUP_LOG: resolve(tmp, 'log'),
     };
     const run = (extra = {}) => spawnSync('bash', [SCRIPT], { env: { ...env, ...extra }, encoding: 'utf8' });
@@ -4436,7 +4438,7 @@ await check('backup.sh: копия WAL-БД читается, загрузки �
     eq(archives.length, 2, `ротация KEEP=2 после трёх прогонов оставила ${archives.length}`);
     const last = resolve(tmp, 'dest', archives[0]);
     const list = spawnSync('tar', ['-tzf', last], { encoding: 'utf8' }).stdout;
-    assert(list.includes('ftso.sqlite') && list.includes('uploads/x/f.txt'), `в архиве нет БД или загрузок: ${list}`);
+    assert(list.includes('ftso.sqlite') && list.includes('uploads/x/f.txt') && list.includes('152fz/spravka.pdf'), `в архиве нет БД, загрузок или документов 152-ФЗ: ${list}`);
     mkdirSync(resolve(tmp, 'chk'));
     eq(spawnSync('tar', ['-C', resolve(tmp, 'chk'), '-xzf', last]).status, 0, 'архив не распаковался');
     const copy = new Database(resolve(tmp, 'chk', 'ftso.sqlite'), { readonly: true });
@@ -4445,7 +4447,7 @@ await check('backup.sh: копия WAL-БД читается, загрузки �
     const bad = run({ BACKUP_DB: resolve(tmp, 'none.sqlite'), BACKUP_LOG: resolve(tmp, 'log2') });
     eq(bad.status, 1, 'без БД должен быть код 1');
     assert(readFileSync(resolve(tmp, 'log2'), 'utf8').includes('СТОП: нет БД'), 'нет понятной причины в логе');
-    return `3 прогона → 2 архива (KEEP=2); копия WAL-БД читается (1 строка); загрузки на месте; без БД → код 1 со СТОП в логе`;
+    return `3 прогона → 2 архива (KEEP=2); копия WAL-БД читается (1 строка); загрузки и папка 152-ФЗ в архиве; без БД → код 1 со СТОП в логе`;
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
