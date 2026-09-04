@@ -4589,9 +4589,16 @@ await check('set-secrets.sh: временный пароль в базу (хэш
     assert(!r.stdout.includes('scrypt$'), 'хэш попал в вывод');
     assert(/^INTAKE_ENABLED=1$/m.test(readFileSync(envFile, 'utf8')), 'INTAKE_ENABLED не записан');
     eq(spawnSync('bash', [SCRIPT, '--intake', '7'], { encoding: 'utf8', env }).status, 1, '--intake 7 должен дать код 1');
+    writeFileSync(envFile, 'SESSION_SECRET=x\nSUPER_ADMIN_USERNAME=Korotkov\n');
+    const r2 = spawnSync('bash', [SCRIPT], { encoding: 'utf8', env });
+    eq(r2.status, 0, `скрипт с SUPER_ADMIN_USERNAME упал: ${r2.stdout}`);
+    assert(/ПАРОЛЬ для Korotkov:/.test(r2.stdout), 'имя супер-админа не взято из .env');
+    const t3 = new Database(dbFile, { readonly: true });
+    eq(t3.prepare("SELECT COUNT(*) AS n FROM users WHERE username = 'Korotkov' AND role = 'super-admin' AND must_change_password = 1").get().n, 1, 'Korotkov не создан с флагом');
+    t3.close();
     const scripts = spawnSync('sh', ['-c', `ls ${resolve(HERE, '..', 'deploy')}/*.sh`], { encoding: 'utf8' }).stdout.trim().split('\n');
     for (const f of scripts) eq(spawnSync('bash', ['-n', f]).status, 0, `bash -n не прошёл: ${f}`);
-    return `admin создан, флаг 1, хэш подходит, вывод без хэша, INTAKE=1; --intake 7 → 1; bash -n: ${scripts.length} скриптов`;
+    return `admin создан, флаг 1, хэш подходит, вывод без хэша, INTAKE=1; --intake 7 → 1; имя из .env (Korotkov) работает; bash -n: ${scripts.length} скриптов`;
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

@@ -8,7 +8,9 @@ set -u
 SITE="${SITE_DIR:-/var/www/ftso/site}"
 E="${ENV_FILE:-$SITE/.env}"
 DB="${DB_FILE:-$SITE/db/ftso.sqlite}"
-ADMIN="${ADMIN_USERNAME:-admin}"
+# Имя супер-админа: аргумент окружения → SUPER_ADMIN_USERNAME из .env → admin.
+ADMIN="${ADMIN_USERNAME:-$(grep -oE "^SUPER_ADMIN_USERNAME=.*" "${ENV_FILE:-/var/www/ftso/site/.env}" 2>/dev/null | cut -d= -f2- | tr -d "\r")}"
+ADMIN="${ADMIN:-admin}"
 RUNAS="${SET_SECRETS_RUNAS-runuser -u ftso -- env HOME=/home/ftso}"
 RESTART="${SET_SECRETS_RESTART-runuser -u ftso -- env HOME=/home/ftso PM2_HOME=/home/ftso/.pm2 bash -lc 'pm2 restart all >/dev/null; sleep 3; pm2 ls | grep -oE \"online|errored\" | sort | uniq -c'}"
 INTAKE=""
