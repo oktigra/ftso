@@ -4682,6 +4682,31 @@ await check('set-secrets.sh: временный пароль в базу (хэш
 });
 
 // ---------------------------------------------------------------------------
+// smtp-set.sh: пароль приложения пишется в .env без эха; пустой/короткий/со спецсимволом — отказ
+// ---------------------------------------------------------------------------
+await check('smtp-set.sh: пароль приложения в .env (пробелы сняты), SMTP_USER дописан; пустой/короткий/спецсимвол → код 1 без изменений', async () => {
+  const SCRIPT = resolve(HERE, '..', 'deploy', 'smtp-set.sh');
+  assert(existsSync(SCRIPT), 'нет deploy/smtp-set.sh');
+  const tmp = mkdtempSync('/tmp/sm-');
+  try {
+    const envFile = resolve(tmp, 'env');
+    writeFileSync(envFile, 'SMTP_HOST=smtp.yandex.ru\nSMTP_PASS=old\n');
+    const run = (input) => spawnSync('bash', [SCRIPT], { input, encoding: 'utf8', env: { ...process.env, ENV_FILE: envFile, SMTP_SET_RESTART: '', SMTP_SET_VERIFY: '0' } });
+    const ok = run('abcd efgh ijkl mnop\n');
+    eq(ok.status, 0, `скрипт упал: ${ok.stdout}${ok.stderr}`);
+    const after = readFileSync(envFile, 'utf8');
+    assert(/^SMTP_PASS=abcdefghijklmnop$/m.test(after), `пароль не записан или пробелы не сняты: ${after}`);
+    assert(/^SMTP_USER=info@ftso67\.ru$/m.test(after), 'SMTP_USER не дописан');
+    assert(!ok.stdout.includes('abcdefghijklmnop'), 'пароль попал в вывод');
+    for (const bad of ['\n', 'short\n', 'bad$pass!123456\n']) eq(run(bad).status, 1, `«${bad.trim()}» должен дать код 1`);
+    assert(/^SMTP_PASS=abcdefghijklmnop$/m.test(readFileSync(envFile, 'utf8')), 'отклонённые прогоны изменили .env');
+    return 'записан 16 зн. без пробелов, SMTP_USER дописан, вывод без пароля; пустой/короткий/спецсимвол → 1';
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Отчёт
 // ---------------------------------------------------------------------------
 const checks = results.filter((r) => r.name);
