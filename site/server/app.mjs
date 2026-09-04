@@ -146,6 +146,7 @@ export function createApp(config) {
     res.locals.csrfToken = '';
     // Состояние рубильника — в шаблоны: от него зависит текст баннера.
     res.locals.intakeEnabled = config.intakeEnabled;
+    res.locals.cabinetSignedIn = false; // сессии здесь ещё нет — выставляется ниже, после session()
     // Баннер только на публичной части: в админке он бесполезен, а на узких
     // админ-таблицах ещё и мешает. Держится САМ, пока сайт не наполнен
     // (решение владельца 04.09: «до наполнения»), — переменной на сервере
@@ -183,6 +184,8 @@ export function createApp(config) {
   // Текущий пользователь — только когда сессия уже разобрана.
   app.use((req, res, next) => {
     res.locals.user = currentUser(req);
+    // Кнопка «Вход» в шапке: игрок или представитель уже в кабинете — «Кабинет».
+    res.locals.cabinetSignedIn = Boolean(req.session && (req.session.player || req.session.guardian));
     res.locals.sections = res.locals.user ? ROLE_SECTIONS[res.locals.user.role] || [] : [];
     next();
   });

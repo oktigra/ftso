@@ -283,8 +283,10 @@ tbody tr:hover{background:var(--surface-2);}
   .info-card .ic-sep{display:none;}
 }
 @media (max-width:480px){
-  .btn--register .btn-label{display:none;}
-  .btn--register{padding:.75rem;}
+  .btn--register .btn-label, .btn--login .btn-label{display:none;}
+  .btn--register, .btn--login{padding:.55rem;}
+  .header-actions{gap:.35rem;}
+  .header-inner{gap:.6rem;}
   .brand-sub{display:none;}
 }
 /* mobile performance — тушим тяжёлые для телефона эффекты */
