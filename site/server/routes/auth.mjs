@@ -56,6 +56,8 @@ export default function mountAuth(app, { db, config, attempts, limitWrites }) {
       if (err) return next(err);
       attempts.registerSuccess(username, ip);
       req.session.user = { id: user.id, username: user.username, role: user.role, mustChangePassword: Boolean(user.must_change_password) };
+      // «Сохранить данные для входа» — кука живёт rememberDays вместо 12 часов (rolling продлевает тем же сроком).
+      if (req.body.remember === '1') req.session.cookie.maxAge = 1000 * 60 * 60 * 24 * config.rememberDays;
       if (user.must_change_password) target = '/admin/account?change=1';
       logAction(db, user.id, 'login', user.id, null);
       req.session.save((saveErr) => (saveErr ? next(saveErr) : res.redirect(target)));
