@@ -38,6 +38,7 @@ import { revokeWard } from './guardians.mjs';
 import { guardianOwns } from './identity.mjs';
 import { recordConsent, revokeCovered, syncPlayerPublicFlag } from './consent-journal.mjs';
 import { revokePlayerSessions } from './erasure.mjs';
+import { deleteUpload } from './uploads.mjs';
 import {
   queueMail,
   mailAdultTransition,
@@ -252,7 +253,7 @@ export function resendTransitionLink(db, contactEmail, { baseUrl }) {
  * завершать переход нечем. Отказ — это не «пустая форма», а требование удаления,
  * и обрабатывается он отдельным экраном (см. routes/cabinet.mjs).
  */
-export function completeTransition(db, accountId, { email, password, password2, distribution = false, ip = null }) {
+export function completeTransition(db, accountId, { email, password, password2, uploadDir = null, ip = null }) {
   const account = db.prepare('SELECT * FROM player_accounts WHERE id = ?').get(accountId);
   if (!account) throw new ValidationError('Кабинет не найден.');
   if (!isAwaitingSelf(account)) throw new ValidationError('Переход для этого кабинета не требуется.');
@@ -294,14 +295,16 @@ export function completeTransition(db, accountId, { email, password, password2, 
     //    срок хранения его данных.
     revokeWard(db, player.id, { source: 'web', ip });
 
-    // 3. Собственное согласие — текущей редакции.
+    // 3. Собственное согласие на ОБРАБОТКУ — текущей редакции.
     recordConsent(db, {
       playerId: player.id, subjectRef, kind: 'processing', event: 'granted', source: 'web', ip,
     });
-    if (distribution) {
-      recordConsent(db, {
-        playerId: player.id, subjectRef, kind: 'distribution', event: 'granted', source: 'web', ip,
-      });
+    // Согласие на ФОТО (ст. 10.1) представителя отозвано в шаге 1, а своё даётся
+    // только загрузкой в кабинете. Поэтому фото, загруженное представителем,
+    // уходит вместе с его согласием: взрослый загрузит своё — и этим согласится.
+    if (player.photo_upload_id) {
+      db.prepare('UPDATE players SET photo_upload_id = NULL WHERE id = ?').run(player.id);
+      if (uploadDir) deleteUpload(db, player.photo_upload_id, uploadDir);
     }
     syncPlayerPublicFlag(db, player.id);
 

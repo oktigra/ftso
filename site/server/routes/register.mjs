@@ -44,9 +44,10 @@ export default function mountRegister(app, { db, config, limitRegister }) {
       }
 
       const data = registrationInput(req.body);
-      // РАЗДЕЛЬНЫЕ отметки (ч. 6 ст. 10.1). Обработка обязательна — без неё
-      // нет основания. Публикация добровольна: отказ не мешает подать заявку.
-      const acceptDistribution = req.body.consent_distribution === '1';
+      // Одна отметка — на ОБРАБОТКУ (ст. 9). Согласия на распространение в
+      // форме нет: результаты публикуются по факту участия (п. 5 ч. 1 ст. 6),
+      // фото — действием в кабинете. Поле consent_distribution, если пришло
+      // от старой формы, молча игнорируется.
 
       if (data.guardian) {
         // НЕСОВЕРШЕННОЛЕТНИЙ: обе отметки представителя обязательны и проверяются
@@ -88,12 +89,10 @@ export default function mountRegister(app, { db, config, limitRegister }) {
         consent_processing: req.body.consent_processing === '1',
         consent_guardian_child: req.body.consent_guardian_child === '1',
         consent_guardian_self: req.body.consent_guardian_self === '1',
-        consent_distribution: acceptDistribution,
       };
 
       const { token } = createRegistration(db, {
         ...data,
-        distribution: acceptDistribution,
         ip: req.ip,
       });
 
@@ -125,7 +124,6 @@ export default function mountRegister(app, { db, config, limitRegister }) {
           consent_processing: req.body.consent_processing === '1',
           consent_guardian_child: req.body.consent_guardian_child === '1',
           consent_guardian_self: req.body.consent_guardian_self === '1',
-          consent_distribution: req.body.consent_distribution === '1',
         };
         return req.session.save(() => renderForm(req, res, { errors: err.messages, status: 400 }));
       }

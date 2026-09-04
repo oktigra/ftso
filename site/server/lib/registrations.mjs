@@ -41,13 +41,13 @@ export function findNameMatches(db, fullName) {
   const target = normalizeName(fullName);
   if (!target) return [];
   return db
-    .prepare('SELECT id, full_name, city, sex, age_group, is_public FROM players')
+    .prepare('SELECT id, full_name, city, sex, age_group FROM players')
     .all()
     .filter((p) => normalizeName(p.full_name) === target);
 }
 
 export function createRegistration(db, {
-  full_name, city, sex, age_group, email, birth_date, guardian = null, distribution, ip,
+  full_name, city, sex, age_group, email, birth_date, guardian = null, ip,
 }) {
   const token = randomBytes(24).toString('base64url');
   const tx = db.transaction(() => {
@@ -68,10 +68,11 @@ export function createRegistration(db, {
     // Согласия пишутся В ТОТ ЖЕ МОМЕНТ и той же транзакцией: заявка без
     // зафиксированного согласия — это обработка ПДн без основания.
     //
-    // Для несовершеннолетнего записей ТРИ, и это не формальность:
+    // Для несовершеннолетнего записей ДВЕ, и это не формальность:
     //  · обработка данных РЕБЁНКА — субъект ребёнок, основание названо в basis;
-    //  · распространение данных РЕБЁНКА — если представитель его разрешил;
     //  · обработка данных ПРЕДСТАВИТЕЛЯ — субъект ОН САМ, отдельной отметкой.
+    // Согласия на распространение здесь нет: результаты публикуются по факту
+    // участия (п. 5 ч. 1 ст. 6), а фото — отдельным действием в кабинете.
     // ФИО и почта представителя в записи ребёнка НЕ дублируются: у данных
     // представителя свой срок хранения, и размазав их по чужим записям, удалить
     // их в срок было бы невозможно (журнал неизменяем).
@@ -82,7 +83,6 @@ export function createRegistration(db, {
       // чужим записям: журнал неизменяем, и удалить их в свой срок стало бы
       // невозможно. Представитель опознаётся своей записью и basis.
       subjectRef: guardian ? `${full_name} (несовершеннолетний участник)` : `${full_name} <${email}>`,
-      distribution,
       source: 'web',
       ip,
       basis: guardian ? REPRESENTATIVE_BASIS : null,
@@ -91,16 +91,6 @@ export function createRegistration(db, {
     return { id, token };
   });
   return tx();
-}
-
-/** Дал ли заявитель ОТДЕЛЬНОЕ согласие на публикацию (ст. 10.1). */
-export function registrationAllowsPublication(db, registrationId) {
-  const row = db
-    .prepare(
-      "SELECT 1 AS ok FROM consents WHERE registration_id = ? AND kind = 'distribution' AND event = 'granted' LIMIT 1",
-    )
-    .get(registrationId);
-  return Boolean(row);
 }
 
 export function byToken(db, token) {

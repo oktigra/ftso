@@ -385,6 +385,14 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
         if (newEmail) {
           db.prepare('UPDATE player_accounts SET email = ? WHERE player_id = ?').run(newEmail, profile.id);
         }
+        // ЗАГРУЗКА ФОТО = СОГЛАСИЕ на его распространение (ст. 10.1, раздел 2
+        // Согласия). Замена — отзыв по прежнему снимку и выдача по новому, обе
+        // строки той же транзакцией, что и сама замена: фото и согласие не
+        // расходятся ни на миг.
+        if (storedPhoto) {
+          if (previousPhoto) setDistributionConsent(db, profile.id, false, { source: 'web', ip: req.ip });
+          setDistributionConsent(db, profile.id, true, { source: 'web', ip: req.ip });
+        }
       })();
       // Старое фото убираем ПОСЛЕ успешной замены: иначе неудачная загрузка
       // оставила бы профиль вообще без фотографии.
@@ -394,6 +402,11 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
         photo: Boolean(storedPhoto),
         by: byGuardian ? 'guardian' : 'player',
       });
+      if (storedPhoto) {
+        logAction(db, null, 'consent.distribution.granted', profile.id, {
+          source: 'web', photo: true, by: byGuardian ? 'guardian' : 'player',
+        });
+      }
       return flash(req, res, 'ok', 'Профиль обновлён.', '/cabinet');
     } catch (err) {
       if (storedPhoto) {
@@ -419,39 +432,20 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
     const profile = req.playerProfile;
     if (!profile.photo_upload_id) return flash(req, res, 'error', 'Фотография не загружена.', '/cabinet');
     const uploadId = profile.photo_upload_id;
+    const byGuardian = req.actor.kind === 'guardian';
     db.transaction(() => {
       db.prepare('UPDATE players SET photo_upload_id = NULL WHERE id = ?').run(profile.id);
       deleteUpload(db, uploadId, config.upload.dir);
+      // УДАЛЕНИЕ ФОТО = ОТЗЫВ согласия на его распространение (п. 2.5 Согласия).
+      // Единственный способ отозвать: отдельной кнопки «отозвать» нет, потому
+      // что фото и есть согласие — снял фото, снял и согласие.
+      setDistributionConsent(db, profile.id, false, { source: 'web', ip: req.ip });
     })();
-    logAction(db, null, 'cabinet.photo.delete', profile.id, {
-      by: req.actor.kind === 'guardian' ? 'guardian' : 'player',
+    logAction(db, null, 'cabinet.photo.delete', profile.id, { by: byGuardian ? 'guardian' : 'player' });
+    logAction(db, null, 'consent.distribution.revoked', profile.id, {
+      source: 'web', photo: true, by: byGuardian ? 'guardian' : 'player',
     });
-    return flash(req, res, 'ok', 'Фотография удалена.', '/cabinet');
-  });
-
-  /**
-   * Согласие на публикацию игрок отзывает и возвращает САМ — это его право.
-   * За несовершеннолетнего им распоряжается законный представитель: согласие на
-   * распространение за ребёнка давал он, ему же принадлежит и отзыв.
-   */
-  app.post('/cabinet/publication', requireCabinet, limitWrites, (req, res) => {
-    const profile = req.playerProfile;
-    const byGuardian = req.actor.kind === 'guardian';
-    const wanted = String(req.body.publish || '') === '1';
-    setDistributionConsent(db, profile.id, wanted, { source: 'web', ip: req.ip });
-    logAction(db, null, wanted ? 'consent.distribution.granted' : 'consent.distribution.revoked', profile.id, {
-      source: 'web',
-      by: byGuardian ? 'guardian' : 'player',
-    });
-    return flash(
-      req,
-      res,
-      'ok',
-      wanted
-        ? 'Согласие на распространение записано в журнал.'
-        : 'Отзыв согласия на распространение записан в журнал. Результаты соревнований публикуются на основании участия и не меняются.',
-      '/cabinet',
-    );
+    return flash(req, res, 'ok', 'Фотография удалена; отзыв согласия на её распространение записан в журнал.', '/cabinet');
   });
 
   // --- пароль --------------------------------------------------------------
@@ -666,7 +660,7 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
   app.post('/cabinet/adult/:token', limitCabinet, (req, res, next) => {
     const account = accountByTransitionToken(db, req.params.token);
     if (!account) return next();
-    const values = { email: String(req.body.email || ''), distribution: req.body.consent_distribution === '1' };
+    const values = { email: String(req.body.email || '') };
     try {
       // Согласие на ОБРАБОТКУ — обязательное условие: без него нет основания
       // хранить данные, и «завершить переход» означало бы обрабатывать их без
@@ -681,12 +675,10 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
         email: req.body.email,
         password: String(req.body.password || ''),
         password2: String(req.body.password2 || ''),
-        distribution: req.body.consent_distribution === '1',
+        uploadDir: config.upload.dir,
         ip: req.ip,
       });
-      logAction(db, null, 'cabinet.adult.completed', account.player_id, {
-        distribution: req.body.consent_distribution === '1',
-      });
+      logAction(db, null, 'cabinet.adult.completed', account.player_id, {});
       // Человек уже подтвердил, кто он: пускаем его в кабинет сразу, не заставляя
       // тут же входить только что заданным паролем.
       return req.session.regenerate((err) => {

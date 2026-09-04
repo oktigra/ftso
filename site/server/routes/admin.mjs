@@ -4,7 +4,6 @@ import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password
 import { logAction, recentActions } from '../lib/action-log.mjs';
 import {
   playerInput,
-  publicFlag,
   tournamentInput,
   intAtLeast,
   isoDate,
@@ -27,7 +26,6 @@ import {
   pendingRegistrations,
   decidedRegistrations,
   findNameMatches,
-  registrationAllowsPublication,
   approveRegistration,
   rejectRegistration,
   byId as registrationById,
@@ -76,17 +74,6 @@ const DATA_ROLES = rolesFor('players'); // игроки, заявки, турн�
 const ANY_ROLE = [...ROLES]; // сводка и «Мой аккаунт» — всем, кто может войти
 // Управление пользователями — ТОЛЬКО super-admin (tournament-admin получит 403).
 const OWNER_ROLE = ['super-admin'];
-
-/**
- * ПРАВОВОЕ ОСНОВАНИЕ публикации для игроков, заводимых секретарём вручную.
- * Галочка в админке основанием не является: человек, который сам ничего не
- * отмечал на сайте, должен иметь документ — и документ должен быть НАЗВАН,
- * иначе публикацию его ФИО нечем оправдать.
- */
-const publicationBasis = (body) => ({
-  basis: str(body.consent_basis, 'Основание публикации', { max: 200 }),
-  documentDate: isoDate(body.consent_document_date, 'Дата согласия'),
-});
 
 // secret — одноразовое значение (временный пароль, ссылка): показывается крупным блоком с кнопкой «Скопировать».
 const flash = (req, res, kind, text, back, secret = null) => {
@@ -166,13 +153,6 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         // Кабинет: есть ли аккаунт — для кнопки «ссылка для входа» (когда почта не доходит).
         account: accountByPlayer(db, p.id) || null,
         nameParts: splitName(p.full_name),
-        // ОТМЕТКА В КАРТОЧКЕ: чем и от какой даты подтверждена публикация.
-        proof: db
-          .prepare(
-            "SELECT basis, document_date, at FROM consents " +
-              "WHERE player_id = ? AND kind = 'distribution' AND event = 'granted' ORDER BY id DESC LIMIT 1",
-          )
-          .get(p.id) || null,
       })),
       sexes: SEXES,
     });
@@ -184,20 +164,14 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     limitWrites,
     guard((req, res) => {
       const data = playerInput(req.body);
-      const publish = publicFlag(req.body);
+      // Публикация результатов — по факту участия (п. 5 ч. 1 ст. 6), поэтому
+      // ни флага «публикуется», ни основания публикации у карточки нет.
+      // Согласие по ст. 10.1 — только на фото, и оно даётся в кабинете.
       const info = db
         .prepare('INSERT INTO players (full_name, city, sex, birth_date, rni) VALUES (?, ?, ?, ?, ?)')
         .run(data.full_name, data.city, data.sex, data.birth_date, data.rni);
       const id = Number(info.lastInsertRowid);
-      // Публикация включается ТОЛЬКО событием журнала: секретарь отмечает, что
-      // бумажное согласие на распространение получено. Прямой записи в is_public
-      // нет нигде, иначе витрина разъедется с согласием.
-      if (publish === true) {
-        const proof = publicationBasis(req.body);
-        setDistributionConsent(db, id, true, { source: 'offline', ...proof });
-        logAction(db, req.session.user.id, 'consent.distribution.granted', id, { source: 'offline', ...proof });
-      }
-      logAction(db, req.session.user.id, 'player.create', id, { ...data, is_public: publish === true ? 1 : 0 });
+      logAction(db, req.session.user.id, 'player.create', id, data);
       flash(req, res, 'ok', `Игрок «${data.full_name}» добавлен.`, '/admin/players');
     }),
   );
@@ -209,8 +183,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     guard((req, res) => {
       const id = intAtLeast(req.params.id, 'id');
       const data = playerInput(req.body);
-      const publish = publicFlag(req.body);
-      const before = db.prepare('SELECT is_public FROM players WHERE id = ?').get(id);
+      const before = db.prepare('SELECT id FROM players WHERE id = ?').get(id);
       if (!before) throw new ValidationError('Игрок не найден');
       // COALESCE, а не присваивание: пустое поле формы значит «не менять».
       // Затереть дату рождения случайным сохранением карточки нельзя — по ней
@@ -221,23 +194,6 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         )
         .run(data.full_name, data.city, data.sex, data.birth_date, data.rni, id);
       if (!info.changes) throw new ValidationError('Игрок не найден');
-      // Смена публикации = событие журнала (выдача или ОТЗЫВ согласия на
-      // распространение), а не правка флага. Отзыв по ч. 12-13 ст. 10.1 обязан
-      // снять публикацию — здесь это происходит сразу, а не за 3 рабочих дня.
-      // publish === null («поле не пришло») согласие НЕ трогает.
-      if (publish !== null && Boolean(before.is_public) !== publish) {
-        // Основание требуется только при ВКЛЮЧЕНИИ публикации. Отзыв обоснования
-        // не требует: это воля субъекта, и задерживать её нечем.
-        const proof = publish ? publicationBasis(req.body) : {};
-        setDistributionConsent(db, id, publish, { source: 'offline', ...proof });
-        logAction(
-          db,
-          req.session.user.id,
-          publish ? 'consent.distribution.granted' : 'consent.distribution.revoked',
-          id,
-          { source: 'offline', ...proof },
-        );
-      }
       logAction(db, req.session.user.id, 'player.update', id, data);
       flash(req, res, 'ok', 'Игрок обновлён.', '/admin/players');
     }),
@@ -280,6 +236,9 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       db.transaction(() => {
         db.prepare('UPDATE players SET photo_upload_id = NULL WHERE id = ?').run(id);
         deleteUpload(db, row.photo_upload_id, config.upload.dir);
+        // Фото = единственное данное под ст. 10.1: снятое секретарём фото — это
+        // прекращение распространения, в журнал идёт отзыв с пометкой источника.
+        setDistributionConsent(db, id, false, { source: 'offline' });
       })();
       logAction(db, req.session.user.id, 'player.photo.delete', id, {
         reason: String(req.body.reason || '').slice(0, 200) || null,
@@ -389,23 +348,16 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // ВОЗМОЖНОЕ СОВПАДЕНИЕ, а не автослияние: одинаковое ФИО показывается
       // модератору подсказкой, решение о привязке принимает человек.
       pending: pendingRegistrations(db).map((r) => {
-        const allowsPublication = registrationAllowsPublication(db, r.id);
         const matches = findNameMatches(db, r.full_name);
         const minor = Boolean(r.birth_date) && isMinor(r.birth_date);
         return {
           ...r,
           matches,
-          allowsPublication,
           minor,
           age: r.birth_date ? ageOn(r.birth_date) : null,
           // Представитель уже заведён — значит, это второй ребёнок: новый логин
           // не появится, участник добавится к существующему доступу.
           guardianKnown: minor && Boolean(guardianByEmail(db, r.guardian_email)),
-          // КОНФЛИКТ ВОЛИ: заявитель публикацию НЕ разрешил, а найденный тёзка
-          // сейчас публикуется. Само это не решается: если это тот же человек,
-          // публикацию надо снять; если однофамилец — трогать нельзя. Решает
-          // модератор, поэтому просто показываем.
-          publicationConflict: !allowsPublication && matches.some((m) => m.is_public),
         };
       }),
       decided: decidedRegistrations(db),
