@@ -513,3 +513,6 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 @media (max-width:640px){.field-row{grid-template-columns:1fr;}}
 .name-cell{display:grid; gap:.25rem; min-width:11rem;}
 .name-cell input{width:100%;}
+
+/* Атрибут hidden обязан скрывать всегда: .field/.check/.consent-box задают display и иначе перебивают браузерный display:none. */
+[hidden]{display:none !important;}

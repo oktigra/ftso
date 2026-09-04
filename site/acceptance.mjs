@@ -4048,10 +4048,12 @@ try {
     const page = await browser.newPage();
     try {
       await page.goto(inst.base + '/register', { waitUntil: 'networkidle' });
+      // ВИДИМОСТЬ, а не атрибут: hidden может перебиваться CSS (display:flex) — мерим реальную высоту.
       const state = () => page.evaluate(() => {
         const q = (sel) => document.querySelector(sel);
+        const gone = (el) => el.hidden && getComputedStyle(el).display === 'none' && el.getBoundingClientRect().height === 0;
         const minor = q('[data-minor="minor"]'); const adult = q('[data-minor="adult"]');
-        return { minorHidden: minor.hidden, adultHidden: adult.hidden, guardianDisabled: q('#r-g-last').disabled, emailDisabled: q('#r-email').disabled };
+        return { minorHidden: gone(minor), adultHidden: gone(adult), guardianDisabled: q('#r-g-last').disabled, emailDisabled: q('#r-email').disabled };
       });
       const s0 = await state();
       assert(s0.minorHidden && s0.adultHidden, `до ввода даты оба блока должны быть скрыты: ${JSON.stringify(s0)}`);
