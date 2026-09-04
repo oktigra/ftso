@@ -144,6 +144,8 @@ export function loadConfig({ requireSecrets = true } = {}) {
     // DEV_NOTICE=1 — принудительно. Без него плашка держится сама, пока в базе
     // нет ни одного результата (см. devNoticeOn в app.mjs): «до наполнения».
     devNotice: process.env.DEV_NOTICE === '1',
+    // «Сохранить данные для входа»: срок сессии с отметкой, дней (по умолчанию 30).
+    rememberDays: Number(process.env.REMEMBER_DAYS || 30),
     feedback: {
       // Обработанные обращения живут ещё год (срок исковой давности по спорам об ответе).
       retentionDays: Number(process.env.FEEDBACK_RETENTION_DAYS || 365),

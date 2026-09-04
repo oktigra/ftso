@@ -4529,6 +4529,33 @@ await check('временный пароль: вход ведёт на смен�
 // ---------------------------------------------------------------------------
 // Пароли: сброс админов временным паролем; ссылка для входа игроку на экране секретаря
 // ---------------------------------------------------------------------------
+await check('«Сохранить данные для входа»: чекбокс на /login и /cabinet/login; с отметкой кука живёт ~30 дней, без — 12 часов', async () => {
+  const expiresOf = (r) => { const c = r.setCookie.find((x) => x.startsWith('ftso.sid=')); const m = c && c.match(/Expires=([^;]+)/i); return m ? new Date(m[1]).getTime() : null; };
+  const days = (r) => Math.round((expiresOf(r) - Date.now()) / 36e5 / 24 * 10) / 10;
+  for (const p of ['/login', '/cabinet/login']) {
+    const page = await http(p);
+    assert(/name="remember"[^>]*value="1"/.test(page.text) && page.text.includes('Сохранить данные для входа'), `${p}: нет чекбокса «Сохранить данные для входа»`);
+    assert(!/name="remember"[^>]*checked/.test(page.text), `${p}: чекбокс не должен быть отмечен заранее`);
+  }
+  const plain = await login(ADMIN.user, ADMIN.pass);
+  const hoursPlain = Math.round((expiresOf(plain.res) - Date.now()) / 36e5);
+  assert(hoursPlain >= 11 && hoursPlain <= 13, `без отметки кука должна жить ~12 ч, а живёт ${hoursPlain} ч`);
+  const jarR = new Jar();
+  const lp = await http('/login', { jar: jarR });
+  const rem = await http('/login', { method: 'POST', form: { _csrf: tokenFrom(lp.text), username: ADMIN.user, password: ADMIN.pass, next: '/admin', remember: '1' }, jar: jarR });
+  eq(rem.status, 302, 'вход с отметкой');
+  assert(days(rem) >= 29 && days(rem) <= 31, `с отметкой кука должна жить ~30 дней, а живёт ${days(rem)}`);
+  eq((await http('/admin', { jar: jarR })).status, 200, 'сессия с отметкой работает');
+  resetCabinetLimit();
+  const jarC = new Jar();
+  const cl = await http('/cabinet/login', { jar: jarC });
+  const cr = await http('/cabinet/login', { method: 'POST', form: { _csrf: tokenFrom(cl.text), email: 'timofey@example.com', password: 'своя-жизнь-2026-корт', remember: '1' }, jar: jarC });
+  eq(cr.status, 302, 'вход в кабинет с отметкой');
+  assert(days(cr) >= 29 && days(cr) <= 31, `кабинет: с отметкой кука должна жить ~30 дней, а живёт ${days(cr)}`);
+  resetCabinetLimit();
+  return `чекбокс на обеих формах, не предотмечен; без отметки ${hoursPlain} ч, с отметкой ${days(rem)} дн (админ) и ${days(cr)} дн (кабинет)`;
+});
+
 await check('сброс пароля админа: временный показан один раз, вход по нему ведёт на смену; себе — отказ', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const me = db.prepare('SELECT id FROM users WHERE username = ?').get(ADMIN.user);

@@ -231,6 +231,8 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
         req.session.player = { accountId: account.id, playerId: account.player_id };
       }
       if (person.guardian) req.session.guardian = { guardianId: person.guardian.id, playerId: null };
+      // «Сохранить данные для входа» — кука живёт rememberDays вместо 12 часов.
+      if (req.body.remember === '1') req.session.cookie.maxAge = 1000 * 60 * 60 * 24 * config.rememberDays;
 
       const cabinets = cabinetsOf(db, { account, guardian: person.guardian });
       const usable = cabinets.filter((c) => !c.awaitingSelf);
