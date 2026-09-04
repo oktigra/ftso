@@ -4075,7 +4075,14 @@ try {
         return { n: bottoms.length, spread: Math.max(...bottoms) - Math.min(...bottoms) };
       }));
       assert(rows.length >= 2 && rows.every((r) => r.n === 3 && r.spread <= 2), `поля в рядах ФИО не на одной линии: ${JSON.stringify(rows)}`);
-      return `без даты — оба скрыты; ребёнок — представитель виден, e-mail взрослого отключён; взрослый — наоборот; ряды ФИО ровные (${rows.length} ряда)`;
+      // согласия: до даты на экране ни одного чекбокса, у взрослого — ровно одно (на обработку); «распространения» в форме нет
+      await page.fill('#r-birth', ''); await page.dispatchEvent('#r-birth', 'change');
+      const visibleBoxes = () => page.evaluate(() => Array.from(document.querySelectorAll('input[type="checkbox"]')).filter((i) => i.getBoundingClientRect().height > 0).map((i) => i.name));
+      eq((await visibleBoxes()).length, 0, 'до даты не должно быть видимых чекбоксов');
+      await page.fill('#r-birth', `${y - 30}-05-10`); await page.dispatchEvent('#r-birth', 'change');
+      eq((await visibleBoxes()).join(','), 'consent_processing', 'у взрослого должно быть ровно одно согласие — на обработку');
+      assert(!(await page.content()).includes('name="consent_distribution"'), 'в форме остался чекбокс распространения');
+      return `без даты — оба скрыты и ни одного чекбокса; ребёнок — представитель виден; взрослый — одно согласие; ряды ФИО ровные (${rows.length} ряда)`;
     } finally {
       await page.close();
     }
