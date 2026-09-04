@@ -1092,34 +1092,34 @@ const { LEGAL_VERSION } = await import('./server/lib/legal.mjs');
 const rowNames = (html) =>
   [...html.matchAll(/<td class="player[^"]*">(.*?)<\/td>/gs)].map((m) => m[1].replace(/<[^>]+>/g, '').trim());
 
-await check('регистрация пишет ДВЕ раздельные записи с одной редакцией', async () => {
+await check('регистрация пишет ОДНУ запись (обработка); распространение — только фото (модель РТТ)', async () => {
   const id = Number(
     db.prepare("INSERT INTO players (full_name, city, sex, age_group) VALUES ('Тест Согласиев','Смоленск','M','19-34')").run()
       .lastInsertRowid,
   );
+  // Старый параметр distribution — игнорируется: регистрация распространение не пишет.
   journal.recordRegistrationConsents(db, { playerId: id, distribution: true, source: 'web', ip: '203.0.113.9' });
   const rows = db.prepare('SELECT kind, event, legal_version FROM consents WHERE player_id = ? ORDER BY id').all(id);
-  eq(rows.length, 2, 'записей согласия');
-  eq(rows[0].kind, 'processing', 'первая запись — обработка');
-  eq(rows[1].kind, 'distribution', 'вторая запись — распространение');
-  assert(rows.every((r) => r.event === 'granted'), 'обе записи должны быть выдачей');
-  eq(rows[0].legal_version, rows[1].legal_version, 'редакция у обеих записей');
+  eq(rows.length, 1, 'записей согласия');
+  eq(rows[0].kind, 'processing', 'единственная запись — обработка');
+  eq(rows[0].event, 'granted', 'запись — выдача');
   eq(rows[0].legal_version, LEGAL_VERSION, 'редакция = текущая константа');
-  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(id).is_public, 1, 'флаг публикуемости');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(id).is_public, 0, 'флаг фото без фото = 0');
 
-  // Отказ от публикации: обработка есть, распространения нет, игрок скрыт.
-  const id2 = Number(
-    db.prepare("INSERT INTO players (full_name, city, sex, age_group) VALUES ('Тест Скрытный','Вязьма','F','19-34')").run()
-      .lastInsertRowid,
-  );
-  journal.recordRegistrationConsents(db, { playerId: id2, distribution: false, source: 'web', ip: '203.0.113.9' });
-  eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(id2).n, 1, 'только обработка');
-  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(id2).is_public, 0, 'без согласия — не публикуется');
+  // Фото: выдача и отзыв согласия на распространение — через setDistributionConsent.
+  journal.setDistributionConsent(db, id, true, { source: 'web', ip: '203.0.113.9' });
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(id).is_public, 1, 'флаг после выдачи по фото');
+  journal.setDistributionConsent(db, id, false, { source: 'web', ip: '203.0.113.9' });
+  const kinds = db.prepare('SELECT kind, event FROM consents WHERE player_id = ? ORDER BY id').all(id);
+  eq(kinds.length, 3, 'обработка + выдача фото + отзыв фото');
+  eq(kinds[1].kind + ':' + kinds[1].event, 'distribution:granted', 'вторая — выдача по фото');
+  eq(kinds[2].kind + ':' + kinds[2].event, 'distribution:revoked', 'третья — отзыв по фото');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(id).is_public, 0, 'флаг после отзыва');
 
   // Каскад унёс бы записи журнала, а он закрыт на удаление триггером СУБД:
   // убирать за собой тестовые данные — такое же законное удаление, как ст. 21.
-  journal.withConsentErasure(db, () => db.prepare('DELETE FROM players WHERE id IN (?, ?)').run(id, id2));
-  return `две записи, редакция ${LEGAL_VERSION} у обеих; отказ от публикации оставляет только обработку`;
+  journal.withConsentErasure(db, () => db.prepare('DELETE FROM players WHERE id = ?').run(id));
+  return `регистрация — одна запись (processing, ${LEGAL_VERSION}); distribution пишется только setDistributionConsent (фото), флаг следует за ним`;
 });
 
 await check('отзыв распространения НЕ меняет строку в рейтинге (ТЗ ред. 6, §8.7)', async () => {
@@ -1159,7 +1159,8 @@ await check('удалённый игрок в старом снимке -> «И�
     db.prepare("INSERT INTO players (full_name, city, sex, age_group) VALUES ('Тест Удалённый','Ярцево','M','19-34')").run()
       .lastInsertRowid,
   );
-  journal.recordRegistrationConsents(db, { playerId: id, distribution: true, source: 'offline' });
+  journal.recordRegistrationConsents(db, { playerId: id, source: 'offline' });
+  journal.setDistributionConsent(db, id, true, { source: 'web', ip: '203.0.113.9' }); // фото
   const t = Number(
     db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Тестовый турнир', date('now','-10 days'), 'B')").run()
       .lastInsertRowid,
@@ -1187,8 +1188,9 @@ await check('автоочистка чистит отозванные, дейс�
     db.prepare("INSERT INTO players (full_name, city, sex, age_group) VALUES ('Тест Ретеншен','Сафоново','M','19-34')").run()
       .lastInsertRowid,
   );
-  journal.recordRegistrationConsents(db, { playerId: id, distribution: true, source: 'offline' });
-  journal.setDistributionConsent(db, id, false, { source: 'web', ip: '203.0.113.9' });
+  journal.recordRegistrationConsents(db, { playerId: id, source: 'offline' });
+  journal.setDistributionConsent(db, id, true, { source: 'web', ip: '203.0.113.9' }); // фото загружено
+  journal.setDistributionConsent(db, id, false, { source: 'web', ip: '203.0.113.9' }); // фото удалено
   eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(id).n, 3, 'записей до очистки');
 
   eq(journal.purgeExpired(db, 1095), 0, 'свежий отзыв чистить рано');
@@ -1205,22 +1207,13 @@ await check('автоочистка чистит отозванные, дейс�
   return 'отозванное по истечении срока удалено (2 записи), действующее согласие на обработку осталось';
 });
 
-await check('публикация из админки идёт ЧЕРЕЗ журнал, а не мимо', async () => {
+await check('админка не пишет согласие на распространение: is_public/основание в форме игнорируются (модель РТТ)', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const page = await http('/admin/players', { jar });
   const _csrf = tokenFrom(page.text);
-  // ОСНОВАНИЕ ОБЯЗАТЕЛЬНО: публикация ФИО человека, заведённого секретарём,
-  // не может держаться на одной галочке в админке.
-  const noBasis = await http('/admin/players', {
-    method: 'POST',
-    form: { _csrf, full_name: 'Тест Безоснований', city: 'Смоленск', sex: 'M', is_public: '1' },
-    jar,
-  });
-  eq(noBasis.status, 302, 'ответ на попытку опубликовать без основания');
-  const orphan = db.prepare('SELECT is_public FROM players WHERE full_name = ?').get('Тест Безоснований');
-  assert(!orphan || orphan.is_public === 0, 'игрок опубликован без правового основания');
-  db.prepare('DELETE FROM players WHERE full_name = ?').run('Тест Безоснований');
-
+  assert(!page.text.includes('name="is_public"') && !page.text.includes('name="consent_basis"'),
+    'в форме админки остались поля публикации/основания');
+  // Старая форма шлёт is_public=1 и основание — сервер их не читает: ни флага, ни записи журнала.
   const r = await http('/admin/players', {
     method: 'POST',
     form: {
@@ -1231,31 +1224,29 @@ await check('публикация из админки идёт ЧЕРЕЗ жур
   });
   eq(r.status, 302, 'создание игрока');
   const created = db.prepare('SELECT id, is_public FROM players WHERE full_name = ?').get('Тест Секретарёв');
-  eq(created.is_public, 1, 'флаг публикуемости выставлен');
-  const rows = db.prepare('SELECT kind, event, source, ip, basis, document_date FROM consents WHERE player_id = ?').all(created.id);
-  eq(rows.length, 1, 'ровно одна запись — о распространении');
-  eq(rows[0].kind, 'distribution', 'вид записи');
-  eq(rows[0].event, 'granted', 'событие');
-  eq(rows[0].source, 'offline', 'источник — бумажное согласие');
-  eq(rows[0].ip, null, 'для офлайн-согласия IP не пишется');
-  eq(rows[0].basis, 'бумажное согласие', 'основание публикации не сохранено');
-  eq(rows[0].document_date, '2026-07-01', 'дата бумажного согласия не сохранена');
-
-  // Снятие отметки = ОТЗЫВ, тоже событием.
+  assert(created, 'игрок не создан');
+  eq(created.is_public, 0, 'флаг не выставлен: публикация результатов по участию, не по галочке');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(created.id).n, 0, 'записей журнала от админки');
   const upd = await http(`/admin/players/${created.id}/update`, {
     method: 'POST',
-    form: { _csrf, full_name: 'Тест Секретарёв', city: 'Смоленск', sex: 'M', age_group: '19-34', is_public: '0' },
+    form: { _csrf, full_name: 'Тест Секретарёв', city: 'Смоленск', sex: 'M', age_group: '19-34', is_public: '1' },
     jar,
   });
-  // Отзыв основания не требует — это воля субъекта, задерживать её нечем.
   eq(upd.status, 302, 'обновление игрока');
-  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(created.id).is_public, 0, 'флаг снят');
-  const last = db.prepare('SELECT event FROM consents WHERE player_id = ? ORDER BY id DESC LIMIT 1').get(created.id);
-  eq(last.event, 'revoked', 'снятие отметки записано отзывом');
-
-  journal.eraseConsents(db, created.id);
+  eq(db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(created.id).n, 0, 'записей журнала после update');
+  // Игрок без согласия на распространение — на витрине по факту участия.
+  const t = Number(
+    db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Тест витрины РТТ', date('now','-3 days'), 'B')").run()
+      .lastInsertRowid,
+  );
+  db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, 1)').run(t, created.id);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  assert(rowNames((await http('/rating')).text).includes('Тест Секретарёв'), 'игрок без записи distribution не показан в рейтинге');
+  eq((await http(`/player/${created.id}`)).status, 200, 'профиль без согласия на распространение');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
   db.prepare('DELETE FROM players WHERE id = ?').run(created.id);
-  return 'без основания публикация не включается; отметка пишется событием (source=offline, основание + дата документа, без IP); снятие = отзыв';
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  return 'полей публикации в форме нет; is_public=1 и основание от старой формы игнорируются (0 записей журнала, флаг 0); игрок в рейтинге и с профилем по факту участия';
 });
 
 // ===========================================================================
@@ -1312,7 +1303,7 @@ await check('honeypot отсекает бота молча', async () => {
   return 'заполненная приманка -> редирект как при успехе, в БД ничего';
 });
 
-await check('заявка пишет ДВА раздельных согласия и письмо в очередь', async () => {
+await check('заявка пишет ОДНО согласие (обработка) и письмо в очередь; consent_distribution игнорируется', async () => {
   const { res } = await submitRegistration({
     full_name: 'Новый Заявитель', city: 'Ярцево', sex: 'M', age_group: '19-34',
     email: 'zayavitel@example.com', consent_processing: '1', consent_distribution: '1',
@@ -1323,10 +1314,8 @@ await check('заявка пишет ДВА раздельных согласи�
   eq(db.prepare('SELECT COUNT(*) AS n FROM players WHERE full_name = ?').get('Новый Заявитель').n, 0,
     'форма НЕ должна писать в players напрямую — только через модерацию');
   const cons = db.prepare('SELECT kind, event, legal_version, source, ip FROM consents WHERE registration_id = ? ORDER BY id').all(reg.id);
-  eq(cons.length, 2, 'записей согласия');
-  eq(cons[0].kind, 'processing', 'первое — обработка');
-  eq(cons[1].kind, 'distribution', 'второе — распространение');
-  eq(cons[0].legal_version, cons[1].legal_version, 'редакция общая');
+  eq(cons.length, 1, 'записей согласия (старое поле consent_distribution=1 записи не даёт)');
+  eq(cons[0].kind, 'processing', 'единственная — обработка');
   eq(cons[0].source, 'web', 'источник — форма сайта');
   assert(cons[0].ip, 'IP согласия, данного через сайт, должен фиксироваться');
   const mail = db.prepare("SELECT * FROM mail_outbox WHERE to_email = 'zayavitel@example.com'").get();
@@ -1337,7 +1326,7 @@ await check('заявка пишет ДВА раздельных согласи�
   const status = await http(`/register/status/${reg.status_token}`);
   eq(status.status, 200, 'страница статуса по токену');
   assert(status.text.includes('на рассмотрении'), 'страница статуса не показывает статус');
-  return 'заявка -> pending, два согласия с общей редакцией и IP, письмо в очереди с причиной, статус по токену открыт';
+  return 'заявка -> pending, одно согласие (обработка) с IP, distribution от старой формы проигнорирован, письмо в очереди с причиной, статус по токену открыт';
 });
 
 await check('чужой и подобранный токен статуса не открывается', async () => {
@@ -1367,7 +1356,7 @@ await check('совпадение ФИО помечается модератор
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const page = await http('/admin/registrations', { jar });
   assert(page.text.includes('Возможное совпадение'), 'модератору не показано возможное совпадение');
-  assert(page.text.includes('Расхождение по публикации'), 'не показано расхождение по согласию на публикацию');
+  assert(!page.text.includes('Расхождение по публикации'), 'блок «Расхождение по публикации» должен исчезнуть (модель РТТ)');
 
   // Одобряем ПРИВЯЗКОЙ к существующему — второй карточки не появляется.
   const _csrf = tokenFrom(page.text);
@@ -1395,7 +1384,8 @@ await check('одобрение заводит игрока и уведомля�
   eq(appr.status, 302, 'одобрение новой заявки');
   const created = db.prepare('SELECT id, is_public FROM players WHERE full_name = ?').get('Новый Заявитель');
   assert(created, 'игрок не заведён при одобрении');
-  eq(created.is_public, 1, 'согласие на публикацию было дано — игрок должен публиковаться');
+  eq(created.is_public, 0, 'флаг фото без фото = 0; публикация результатов от него не зависит');
+  eq((await http(`/player/${created.id}`)).status, 200, 'профиль одобренного игрока открыт по факту участия');
   const mails = db.prepare("SELECT kind FROM mail_outbox WHERE to_email = 'zayavitel@example.com' ORDER BY id").all();
   assert(mails.some((m) => m.kind === 'registration.approved'), 'письмо об одобрении не поставлено в очередь');
 
@@ -1417,7 +1407,7 @@ await check('одобрение заводит игрока и уведомля�
     db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE to_email = 'otkloneno@example.com' AND kind = 'registration.rejected'").get().n === 1,
     'письмо об отказе не поставлено в очередь',
   );
-  return 'одобрение заводит игрока и публикует по согласию; отказ с причиной виден заявителю, оба уведомления в очереди';
+  return 'одобрение заводит игрока с открытым профилем (без записи distribution); отказ с причиной виден заявителю, оба уведомления в очереди';
 });
 
 await check('rate-limit на /register срабатывает', async () => {
@@ -2077,7 +2067,7 @@ await check('сброс пароля не выдаёт, зарегистриро
   return 'ответы неразличимы, письмо ушло только по существующему адресу';
 });
 
-await check('игрок сам отзывает согласие на публикацию', async () => {
+await check('фото в кабинете: загрузка = согласие на распространение, замена = отзыв+выдача, удаление = отзыв (ст. 10.1)', async () => {
   resetCabinetLimit();
   const jar = new Jar();
   const page = await http('/cabinet/login', { jar });
@@ -2085,16 +2075,47 @@ await check('игрок сам отзывает согласие на публи
   await http('/cabinet/login', { method: 'POST', form: { _csrf: _csrf0, email: CAB_EMAIL, password: 'десногорск-ракетка-42' }, jar });
   const cab = await http('/cabinet', { jar });
   const _csrf = tokenFrom(cab.text);
-  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(cabPlayerId).is_public, 1, 'до отзыва игрок публикуется');
-  const off = await http('/cabinet/publication', { method: 'POST', form: { _csrf, publish: '0' }, jar });
-  eq(off.status, 302, 'отзыв согласия');
-  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(cabPlayerId).is_public, 0, 'флаг не снят отзывом');
-  const last = db
-    .prepare("SELECT event, source FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1")
-    .get(cabPlayerId);
-  eq(last.event, 'revoked', 'отзыв не записан событием журнала');
-  eq(last.source, 'web', 'источник отзыва');
-  return 'отзыв из кабинета снимает публикацию и пишется событием журнала';
+  assert(!cab.text.includes('/cabinet/publication'), 'в кабинете осталась кнопка согласия на распространение');
+  assert(cab.text.includes('/consent#distribution'), 'у поля фото нет ссылки на раздел 2 Согласия');
+  eq((await http('/cabinet/publication', { method: 'POST', form: { _csrf, publish: '0' }, jar })).status, 404,
+    'маршрут /cabinet/publication должен исчезнуть');
+  const events = () => db
+    .prepare("SELECT event, source, ip FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id")
+    .all(cabPlayerId);
+  const n0 = events().length;
+  eq(db.prepare('SELECT photo_upload_id FROM players WHERE id = ?').get(cabPlayerId).photo_upload_id, null, 'фото до теста');
+
+  const mk = (bg) => sharpLib({ create: { width: 600, height: 500, channels: 3, background: bg } }).jpeg().toBuffer();
+  const up = async (buf, name) => http('/cabinet/profile', {
+    method: 'POST',
+    multipart: { fields: { _csrf, full_name: CAB_NAME, email: CAB_EMAIL }, files: [{ field: 'photo', filename: name, type: 'image/jpeg', buffer: buf }] },
+    jar,
+  });
+  // 1. Загрузка = granted.
+  eq((await up(await mk('#123d68'), 'a.jpg')).status, 302, 'загрузка фото');
+  let ev = events();
+  eq(ev.length, n0 + 1, 'после загрузки — одна новая запись');
+  eq(ev.at(-1).event + ':' + ev.at(-1).source, 'granted:web', 'загрузка записана выдачей');
+  assert(ev.at(-1).ip, 'IP выдачи через сайт не записан');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(cabPlayerId).is_public, 1, 'флаг после загрузки');
+  eq((await http(`/player/${cabPlayerId}/photo`)).status, 200, 'публичное фото после загрузки');
+  // 2. Замена = revoked + granted.
+  eq((await up(await mk('#68123d'), 'b.jpg')).status, 302, 'замена фото');
+  ev = events();
+  eq(ev.length, n0 + 3, 'после замены — две новые записи');
+  eq(ev.at(-2).event, 'revoked', 'замена: отзыв по прежнему снимку');
+  eq(ev.at(-1).event, 'granted', 'замена: выдача по новому');
+  // 3. Удаление = revoked, фото уходит из открытого доступа сразу.
+  const del = await http('/cabinet/photo/delete', { method: 'POST', form: { _csrf }, jar });
+  eq(del.status, 302, 'удаление фото');
+  ev = events();
+  eq(ev.length, n0 + 4, 'после удаления — одна новая запись');
+  eq(ev.at(-1).event, 'revoked', 'удаление записано отзывом');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(cabPlayerId).is_public, 0, 'флаг после удаления');
+  eq((await http(`/player/${cabPlayerId}/photo`)).status, 404, 'публичное фото после удаления');
+  eq((await http(`/player/${cabPlayerId}`)).status, 200, 'профиль без фото открыт — результаты по участию');
+  assert(db.prepare("SELECT 1 FROM action_log WHERE action LIKE '%consent.distribution.revoked%'").get(), 'отзыв не в журнале действий');
+  return 'загрузка → granted (web, IP), замена → revoked+granted, удаление → revoked; фото 200→404, профиль 200; /cabinet/publication → 404';
 });
 
 await check('ЗАБВЕНИЕ: ФИО не восстановимо ниоткуда', async () => {
@@ -2573,7 +2594,7 @@ await check('заявка за минора без блока представи
   return 'четыре отказа: нет блока, нет согласия за ребёнка, нет согласия представителя за себя, почта ребёнка не принимается';
 });
 
-await check('заявка минора пишет ТРИ согласия: два за ребёнка и одно за представителя', async () => {
+await check('заявка минора пишет ДВА согласия: обработка за ребёнка и представителя за себя (distribution — нет)', async () => {
   const { res } = await submitRegistration({
     full_name: MINOR.name, city: 'Смоленск', sex: 'M', birth_date: MINOR.birth,
     guardian_full_name: MINOR.guardianName, guardian_relation: 'мать',
@@ -2586,9 +2607,10 @@ await check('заявка минора пишет ТРИ согласия: дв�
   eq(reg.email, MINOR.guardianEmail, 'контактом заявки минора должна быть почта представителя');
   eq(reg.birth_date, MINOR.birth, 'дата рождения не сохранена');
   const rows = db.prepare('SELECT kind, event, subject_ref, basis FROM consents WHERE registration_id = ? ORDER BY id').all(reg.id);
-  eq(rows.length, 3, 'должно быть три записи журнала');
-  const child = rows.filter((r) => r.kind === 'processing' || r.kind === 'distribution');
-  eq(child.length, 2, 'нет пары согласий за ребёнка');
+  eq(rows.length, 2, 'должно быть две записи журнала (consent_distribution=1 от старой формы игнорируется)');
+  const child = rows.filter((r) => r.kind === 'processing');
+  eq(child.length, 1, 'нет согласия за ребёнка');
+  eq(rows.filter((r) => r.kind === 'distribution').length, 0, 'регистрация не должна писать distribution');
   for (const r of child) {
     assert(/ст\. 9/.test(r.basis || ''), 'в записи за ребёнка не назван законный представитель как основание');
     assert(!r.subject_ref.includes(MINOR.guardianEmail), 'почта представителя продублирована в записи ребёнка');
@@ -2596,7 +2618,7 @@ await check('заявка минора пишет ТРИ согласия: дв�
   const own = rows.find((r) => r.kind === 'representative_processing');
   assert(own, 'нет отдельной записи согласия представителя на свои данные');
   assert(own.subject_ref.includes(MINOR.guardianEmail), 'субъектом записи должен быть представитель');
-  return `три записи: ${rows.map((r) => r.kind).join(', ')}; субъект третьей — представитель`;
+  return `две записи: ${rows.map((r) => r.kind).join(', ')}; субъект второй — представитель`;
 });
 
 await check('одобрение минора: кабинет на РЕБЁНКА без почты, ссылка ушла ПРЕДСТАВИТЕЛЮ', async () => {
@@ -2740,7 +2762,7 @@ await check('дата рождения НЕ утекает: ни в витрин
   return `${paths.length} публичных ответов и снимок без даты рождения; в админке за логином — видна и правится`;
 });
 
-await check('представитель распоряжается публикацией данных ребёнка', async () => {
+await check('представитель распоряжается фото ребёнка: загрузка в кабинете подопечного = согласие на распространение', async () => {
   const jar = new Jar();
   const page = await http('/cabinet/login', { jar });
   await http('/cabinet/login', {
@@ -2753,16 +2775,22 @@ await check('представитель распоряжается публик�
     method: 'POST', form: { _csrf: tokenFrom(wards.text), player_id: String(minorPlayerId) }, jar,
   });
   const cab = await http('/cabinet', { jar });
-  const off = await http('/cabinet/publication', {
-    method: 'POST', form: { _csrf: tokenFrom(cab.text), publish: '0' }, jar,
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(minorPlayerId).is_public, 0, 'до загрузки флага нет');
+  eq((await http(`/player/${minorPlayerId}`)).status, 200, 'профиль минора открыт по факту участия и без фото');
+  const photo = await sharpLib({ create: { width: 500, height: 500, channels: 3, background: '#2d6a4f' } }).jpeg().toBuffer();
+  const up = await http('/cabinet/profile', {
+    method: 'POST',
+    multipart: { fields: { _csrf: tokenFrom(cab.text), full_name: MINOR.name }, files: [{ field: 'photo', filename: 'kid.jpg', type: 'image/jpeg', buffer: photo }] },
+    jar,
   });
-  eq(off.status, 302, 'отзыв публикации представителем');
-  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(minorPlayerId).is_public, 0,
-    'флаг публикуемости не снялся');
-  const last = db.prepare("SELECT event FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1")
+  eq(up.status, 302, 'загрузка фото представителем');
+  assert(db.prepare('SELECT photo_upload_id FROM players WHERE id = ?').get(minorPlayerId).photo_upload_id, 'фото не сохранено');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(minorPlayerId).is_public, 1, 'флаг после загрузки');
+  const last = db.prepare("SELECT event, source FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1")
     .get(minorPlayerId);
-  eq(last.event, 'revoked', 'отзыв не записан событием журнала');
-  return 'отзыв распространения представителем: новая строка журнала + снятый флаг';
+  eq(last.event, 'granted', 'загрузка фото представителем не записана выдачей');
+  eq((await http(`/player/${minorPlayerId}/photo`)).status, 200, 'публичное фото ребёнка');
+  return 'фото за ребёнка загрузил представитель → distribution granted, флаг 1, фото 200; фото оставлено для проверки перехода в 18';
 });
 
 await check('журнал согласий неизменяем НА УРОВНЕ СУБД: UPDATE и DELETE отбиты', async () => {
@@ -2895,13 +2923,16 @@ await check('экран перехода: почта-дубликат отбив
   return 'дубликат почты и отсутствие согласия отбиты, состояние осталось awaiting_self';
 });
 
-await check('переход в 18 завершается: журнал отзывает старое и принимает своё', async () => {
+await check('переход в 18 завершается: журнал отзывает старое и принимает своё; фото представителя снято', async () => {
   const acc = accounts.accountByPlayer(db, minorPlayerId);
   const token = adulthood.issueTransitionToken(db, acc.id);
   resetCabinetLimit();
   const jar = new Jar();
   const screen = await http(`/cabinet/adult/${token}`, { jar });
+  assert(!screen.text.includes('name="consent_distribution"'), 'на экране перехода остался чекбокс распространения');
   const before = db.prepare('SELECT COUNT(*) AS n FROM consents WHERE player_id = ?').get(minorPlayerId).n;
+  const photoBefore = db.prepare('SELECT photo_upload_id FROM players WHERE id = ?').get(minorPlayerId).photo_upload_id;
+  assert(photoBefore, 'фото, загруженное представителем, должно быть на месте до перехода');
 
   const done = await http(`/cabinet/adult/${token}`, {
     method: 'POST',
@@ -2925,10 +2956,17 @@ await check('переход в 18 завершается: журнал отзы�
   const rows = db.prepare('SELECT kind, event, legal_version FROM consents WHERE player_id = ? ORDER BY id').all(minorPlayerId);
   assert(rows.length > before, 'журнал не пополнился');
   const revoked = rows.filter((r) => r.event === 'revoked');
-  assert(revoked.length >= 2, 'представительские согласия не отозваны');
-  const granted = rows.slice(-2).filter((r) => r.event === 'granted');
-  assert(granted.length >= 1, 'собственное согласие не записано');
-  eq(granted[granted.length - 1].legal_version, LEGAL_VERSION, 'собственное согласие записано не текущей редакцией');
+  assert(revoked.length >= 2, 'представительские согласия (обработка + фото) не отозваны');
+  eq(rows.at(-1).kind + ':' + rows.at(-1).event, 'processing:granted', 'последняя запись — собственное согласие на обработку');
+  eq(rows.at(-1).legal_version, LEGAL_VERSION, 'собственное согласие записано не текущей редакцией');
+  eq(db.prepare("SELECT event FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1").get(minorPlayerId).event,
+    'revoked', 'согласие представителя на фото не отозвано');
+  // Фото представителя ушло вместе с его согласием: своё — загрузкой.
+  eq(db.prepare('SELECT photo_upload_id, is_public FROM players WHERE id = ?').get(minorPlayerId).photo_upload_id, null, 'фото представителя не снято при переходе');
+  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(minorPlayerId).is_public, 0, 'флаг фото после перехода');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM uploads WHERE id = ?').get(photoBefore).n, 0, 'строка uploads старого фото осталась');
+  eq((await http(`/player/${minorPlayerId}/photo`)).status, 404, 'публичное фото после перехода');
+  eq((await http(`/player/${minorPlayerId}`)).status, 200, 'профиль после перехода открыт');
 
   // Вход по НОВОМУ логину работает, кабинет свой.
   const jar2 = new Jar();
@@ -2940,7 +2978,7 @@ await check('переход в 18 завершается: журнал отзы�
   });
   eq(enter.status, 302, 'вход по своей почте');
   eq(enter.location, '/cabinet', 'после входа — сразу кабинет, без списка подопечных');
-  return `журнал: ${rows.map((r) => r.kind + '/' + r.event).join(', ')}; логин сменился на свой`;
+  return `журнал: ${rows.map((r) => r.kind + '/' + r.event).join(', ')}; фото представителя снято, профиль 200; логин сменился на свой`;
 });
 
 await check('представитель второго ребёнка остаётся действующим, его данные на месте', async () => {
@@ -3075,7 +3113,7 @@ await check('существующие аккаунты (consent_basis NULL) в �
 });
 
 await check('18-летие НЕ трогает рейтинг и профиль: переход только в управлении кабинетом (ТЗ ред. 6, §8.8)', async () => {
-  // Свой подопытный: минор с действующим согласием на распространение.
+  // Свой подопытный: минор без фото — результаты публикуются по факту участия.
   db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
   const NAME = 'Публиков Роман Игоревич';
   await submitRegistration({
@@ -3105,13 +3143,9 @@ await check('18-летие НЕ трогает рейтинг и профиль:
   eq(db.prepare('SELECT consent_basis FROM player_accounts WHERE player_id = ?').get(pid).consent_basis,
     'awaiting_self', 'аккаунт не перешёл в ожидание собственного согласия');
 
-  // Ни отзыва в журнале, ни снятия флага, ни изменений на витрине.
-  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(pid).is_public, 1,
-    'флаг публикуемости снят в момент 18-летия — правило отменено');
-  const last = db.prepare(
-    "SELECT event FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1",
-  ).get(pid);
-  eq(last.event, 'granted', 'в журнал записан отзыв по 18-летию — правило отменено');
+  // Ни отзыва в журнале, ни изменений на витрине: distribution в журнале нет вовсе (фото не было).
+  eq(db.prepare("SELECT COUNT(*) AS n FROM consents WHERE player_id = ? AND kind = 'distribution'").get(pid).n, 0,
+    'в журнале появилась запись distribution без фото');
 
   const after = currentStandings(db);
   const rowAfter = after.players.find((p) => p.playerId === pid);
@@ -3127,7 +3161,7 @@ await check('18-летие НЕ трогает рейтинг и профиль:
   return `в день 18-летия: переход запущен (awaiting_self), строка ${rowAfter.rank}, очки и профиль без изменений, возраст 18 лет`;
 });
 
-await check('подтверждение согласия возвращает публикацию мгновенно', async () => {
+await check('подтверждение согласия в 18: результаты на витрине как были, distribution не пишется', async () => {
   const pid = db.prepare("SELECT id FROM players WHERE full_name = 'Публиков Роман Игоревич'").get().id;
   const acc = accounts.accountByPlayer(db, pid);
   const token = adulthood.issueTransitionToken(db, acc.id);
@@ -3147,17 +3181,17 @@ await check('подтверждение согласия возвращает п
     jar,
   });
   eq(done.status, 302, 'завершение перехода');
-  eq(db.prepare('SELECT is_public FROM players WHERE id = ?').get(pid).is_public, 1,
-    'публикация не вернулась сразу после собственного согласия');
-  const last = db.prepare(
-    "SELECT event, legal_version FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1",
+  eq(db.prepare("SELECT COUNT(*) AS n FROM consents WHERE player_id = ? AND kind = 'distribution'").get(pid).n, 0,
+    'consent_distribution=1 от старой формы перехода не должен писать distribution');
+  const own = db.prepare(
+    "SELECT event, legal_version FROM consents WHERE player_id = ? AND kind = 'processing' ORDER BY id DESC LIMIT 1",
   ).get(pid);
-  eq(last.event, 'granted', 'собственное согласие на распространение не записано');
-  eq(last.legal_version, LEGAL_VERSION, 'собственное согласие записано не текущей редакцией');
+  eq(own.event + ':' + own.legal_version, `granted:${LEGAL_VERSION}`, 'собственное согласие на обработку текущей редакции');
   const shown = currentStandings(db);
   eq(shown.players.find((p) => p.playerId === pid).playerName, 'Публиков Роман Игоревич',
-    'фамилия не вернулась в открытый рейтинг');
-  return 'один клик подтверждения — публикация вернулась той же секундой, новой строкой журнала';
+    'фамилия пропала из открытого рейтинга при переходе');
+  eq((await http(`/player/${pid}`)).status, 200, 'профиль после перехода');
+  return 'переход: собственное согласие на обработку записано, distribution не тронут (0 записей), рейтинг и профиль как были';
 });
 
 await check('родитель, который сам играет: ОДИН вход на обе роли', async () => {
@@ -3588,6 +3622,9 @@ await check('уполномоченное лицо убирает фотогра
   eq(rm.status, 302, 'удаление из админки');
   eq((await http(`/player/${p19}/photo`)).status, 404, 'фото не убрано из админки');
   assert(db.prepare("SELECT 1 FROM action_log WHERE action LIKE '%player.photo.delete%'").get(), 'удаление не в журнале действий');
+  // Снятое секретарём фото = прекращение распространения: отзыв в журнал, источник offline.
+  const adminRevoke = db.prepare("SELECT event, source FROM consents WHERE player_id = ? AND kind = 'distribution' ORDER BY id DESC LIMIT 1").get(p19);
+  eq(adminRevoke && adminRevoke.event + ':' + adminRevoke.source, 'revoked:offline', 'удаление фото админом не записано отзывом (offline)');
 
   const form = await http(`/admin/tournaments/${t19}/results`, { jar: admin.jar });
   assert(form.text.includes('name="score"') && form.text.includes('name="played_on"'), 'в форме матча нет счёта/даты');
