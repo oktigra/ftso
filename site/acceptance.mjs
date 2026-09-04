@@ -4431,6 +4431,40 @@ await check('backup.sh: копия WAL-БД читается, загрузки �
 });
 
 // ---------------------------------------------------------------------------
+// logrotate: конфиг deploy/logrotate-ftso принимается logrotate и реально ротирует copytruncate
+// ---------------------------------------------------------------------------
+await check('logrotate-ftso: dry-run без ошибок, принудительная ротация обнуляет лог и оставляет .1', async () => {
+  const CONF = resolve(HERE, '..', 'deploy', 'logrotate-ftso');
+  assert(existsSync(CONF), 'нет deploy/logrotate-ftso');
+  const text = readFileSync(CONF, 'utf8');
+  eq((text.match(/{/g) || []).length, (text.match(/}/g) || []).length, 'скобки блоков не сходятся');
+  assert(/copytruncate/.test(text) && /rotate 14/.test(text) && /\.pm2\/logs/.test(text), 'нет copytruncate / rotate 14 / путей pm2');
+  const which = spawnSync('sh', ['-c', 'command -v logrotate'], { encoding: 'utf8' });
+  if (which.status !== 0) return 'logrotate не установлен здесь — проверена только структура (скобки, copytruncate, rotate 14, пути pm2)';
+  const tmp = mkdtempSync('/tmp/lr-');
+  try {
+    // те же директивы, но временные пути и без su (в песочнице пользователя ftso может не быть)
+    const conf = text
+      .replace(/^\/home\/ftso\/\.pm2\/logs\/\*\.log \/home\/ftso\/\.pm2\/pm2\.log/m, resolve(tmp, 'a.log'))
+      .replace(/^\/root\/deploy-watch\.log \/root\/deploy-A\.log \/root\/backup\.log/m, resolve(tmp, 'b.log'))
+      .replace(/^\s*su ftso ftso\n/m, '');
+    writeFileSync(resolve(tmp, 'conf'), conf);
+    writeFileSync(resolve(tmp, 'a.log'), 'строка1\n');
+    writeFileSync(resolve(tmp, 'b.log'), 'строка1\n');
+    const dry = spawnSync('logrotate', ['-d', '-s', resolve(tmp, 'state'), resolve(tmp, 'conf')], { encoding: 'utf8' });
+    eq(dry.status, 0, `logrotate -d отверг конфиг: ${dry.stderr}`);
+    eq((dry.stderr.match(/^error:/gm) || []).length, 0, `ошибки dry-run: ${dry.stderr}`);
+    const force = spawnSync('logrotate', ['-f', '-s', resolve(tmp, 'state'), resolve(tmp, 'conf')], { encoding: 'utf8' });
+    eq(force.status, 0, `logrotate -f упал: ${force.stderr}`);
+    eq(readFileSync(resolve(tmp, 'a.log'), 'utf8'), '', 'copytruncate не обнулил лог');
+    eq(readFileSync(resolve(tmp, 'a.log.1'), 'utf8'), 'строка1\n', 'содержимое не ушло в .1');
+    return 'dry-run 0 ошибок; -f: a.log обнулён, a.log.1 = старое содержимое';
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Отчёт
 // ---------------------------------------------------------------------------
 const checks = results.filter((r) => r.name);
