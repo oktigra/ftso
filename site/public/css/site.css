@@ -118,7 +118,10 @@ body, .site-header, section, footer, .card, .btn, .badge, .status, .stat, .photo
 .nav-more.is-open>.nav-more-list{display:flex;}
 .nav-more-list a{font-size:.95rem; padding:.5rem .75rem; border-radius:.7rem;}
 .header-actions{display:flex; align-items:center; gap:.6rem; margin-left:auto;}
-.theme-toggle{width:42px; height:42px; border-radius:999px; border:1.5px solid var(--border); background:var(--surface); color:var(--text); display:grid; place-items:center; cursor:pointer; flex:none;}
+/* Кружок ИНВЕРТИРОВАН относительно темы (решение владельца 05.09.2026): на светлой —
+   тёмный кружок с луной, на тёмной — светлый с солнцем: кнопка показывает, куда ведёт. */
+.theme-toggle{width:42px; height:42px; border-radius:999px; border:1.5px solid #0d141a; background:#0d141a; color:#f5f7f9; display:grid; place-items:center; cursor:pointer; flex:none;}
+html[data-theme="dark"] .theme-toggle{border-color:#f5f7f9; background:#f5f7f9; color:#0d141a;}
 .theme-toggle:hover{border-color:var(--primary); color:var(--primary);}
 .theme-toggle svg{width:20px; height:20px;}
 /* Иконка показывает, КУДА переключишь (решение владельца 05.09.2026):
