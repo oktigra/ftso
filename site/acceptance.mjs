@@ -4142,6 +4142,39 @@ try {
     return 'регистрация и админка без поля; playerInput группу не читает; на профиле тега нет; порядок ФИО→город→пол→дата';
   });
 
+  await check('опасные кнопки админки: «Удалить» без «ОК» в диалоге не уходит на сервер, с «ОК» — уходит', async () => {
+    const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Тест Подтверждаев','Смоленск','M')").run().lastInsertRowid);
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    try {
+      await page.goto(inst.base + '/login', { waitUntil: 'networkidle' });
+      await page.fill('input[name="username"]', ADMIN.user);
+      await page.fill('input[name="password"]', ADMIN.pass);
+      await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), page.click('form button[type="submit"]')]);
+      await page.goto(inst.base + '/admin/players', { waitUntil: 'networkidle' });
+      const sel = `button.btn--danger[form="del-player-${pid}"]`;
+      assert(await page.$(sel), 'кнопки удаления тестового игрока нет на странице');
+      // 1. Отмена в диалоге — игрок жив.
+      let asked = '';
+      const dismiss = async (d) => { asked = d.message(); await d.dismiss(); };
+      page.on('dialog', dismiss);
+      await page.click(sel);
+      await page.waitForTimeout(400);
+      assert(/Подтверждаев/.test(asked), `диалог не показан или без имени игрока: «${asked}»`);
+      eq(db.prepare('SELECT COUNT(*) AS n FROM players WHERE id = ?').get(pid).n, 1, 'игрок удалён, хотя в диалоге нажали «Отмена»');
+      page.off('dialog', dismiss);
+      // 2. «ОК» — удаляется.
+      page.on('dialog', async (d) => { await d.accept(); });
+      await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle' }), page.click(sel)]);
+      eq(db.prepare('SELECT COUNT(*) AS n FROM players WHERE id = ?').get(pid).n, 0, 'после «ОК» игрок не удалён');
+      const danger = await page.evaluate(() => document.querySelectorAll('button.btn--danger[type="submit"]').length);
+      return `диалог с именем игрока; «Отмена» → жив, «ОК» → удалён; красных submit-кнопок на странице: ${danger}, все под правилом`;
+    } finally {
+      db.prepare('DELETE FROM players WHERE id = ?').run(pid);
+      await ctx.close();
+    }
+  });
+
   await check('пароль: у каждого поля кнопка «Показать/Скрыть», клик меняет тип поля', async () => {
     const page = await browser.newPage();
     try {

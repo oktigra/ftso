@@ -4,6 +4,19 @@
 (function () {
   'use strict';
 
+  // ПОДТВЕРЖДЕНИЕ ОПАСНЫХ ДЕЙСТВИЙ. Любая красная кнопка-submit (.btn--danger) —
+  // удаление, отклонение — идёт на сервер только после «ОК» в диалоге. Одно
+  // правило на все формы админки: 05.09.2026 владелец удалил сам себя одним
+  // кликом. Текст — из data-confirm кнопки либо общий. Без JS форма уйдёт как
+  // раньше — сервер и так проверяет права и CSRF.
+  document.addEventListener('submit', function (e) {
+    var btn = e.submitter;
+    if (!btn || !btn.classList || !btn.classList.contains('btn--danger')) return;
+    var q = btn.getAttribute('data-confirm') ||
+      ('Подтвердите: «' + (btn.textContent || '').trim() + '». Отменить будет нельзя.');
+    if (!window.confirm(q)) e.preventDefault();
+  });
+
   var reduce =
     window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var isMobile = function () {

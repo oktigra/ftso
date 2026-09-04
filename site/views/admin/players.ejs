@@ -164,7 +164,8 @@
               </td>
               <td class="inline-form">
                 <button class="btn btn--secondary btn--small" type="submit" form="edit-player-<%= p.id %>">Сохранить</button>
-                <button class="btn btn--danger btn--small" type="submit" form="del-player-<%= p.id %>">Удалить</button>
+                <button class="btn btn--danger btn--small" type="submit" form="del-player-<%= p.id %>"
+                        data-confirm="Удалить игрока «<%= p.full_name %>» со всеми результатами, согласиями и кабинетом? Восстановить будет нельзя.">Удалить</button>
                 <% if (p.photo_upload_id) { %>
                   <button class="btn btn--secondary btn--small" type="submit" form="photo-player-<%= p.id %>">Убрать фото</button>
                 <% } %>
