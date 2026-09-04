@@ -2,7 +2,7 @@
 // сервис только собирает вход из SQLite, кладёт итог в rating_cache и считает
 // «Изменение» на УРОВНЕ САЙТА (движок остаётся снимком, дельту не считает).
 import { computeStandings, DEFAULT_CONFIG } from '../../../rating/rating.mjs';
-import { ageOn, ageLabel, slicesFor } from './age.mjs';
+import { ageOn, sliceAge, ageLabel, slicesFor } from './age.mjs';
 
 export { DEFAULT_CONFIG as RATING_CONFIG };
 
@@ -185,12 +185,13 @@ export function anonymizeForPublic(db, players, { on } = {}) {
   return players.map((p) => {
     const row = state.get(p.playerId);
     if (row && !row.anonymized_at) {
-      const age = ageOn(row.birth_date, on);
+      const age = ageOn(row.birth_date, on); // на витрину — полные годы
+      const forSlice = sliceAge(row.birth_date, on); // в срезы — по году рождения (РТТ)
       return {
         ...p,
         age,
         ageLabel: ageLabel(age),
-        slices: slicesFor(age),
+        slices: slicesFor(forSlice),
         hasPhoto: Boolean(row.photo_upload_id),
       };
     }
@@ -327,7 +328,7 @@ export function playerProfile(db, playerId) {
     rni: row.rni || null,
     age,
     ageLabel: ageLabel(age),
-    slices: slicesFor(age),
+    slices: slicesFor(sliceAge(row.birth_date)), // срезы — по году рождения, как в рейтинге
     hasPhoto: Boolean(row.photo_upload_id),
     rating: standings
       ? {
