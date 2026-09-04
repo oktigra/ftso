@@ -4540,20 +4540,33 @@ await check('подпись редакции Политики совпадает
   return `${LEGAL_VERSION} ↔ «${LEGAL_VERSION_LABEL}» на /privacy и /consent`;
 });
 
-await check('плашка «режим разработки»: без DEV_NOTICE выключена, DEV_NOTICE=1 включает', async () => {
+await check('плашка «режим разработки»: держится сама, пока нет результатов; DEV_NOTICE=1 — принудительно', async () => {
   const { loadConfig } = await import('./server/lib/config.mjs');
+  const { devNoticeOn } = await import('./server/app.mjs');
   const saved = process.env.DEV_NOTICE;
   try {
     delete process.env.DEV_NOTICE;
-    eq(loadConfig({ requireSecrets: false }).devNotice, false, 'без DEV_NOTICE плашка должна быть выключена');
+    eq(loadConfig({ requireSecrets: false }).devNotice, false, 'без DEV_NOTICE принудительного флага нет');
     process.env.DEV_NOTICE = '1';
-    eq(loadConfig({ requireSecrets: false }).devNotice, true, 'DEV_NOTICE=1 должна включать');
-    process.env.DEV_NOTICE = '0';
-    eq(loadConfig({ requireSecrets: false }).devNotice, false, 'DEV_NOTICE=0 выключает');
+    eq(loadConfig({ requireSecrets: false }).devNotice, true, 'DEV_NOTICE=1 — принудительно');
   } finally {
     if (saved === undefined) delete process.env.DEV_NOTICE; else process.env.DEV_NOTICE = saved;
   }
-  return 'по умолчанию выключена; 1 — включена; 0 — выключена';
+  // Пустая база (схема без данных) — плашка есть; первый результат — плашка ушла.
+  const Database = (await import('better-sqlite3')).default;
+  const { readFileSync } = await import('node:fs');
+  const empty = new Database(':memory:');
+  empty.exec(readFileSync('./db/schema.sql', 'utf8'));
+  eq(devNoticeOn(empty, { devNotice: false }), true, 'на пустой базе плашка должна стоять');
+  empty.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Первый Игрок','Смоленск','M')").run();
+  empty.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Первый турнир', date('now'), 'B')").run();
+  empty.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (1, 1, 1)').run();
+  eq(devNoticeOn(empty, { devNotice: false }), false, 'с первым результатом плашка должна уйти');
+  eq(devNoticeOn(empty, { devNotice: true }), true, 'DEV_NOTICE=1 держит плашку и на наполненном сайте');
+  empty.close();
+  // Тестовая база наполнена — на главной плашки нет, при этом в админку она не лезет никогда.
+  assert(!/режиме разработки/.test((await http('/')).text), 'на наполненном сайте плашка осталась');
+  return 'пустая база → плашка; первый результат → ушла; DEV_NOTICE=1 → всегда; тестовый сайт наполнен — без плашки';
 });
 
 await check('обратная связь: форма на /contacts, честная запись, honeypot и без согласия — нет записи, письмо в очередь, админка отмечает и удаляет, чистка по сроку', async () => {
