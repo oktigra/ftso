@@ -117,9 +117,32 @@ export function birthDate(value, field = 'Дата рождения') {
  * чтобы понимать, КТО и НА КАКОМ ОСНОВАНИИ даёт согласие за ребёнка, e-mail —
  * единственный канал связи и логин кабинета, пока действует гейт.
  */
+/**
+ * ФИО из ТРЁХ полей: фамилия и имя обязательны, отчество — нет (у иностранцев его
+ * может не быть). В базе по-прежнему одна строка full_name «Фамилия Имя Отчество»:
+ * витрина, поиск дублей и сортировка по фамилии не меняются. Старое одно поле
+ * full_name принимается для совместимости (API, тесты).
+ */
+export function personName(body, { prefix = '', field = 'ФИО' } = {}) {
+  const key = (s) => (prefix ? `${prefix}_${s}` : s);
+  if (body[key('last_name')] !== undefined || body[key('first_name')] !== undefined) {
+    const last = str(body[key('last_name')], `${field}: фамилия`, { max: 60 });
+    const first = str(body[key('first_name')], `${field}: имя`, { max: 60 });
+    const middle = str(body[key('middle_name')], `${field}: отчество`, { max: 60, required: false });
+    return [last, first, middle].filter(Boolean).join(' ');
+  }
+  return str(body[key('full_name')], field, { max: 120 });
+}
+
+/** Обратно: «Фамилия Имя Отчество» → { last, first, middle } для полей формы. */
+export function splitName(fullName) {
+  const parts = String(fullName || '').trim().split(/\s+/).filter(Boolean);
+  return { last: parts[0] || '', first: parts[1] || '', middle: parts.slice(2).join(' ') };
+}
+
 export function guardianInput(body) {
   return {
-    full_name: str(body.guardian_full_name, 'ФИО законного представителя', { max: 120 }),
+    full_name: personName(body, { prefix: 'guardian', field: 'ФИО законного представителя' }),
     relation: str(body.guardian_relation, 'Степень родства (кем приходится)', { min: 3, max: 60 }),
     email: email(body.guardian_email, 'E-mail законного представителя'),
   };
@@ -127,7 +150,7 @@ export function guardianInput(body) {
 
 export function playerInput(body) {
   return {
-    full_name: str(body.full_name, 'ФИО', { max: 120 }),
+    full_name: personName(body),
     city: str(body.city, 'Город', { max: 80 }),
     sex: oneOf(body.sex, 'Пол', SEXES),
     // Возрастная группа не вводится нигде: считается от даты рождения (решение 23.08).
@@ -197,7 +220,7 @@ export function email(value, field = 'E-mail', { required = true } = {}) {
  */
 export function registrationInput(body) {
   const base = {
-    full_name: str(body.full_name, 'ФИО', { max: 120 }),
+    full_name: personName(body),
     city: str(body.city, 'Город', { max: 80 }),
     sex: oneOf(body.sex, 'Пол', SEXES),
     // Возрастная группа НЕ вводится: считается от даты рождения (решение федерации 23.08).

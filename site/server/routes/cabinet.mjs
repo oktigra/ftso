@@ -18,7 +18,7 @@
 //
 // Что игрок правит: ФИО, почту, фото. Что НЕ правит: рейтинг, очки, места —
 // они считаются движком по результатам, а не задаются владельцем профиля.
-import { str, email as emailField, ValidationError } from '../lib/validate.mjs';
+import { str, email as emailField, ValidationError, personName, splitName } from '../lib/validate.mjs';
 import { parseMultipart } from '../lib/multipart.mjs';
 import { storeUpload, deleteUpload, uploadById, sendUpload } from '../lib/uploads.mjs';
 import {
@@ -317,6 +317,7 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
     res.render('cabinet/index', {
       title: 'Личный кабинет — ФТСО',
       profile,
+      nameParts: splitName(profile.full_name),
       consent: consentState(db, profile.id),
       history: playerHistory(db, profile.id),
       passwordMin: PASSWORD_MIN,
@@ -343,7 +344,7 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
         maxFileBytes: 8 * 1024 * 1024,
         maxFiles: 1,
       });
-      const fullName = str(fields.full_name, 'ФИО', { max: 120 });
+      const fullName = personName(fields);
       // ПОЧТУ РЕБЁНКА НЕ ТРОГАЕМ: пока держится гейт, её нет вовсе, а контакт —
       // почта представителя, и меняется она в его собственном профиле.
       const newEmail = byGuardian ? null : emailField(fields.email);

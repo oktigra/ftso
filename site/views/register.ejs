@@ -35,10 +35,22 @@
       <form method="post" action="/register" class="stacked-form" novalidate>
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
-        <div class="field">
-          <label for="r-name">Фамилия, имя, отчество <span class="req" aria-hidden="true">*</span></label>
-          <input id="r-name" name="full_name" maxlength="120" required autocomplete="name"
-                 value="<%= values.full_name || '' %>">
+        <div class="field-row">
+          <div class="field">
+            <label for="r-last">Фамилия <span class="req" aria-hidden="true">*</span></label>
+            <input id="r-last" name="last_name" maxlength="60" required autocomplete="family-name"
+                   value="<%= values.last_name || '' %>">
+          </div>
+          <div class="field">
+            <label for="r-first">Имя <span class="req" aria-hidden="true">*</span></label>
+            <input id="r-first" name="first_name" maxlength="60" required autocomplete="given-name"
+                   value="<%= values.first_name || '' %>">
+          </div>
+          <div class="field">
+            <label for="r-middle">Отчество</label>
+            <input id="r-middle" name="middle_name" maxlength="60" autocomplete="additional-name"
+                   value="<%= values.middle_name || '' %>">
+          </div>
         </div>
 
         <div class="field">
@@ -93,20 +105,32 @@
             кабинет участника и управляет согласиями, пока участнику не исполнится 18.
           </p>
 
-          <div class="field">
-            <label for="r-g-name">ФИО законного представителя</label>
-            <input id="r-g-name" name="guardian_full_name" maxlength="120" autocomplete="off"
-                   value="<%= values.guardian_full_name || '' %>">
+          <div class="field-row">
+            <div class="field">
+              <label for="r-g-last">Фамилия представителя <span class="req" aria-hidden="true">*</span></label>
+              <input id="r-g-last" name="guardian_last_name" maxlength="60" required autocomplete="off"
+                     value="<%= values.guardian_last_name || '' %>">
+            </div>
+            <div class="field">
+              <label for="r-g-first">Имя <span class="req" aria-hidden="true">*</span></label>
+              <input id="r-g-first" name="guardian_first_name" maxlength="60" required autocomplete="off"
+                     value="<%= values.guardian_first_name || '' %>">
+            </div>
+            <div class="field">
+              <label for="r-g-middle">Отчество</label>
+              <input id="r-g-middle" name="guardian_middle_name" maxlength="60" autocomplete="off"
+                     value="<%= values.guardian_middle_name || '' %>">
+            </div>
           </div>
           <div class="field">
-            <label for="r-g-rel">Кем приходится участнику</label>
-            <input id="r-g-rel" name="guardian_relation" maxlength="60" autocomplete="off"
+            <label for="r-g-rel">Кем приходится участнику <span class="req" aria-hidden="true">*</span></label>
+            <input id="r-g-rel" name="guardian_relation" maxlength="60" required autocomplete="off"
                    placeholder="мать, отец, опекун, попечитель"
                    value="<%= values.guardian_relation || '' %>">
           </div>
           <div class="field">
-            <label for="r-g-email">Электронная почта представителя</label>
-            <input id="r-g-email" name="guardian_email" type="email" maxlength="160" autocomplete="off"
+            <label for="r-g-email">Электронная почта представителя <span class="req" aria-hidden="true">*</span></label>
+            <input id="r-g-email" name="guardian_email" type="email" maxlength="160" required autocomplete="off"
                    aria-describedby="r-g-email-hint" value="<%= values.guardian_email || '' %>">
             <p class="field-hint" id="r-g-email-hint">
               На неё придёт решение по заявке и ссылка для входа в кабинет участника.

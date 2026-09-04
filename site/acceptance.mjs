@@ -1291,11 +1291,11 @@ await check('форма только POST, GET с ПДн в адресе не п
 
 await check('без согласия на обработку заявка не принимается, ввод не теряется', async () => {
   const { res } = await submitRegistration({
-    full_name: 'Пётр Отказов', city: 'Смоленск', sex: 'M', email: 'otkaz@example.com',
+    last_name: 'Отказов', first_name: 'Пётр', city: 'Смоленск', sex: 'M', email: 'otkaz@example.com',
   });
   eq(res.status, 400, 'заявка без согласия должна отклоняться');
   assert(res.text.includes('Без согласия на обработку'), 'нет объяснения причины');
-  assert(res.text.includes('value="Пётр Отказов"'), 'черновик потерян — ввод должен вернуться в форму');
+  assert(res.text.includes('value="Отказов"') && res.text.includes('value="Пётр"'), 'черновик потерян — ввод должен вернуться в форму');
   eq(db.prepare("SELECT COUNT(*) AS n FROM registrations WHERE email = 'otkaz@example.com'").get().n, 0,
     'заявка без согласия попала в БД');
   return 'HTTP 400, причина названа, поля вернулись заполненными, в БД пусто';
@@ -4051,7 +4051,7 @@ try {
       const state = () => page.evaluate(() => {
         const q = (sel) => document.querySelector(sel);
         const minor = q('[data-minor="minor"]'); const adult = q('[data-minor="adult"]');
-        return { minorHidden: minor.hidden, adultHidden: adult.hidden, guardianDisabled: q('#r-g-name').disabled, emailDisabled: q('#r-email').disabled };
+        return { minorHidden: minor.hidden, adultHidden: adult.hidden, guardianDisabled: q('#r-g-last').disabled, emailDisabled: q('#r-email').disabled };
       });
       const s0 = await state();
       assert(s0.minorHidden && s0.adultHidden, `до ввода даты оба блока должны быть скрыты: ${JSON.stringify(s0)}`);
@@ -4080,8 +4080,8 @@ try {
     if (anyPlayer) assert(!(await http(`/player/${anyPlayer.id}`)).text.includes('группа:'), 'на профиле остался тег «группа»');
     const html = (await http('/register')).text;
     assert(!html.includes('name="age_group"'), 'в форме регистрации осталось поле возрастной группы');
-    const order = ['full_name', 'city', 'sex', 'birth_date'].map((n) => html.indexOf(`name="${n}"`));
-    assert(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1])), `порядок полей не ФИО→город→пол→дата: ${order}`);
+    const order = ['last_name', 'city', 'sex', 'birth_date'].map((n) => html.indexOf(`name="${n}"`));
+    assert(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1])), `порядок полей не фамилия→город→пол→дата: ${order}`);
     const data = registrationInput({ full_name: 'Тест Тестов', city: 'Смоленск', sex: 'M', birth_date: '1990-01-01', email: 't@example.com', age_group: '35-44', consent_processing: '1' });
     eq(data.age_group, null, 'подсунутая группа должна игнорироваться');
     return 'регистрация и админка без поля; playerInput группу не читает; на профиле тега нет; порядок ФИО→город→пол→дата';
@@ -4555,6 +4555,53 @@ await check('роли: content-manager и news-editor входят, видят �
   } finally {
     db.prepare("DELETE FROM users WHERE username IN ('office_t', 'news_t')").run();
   }
+});
+
+// ---------------------------------------------------------------------------
+// ФИО тремя полями: регистрация, представитель, админка, кабинет; статика с версией
+// ---------------------------------------------------------------------------
+await check('ФИО тремя полями: собирается в full_name, отчество необязательно, без фамилии — ошибка; представитель так же; админка; статика с версией', async () => {
+  const jar = new Jar();
+  const page = await http('/register', { jar });
+  for (const n of ['last_name', 'first_name', 'middle_name', 'guardian_last_name', 'guardian_first_name', 'guardian_middle_name']) assert(page.text.includes(`name="${n}"`), `в форме нет поля ${n}`);
+  assert(!page.text.includes('name="full_name"'), 'в регистрации осталось одно поле ФИО');
+  for (const n of ['guardian_last_name', 'guardian_first_name', 'guardian_relation', 'guardian_email', 'city', 'sex', 'birth_date', 'email']) {
+    const tag = page.text.match(new RegExp(`<(?:input|select)[^>]*name="${n}"[^>]*>`));
+    assert(tag && /\brequired\b/.test(tag[0]), `поле ${n} должно быть обязательным`);
+  }
+  for (const n of ['middle_name', 'guardian_middle_name']) assert(!/\brequired\b/.test((page.text.match(new RegExp(`<input[^>]*name="${n}"[^>]*>`)) || [''])[0]), `${n} не должно быть обязательным`);
+  const _csrf = tokenFrom(page.text);
+  const ok = await http('/register', { method: 'POST', jar, form: { _csrf, last_name: 'Сидоров', first_name: 'Пётр', middle_name: 'Ильич', city: 'Смоленск', sex: 'M', birth_date: ADULT_BIRTH, email: 'trio@example.com', consent_processing: '1' } });
+  eq(ok.status, 302, `заявка тремя полями: ${ok.status}`);
+  eq(db.prepare('SELECT full_name FROM registrations WHERE email = ?').get('trio@example.com').full_name, 'Сидоров Пётр Ильич', 'ФИО не собралось');
+  const jar2 = new Jar(); const c2 = tokenFrom((await http('/register', { jar: jar2 })).text);
+  const noMiddle = await http('/register', { method: 'POST', jar: jar2, form: { _csrf: c2, last_name: 'Smith', first_name: 'John', middle_name: '', city: 'Смоленск', sex: 'M', birth_date: ADULT_BIRTH, email: 'smith@example.com', consent_processing: '1' } });
+  eq(noMiddle.status, 302, 'без отчества должно приниматься');
+  eq(db.prepare('SELECT full_name FROM registrations WHERE email = ?').get('smith@example.com').full_name, 'Smith John', 'без отчества — два слова');
+  const jar3 = new Jar(); const c3 = tokenFrom((await http('/register', { jar: jar3 })).text);
+  const noLast = await http('/register', { method: 'POST', jar: jar3, form: { _csrf: c3, last_name: '', first_name: 'Пётр', city: 'Смоленск', sex: 'M', birth_date: ADULT_BIRTH, email: 'nolast@example.com', consent_processing: '1' } });
+  eq(noLast.status, 400, 'без фамилии — отказ');
+  assert(/фамилия/i.test(noLast.text), 'ошибка не называет фамилию');
+  const y = new Date().getFullYear();
+  const jar4 = new Jar(); const c4 = tokenFrom((await http('/register', { jar: jar4 })).text);
+  const kid = await http('/register', { method: 'POST', jar: jar4, form: { _csrf: c4, last_name: 'Юный', first_name: 'Игрок', city: 'Смоленск', sex: 'M', birth_date: `${y - 12}-03-03`, guardian_last_name: 'Юная', guardian_first_name: 'Мама', guardian_middle_name: 'Петровна', guardian_relation: 'мать', guardian_email: 'kidmom@example.com', consent_guardian_child: '1', consent_guardian_self: '1' } });
+  eq(kid.status, 302, `заявка ребёнка с представителем тремя полями: ${kid.status} ${kid.text.slice(0, 200)}`);
+  const kidReg = db.prepare('SELECT id, full_name FROM registrations WHERE full_name = ?').get('Юный Игрок');
+  assert(kidReg, 'заявка ребёнка не создана');
+  eq(db.prepare('SELECT guardian_full_name FROM registrations WHERE id = ?').get(kidReg.id).guardian_full_name, 'Юная Мама Петровна', 'ФИО представителя не собралось');
+  const { jar: aj } = await login(ADMIN.user, ADMIN.pass);
+  const ap = await http('/admin/players', { jar: aj });
+  assert(ap.text.includes('name="last_name"') && ap.text.includes('name="middle_name"') && !ap.text.includes('id="p-name"'), 'в админке нет трёх полей');
+  const ac = tokenFrom(ap.text);
+  eq((await http('/admin/players', { method: 'POST', jar: aj, form: { _csrf: ac, last_name: 'Админов', first_name: 'Тест', middle_name: '', city: 'Смоленск', sex: 'F' } })).status, 302, 'создание игрока тремя полями');
+  const created = db.prepare('SELECT id, full_name FROM players WHERE full_name = ?').get('Админов Тест');
+  assert(created, 'игрок не создан из трёх полей');
+  const table = (await http('/admin/players', { jar: aj })).text;
+  assert(table.includes(`form="edit-player-${created.id}" name="last_name" value="Админов"`), 'в таблице фамилия не разобрана в своё поле');
+  const shell = (await http('/login')).text;
+  const v = shell.match(/\/static\/js\/app\.js\?v=([0-9a-f]{8})/);
+  assert(v && shell.includes(`/static/css/site.css?v=${v[1]}`), 'статика подключена без версии');
+  return `трио → «Сидоров Пётр Ильич»; без отчества → «Smith John»; без фамилии → 400; представитель «Юная Мама Петровна»; админка создала «Админов Тест», таблица разбирает; статика ?v=${v[1]}`;
 });
 
 // ---------------------------------------------------------------------------

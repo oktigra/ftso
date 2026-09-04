@@ -3,7 +3,7 @@
 // Путь: форма -> заявка в БД + две записи в журнал согласий -> МОДЕРАЦИЯ ->
 // игрок. Прямой записи в players отсюда нет: попасть в players значит попасть
 // в открытый рейтинг, и решение об этом принимает человек, а не отправитель формы.
-import { registrationInput, ValidationError } from '../lib/validate.mjs';
+import { registrationInput, ValidationError, splitName } from '../lib/validate.mjs';
 import { createRegistration, byToken } from '../lib/registrations.mjs';
 import { queueMail, flushOutbox, mailSubmitted } from '../lib/mailer.mjs';
 import { LEGAL_VERSION_LABEL, OPERATOR } from '../lib/legal.mjs';
@@ -17,6 +17,10 @@ const STATUS_RU = {
 export default function mountRegister(app, { db, config, limitRegister }) {
   /** Черновик в сессии: ошибка валидации не должна стирать введённое. */
   const draft = (req) => req.session.registerDraft || {};
+  const splitNameFields = (full, prefix = '') => {
+    const p = splitName(full); const k = (n) => (prefix ? `${prefix}_${n}` : n);
+    return { [k('last_name')]: p.last, [k('first_name')]: p.first, [k('middle_name')]: p.middle };
+  };
 
   function renderForm(req, res, { errors = [], status = 200 } = {}) {
     res.status(status).render('register', {
@@ -71,9 +75,10 @@ export default function mountRegister(app, { db, config, limitRegister }) {
       // Черновик держим до успеха: упадёт валидация — поля вернутся заполненными.
       req.session.registerDraft = {
         ...data,
+        ...splitNameFields(data.full_name),
         ...(data.guardian
           ? {
-            guardian_full_name: data.guardian.full_name,
+            ...splitNameFields(data.guardian.full_name, 'guardian'),
             guardian_relation: data.guardian.relation,
             guardian_email: data.guardian.email,
             // Почту участника в черновик не возвращаем: у минора её нет.
@@ -105,13 +110,16 @@ export default function mountRegister(app, { db, config, limitRegister }) {
     } catch (err) {
       if (err instanceof ValidationError) {
         req.session.registerDraft = {
-          full_name: req.body.full_name,
+          last_name: req.body.last_name,
+          first_name: req.body.first_name,
+          middle_name: req.body.middle_name,
           city: req.body.city,
           sex: req.body.sex,
-          age_group: req.body.age_group,
           email: req.body.email,
           birth_date: req.body.birth_date,
-          guardian_full_name: req.body.guardian_full_name,
+          guardian_last_name: req.body.guardian_last_name,
+          guardian_first_name: req.body.guardian_first_name,
+          guardian_middle_name: req.body.guardian_middle_name,
           guardian_relation: req.body.guardian_relation,
           guardian_email: req.body.guardian_email,
           consent_processing: req.body.consent_processing === '1',
