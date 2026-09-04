@@ -201,6 +201,9 @@
                 <% if (p.photo_upload_id) { %>
                   <button class="btn btn--secondary btn--small" type="submit" form="photo-player-<%= p.id %>">Убрать фото</button>
                 <% } %>
+                <% if (p.account) { %>
+                  <button class="btn btn--secondary btn--small" type="submit" form="link-player-<%= p.id %>" title="Ссылка для входа в кабинет — когда письмо не доходит">Ссылка в кабинет</button>
+                <% } %>
               </td>
             </tr>
           <% }); %>
@@ -212,6 +215,9 @@
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       </form>
       <form id="del-player-<%= p.id %>" method="post" action="/admin/players/<%= p.id %>/delete" hidden>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      </form>
+      <form id="link-player-<%= p.id %>" method="post" action="/admin/players/<%= p.id %>/cabinet-link" hidden>
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       </form>
       <form id="photo-player-<%= p.id %>" method="post" action="/admin/players/<%= p.id %>/photo/delete" hidden>
