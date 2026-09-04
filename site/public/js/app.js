@@ -152,11 +152,17 @@
   var birth = document.getElementById('r-birth');
   if (birth) {
     var blocks = document.querySelectorAll('[data-minor]');
+    // Скрытый блок ОТКЛЮЧАЕТСЯ целиком: его поля не валидируются браузером
+    // (иначе required в невидимом поле молча блокирует отправку) и не уходят на сервер.
+    var setBlock = function (el, hidden) {
+      el.hidden = hidden;
+      Array.prototype.forEach.call(el.querySelectorAll('input, select, textarea'), function (i) { i.disabled = hidden; });
+    };
     var syncMinor = function () {
       var v = birth.value;
       if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) {
-        // Дата не введена или неполна — показываем всё: угадывать не наше дело.
-        Array.prototype.forEach.call(blocks, function (el) { el.hidden = false; });
+        // Даты ещё нет — оба блока спрятаны: показываем только то, что заполнять точно нужно.
+        Array.prototype.forEach.call(blocks, function (el) { setBlock(el, true); });
         return;
       }
       var p = v.split('-');
@@ -167,9 +173,10 @@
       var minor = age < 18;
       Array.prototype.forEach.call(blocks, function (el) {
         var want = el.getAttribute('data-minor');
-        el.hidden = want === 'minor' ? !minor : minor;
+        setBlock(el, want === 'minor' ? !minor : minor);
       });
     };
+    birth.addEventListener('input', syncMinor);
     birth.addEventListener('change', syncMinor);
     birth.addEventListener('blur', syncMinor);
     syncMinor();

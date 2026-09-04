@@ -4044,6 +4044,32 @@ try {
     }
   });
 
+  await check('регистрация: блоки представителя/взрослого скрыты до даты рождения, появляются по возрасту и отключаются при скрытии', async () => {
+    const page = await browser.newPage();
+    try {
+      await page.goto(inst.base + '/register', { waitUntil: 'networkidle' });
+      const state = () => page.evaluate(() => {
+        const q = (sel) => document.querySelector(sel);
+        const minor = q('[data-minor="minor"]'); const adult = q('[data-minor="adult"]');
+        return { minorHidden: minor.hidden, adultHidden: adult.hidden, guardianDisabled: q('#r-g-name').disabled, emailDisabled: q('#r-email').disabled };
+      });
+      const s0 = await state();
+      assert(s0.minorHidden && s0.adultHidden, `до ввода даты оба блока должны быть скрыты: ${JSON.stringify(s0)}`);
+      const y = new Date().getFullYear();
+      await page.fill('#r-birth', `${y - 12}-05-10`);
+      await page.dispatchEvent('#r-birth', 'change');
+      const s1 = await state();
+      assert(!s1.minorHidden && s1.adultHidden && !s1.guardianDisabled && s1.emailDisabled, `ребёнок: ждал блок представителя, отключённый e-mail взрослого: ${JSON.stringify(s1)}`);
+      await page.fill('#r-birth', `${y - 30}-05-10`);
+      await page.dispatchEvent('#r-birth', 'change');
+      const s2 = await state();
+      assert(s2.minorHidden && !s2.adultHidden && s2.guardianDisabled && !s2.emailDisabled, `взрослый: ждал скрытый и отключённый блок представителя: ${JSON.stringify(s2)}`);
+      return 'без даты — оба скрыты; ребёнок — представитель виден, e-mail взрослого отключён; взрослый — наоборот';
+    } finally {
+      await page.close();
+    }
+  });
+
   await check('пароль: у каждого поля кнопка «Показать/Скрыть», клик меняет тип поля', async () => {
     const page = await browser.newPage();
     try {
