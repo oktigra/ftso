@@ -26,4 +26,11 @@
 </div>
 <% if (typeof flash !== 'undefined' && flash) { %>
   <div class="flash flash--<%= flash.kind %>"><%= flash.text %></div>
+  <% if (flash.secret) { %>
+    <div class="flash-secret" role="status">
+      <code class="flash-secret__value"><%= flash.secret %></code>
+      <button type="button" class="btn btn--primary btn--small" data-copy="<%= flash.secret %>">Скопировать</button>
+      <span class="muted">Показывается один раз — после ухода со страницы не восстановить.</span>
+    </div>
+  <% } %>
 <% } %>

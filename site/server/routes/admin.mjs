@@ -88,8 +88,9 @@ const publicationBasis = (body) => ({
   documentDate: isoDate(body.consent_document_date, 'Дата согласия'),
 });
 
-const flash = (req, res, kind, text, back) => {
-  req.session.flash = { kind, text };
+// secret — одноразовое значение (временный пароль, ссылка): показывается крупным блоком с кнопкой «Скопировать».
+const flash = (req, res, kind, text, back, secret = null) => {
+  req.session.flash = secret ? { kind, text, secret } : { kind, text };
   req.session.save(() => res.redirect(back));
 };
 
@@ -945,7 +946,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const token = issueResetToken(db, account.id, { hours: 72 });
       const url = `${req.protocol}://${req.get('host')}/cabinet/reset/${token}`;
       logAction(db, req.session.user.id, 'player.cabinet.link', id, null);
-      flash(req, res, 'ok', `Ссылка для входа в кабинет (действует 72 часа, один раз; передайте игроку лично): ${url}`, '/admin/players');
+      flash(req, res, 'ok', 'Ссылка для входа в кабинет — действует 72 часа, один раз; передайте игроку лично.', '/admin/players', url);
     }),
   );
 
@@ -963,7 +964,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const password = temporaryPassword();
       db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?').run(hashPassword(password), id);
       logAction(db, req.session.user.id, 'user.password.reset', id, null);
-      flash(req, res, 'ok', `Временный пароль для «${target.username}»: ${password} — сообщите лично; при входе сайт потребует его сменить. Больше он не покажется.`, '/admin/users');
+      flash(req, res, 'ok', `Временный пароль для «${target.username}» — сообщите лично; при входе сайт потребует его сменить. Больше он не покажется.`, '/admin/users', password);
     }),
   );
 
