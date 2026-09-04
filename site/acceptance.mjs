@@ -4535,6 +4535,34 @@ await check('logrotate-ftso: dry-run без ошибок, принудитель
 });
 
 // ---------------------------------------------------------------------------
+// set-secrets.sh: пароль супер-админа и флаг приёма пишутся в .env, короткий пароль отклоняется
+// ---------------------------------------------------------------------------
+await check('set-secrets.sh: пароль ≥12 и --intake пишутся; короткий/со спецсимволом — код 1, файл не тронут; все deploy/*.sh проходят bash -n', async () => {
+  const SCRIPT = resolve(HERE, '..', 'deploy', 'set-secrets.sh');
+  assert(existsSync(SCRIPT), 'нет deploy/set-secrets.sh');
+  const tmp = mkdtempSync('/tmp/ss-');
+  try {
+    const envFile = resolve(tmp, 'env');
+    writeFileSync(envFile, 'SESSION_SECRET=x\nSUPER_ADMIN_PASSWORD=old\nINTAKE_ENABLED=0\n');
+    const run = (input, args = []) => spawnSync('bash', [SCRIPT, ...args], { input, encoding: 'utf8', env: { ...process.env, ENV_FILE: envFile, SET_SECRETS_RESTART: '' } });
+    const ok = run('Secure_Pass_2026\n', ['--intake', '1']);
+    eq(ok.status, 0, `скрипт упал: ${ok.stdout}${ok.stderr}`);
+    const after = readFileSync(envFile, 'utf8');
+    assert(/^SUPER_ADMIN_PASSWORD=Secure_Pass_2026$/m.test(after) && /^INTAKE_ENABLED=1$/m.test(after), `в .env не то: ${after}`);
+    assert(!/Secure_Pass_2026/.test(ok.stdout), 'пароль попал в вывод скрипта');
+    eq(run('short\n').status, 1, 'короткий пароль должен дать код 1');
+    eq(run('bad space pass\n').status, 1, 'пароль с пробелом должен дать код 1');
+    eq(run('Secure_Pass_2026\n', ['--intake', '7']).status, 1, '--intake 7 должен дать код 1');
+    assert(/^SUPER_ADMIN_PASSWORD=Secure_Pass_2026$/m.test(readFileSync(envFile, 'utf8')), 'отклонённые прогоны изменили .env');
+    const scripts = spawnSync('sh', ['-c', `ls ${resolve(HERE, '..', 'deploy')}/*.sh`], { encoding: 'utf8' }).stdout.trim().split('\n');
+    for (const f of scripts) eq(spawnSync('bash', ['-n', f]).status, 0, `bash -n не прошёл: ${f}`);
+    return `пароль и INTAKE записаны, вывод без пароля; короткий/пробел/--intake 7 → 1 без изменений; bash -n: ${scripts.length} скриптов`;
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Отчёт
 // ---------------------------------------------------------------------------
 const checks = results.filter((r) => r.name);
