@@ -7,10 +7,24 @@
 
 export const ROLES = ['super-admin', 'content-manager', 'news-editor', 'tournament-admin'];
 
-// В ЭТОМ шаге рабочие роли — super-admin и tournament-admin.
-// content-manager и news-editor заведены, но НЕ подключены: их матрица доступа
-// определяется, когда придут их разделы.
-export const ACTIVE_ROLES = ['super-admin', 'tournament-admin'];
+// С 04.09.2026 рабочие все четыре роли. МАТРИЦА РАЗДЕЛОВ — единственный источник
+// и для меню, и для проверок в маршрутах (requireRole получает наборы отсюда):
+//   super-admin      — всё, включая пользователей и закрытые документы;
+//   tournament-admin — игроки, заявки, турниры, рейтинг (данные спортсменов) + справочники,
+//                      библиотека, обращения;
+//   content-manager  — новости, справочники, документы и галерея, обращения; к ПДн игроков нет;
+//   news-editor      — только новости.
+export const ACTIVE_ROLES = [...ROLES];
+export const ROLE_SECTIONS = {
+  'super-admin': ['dashboard', 'players', 'registrations', 'tournaments', 'tournament-requests', 'rating', 'news', 'directories', 'library', 'feedback', 'account', 'vault', 'users'],
+  'tournament-admin': ['dashboard', 'players', 'registrations', 'tournaments', 'tournament-requests', 'rating', 'directories', 'library', 'feedback', 'account'],
+  'content-manager': ['dashboard', 'news', 'directories', 'library', 'feedback', 'account'],
+  'news-editor': ['dashboard', 'news', 'account'],
+};
+/** Роли, которым открыт раздел, — для requireRole(...rolesFor('players')). */
+export function rolesFor(section) {
+  return ROLES.filter((r) => (ROLE_SECTIONS[r] || []).includes(section));
+}
 
 export function currentUser(req) {
   return req.session && req.session.user ? req.session.user : null;

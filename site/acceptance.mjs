@@ -4468,6 +4468,50 @@ await check('обратная связь: форма на /contacts, честн�
 });
 
 // ---------------------------------------------------------------------------
+// Матрица ролей: content-manager и news-editor — рабочие; меню и маршруты по одной карте
+// ---------------------------------------------------------------------------
+await check('роли: content-manager и news-editor входят, видят свои разделы, чужие → 403, пароль меняют; меню по роли', async () => {
+  const { hashPassword } = await import('./server/lib/password.mjs');
+  const { ROLE_SECTIONS, rolesFor } = await import('./server/middleware/auth.mjs');
+  const mk = (u, role) => {
+    db.prepare('DELETE FROM users WHERE username = ?').run(u);
+    db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)').run(u, hashPassword('Role-Pass-2026'), role);
+  };
+  mk('office_t', 'content-manager'); mk('news_t', 'news-editor');
+  try {
+    const expect = {
+      'content-manager': { ok: ['/admin', '/admin/news', '/admin/library', '/admin/directories/coaches', '/admin/feedback', '/admin/account'], no: ['/admin/players', '/admin/registrations', '/admin/tournaments', '/admin/vault', '/admin/users'] },
+      'news-editor': { ok: ['/admin', '/admin/news', '/admin/account'], no: ['/admin/library', '/admin/directories/coaches', '/admin/feedback', '/admin/players', '/admin/vault', '/admin/users'] },
+    };
+    const report = [];
+    for (const [u, role] of [['office_t', 'content-manager'], ['news_t', 'news-editor']]) {
+      const { res, jar } = await login(u, 'Role-Pass-2026');
+      eq(res.status, 302, `${role}: вход`);
+      for (const p of expect[role].ok) eq((await http(p, { jar })).status, 200, `${role}: ${p} должен открываться`);
+      for (const p of expect[role].no) eq((await http(p, { jar })).status, 403, `${role}: ${p} должен давать 403`);
+      const menu = (await http('/admin', { jar })).text;
+      const has = (href) => menu.includes(`href="${href}"`);
+      assert(has('/admin/news') && has('/admin/account'), `${role}: в меню нет своих разделов`);
+      assert(!has('/admin/players') && !has('/admin/vault') && !has('/admin/users'), `${role}: в меню чужие разделы`);
+      if (role === 'news-editor') assert(!has('/admin/library') && !menu.includes('/admin/rating/recompute'), 'news-editor: лишнее в меню или кнопка рейтинга');
+      if (role === 'content-manager') assert(has('/admin/library') && has('/admin/feedback'), 'content-manager: нет библиотеки/обращений в меню');
+      const acc = await http('/admin/account', { jar });
+      const chg = await http('/admin/account/password', { method: 'POST', form: { _csrf: tokenFrom(acc.text), current_password: 'Role-Pass-2026', new_password: 'Role-Pass-2026-new' }, jar });
+      eq(chg.status, 302, `${role}: смена пароля`);
+      const { res: re } = await login(u, 'Role-Pass-2026-new');
+      eq(re.status, 302, `${role}: вход по новому паролю`);
+      report.push(`${role}: ${expect[role].ok.length} открыто, ${expect[role].no.length} × 403, меню по роли, пароль сменён`);
+    }
+    eq(rolesFor('players').join(','), 'super-admin,tournament-admin', 'матрица players');
+    eq(rolesFor('news').includes('news-editor') && rolesFor('news').includes('content-manager'), true, 'матрица news');
+    eq(ROLE_SECTIONS['news-editor'].length, 3, 'news-editor — ровно сводка, новости, аккаунт');
+    return report.join('; ');
+  } finally {
+    db.prepare("DELETE FROM users WHERE username IN ('office_t', 'news_t')").run();
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Закрытые документы федерации (/admin/vault): только super-admin, наружу не отдаются
 // ---------------------------------------------------------------------------
 await check('vault: загрузка super-admin → скачивание вложением; /files и tournament-admin не видят; мусор не сиротит файл; удаление', async () => {

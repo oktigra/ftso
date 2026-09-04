@@ -19,15 +19,16 @@
       <div class="field"><label for="u-role">Роль</label>
         <select id="u-role" name="role" required>
           <% roles.forEach(function (r) { %>
-            <option value="<%= r %>"><%= r %><%= activeRoles.includes(r) ? '' : ' (заведена, разделы позже)' %></option>
+            <option value="<%= r %>"><%= r %></option>
           <% }); %>
         </select>
       </div>
       <button class="btn btn--primary" type="submit">Создать</button>
     </form>
-    <p class="muted">В этом шаге рабочие роли — <code>super-admin</code> и <code>tournament-admin</code>.
-      <code>content-manager</code> и <code>news-editor</code> заведены, но не подключены: их матрица
-      доступа определится, когда придут их разделы.</p>
+    <p class="muted">Роли: <code>super-admin</code> — всё, включая пользователей и закрытые документы;
+      <code>tournament-admin</code> — игроки, заявки, турниры, рейтинг, а также справочники, документы, галерея, обращения;
+      <code>content-manager</code> — новости, справочники, документы и галерея, обращения (к данным игроков доступа нет);
+      <code>news-editor</code> — только новости. Меню каждого показывает лишь его разделы.</p>
   </div>
 
   <div class="panel">

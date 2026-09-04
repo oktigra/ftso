@@ -1,4 +1,4 @@
-import { requireRole, ROLES, ACTIVE_ROLES } from '../middleware/auth.mjs';
+import { requireRole, ROLES, ACTIVE_ROLES, rolesFor } from '../middleware/auth.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
 import { logAction, recentActions } from '../lib/action-log.mjs';
@@ -72,7 +72,8 @@ import {
 } from '../lib/mailer.mjs';
 
 // Кто ведёт данные рейтинга: турниры, игроков, результаты, пересчёт.
-const DATA_ROLES = ['super-admin', 'tournament-admin'];
+const DATA_ROLES = rolesFor('players'); // игроки, заявки, турниры, рейтинг — данные спортсменов
+const ANY_ROLE = [...ROLES]; // сводка и «Мой аккаунт» — всем, кто может войти
 // Управление пользователями — ТОЛЬКО super-admin (tournament-admin получит 403).
 const OWNER_ROLE = ['super-admin'];
 
@@ -122,7 +123,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
   };
 
   // --- дашборд ------------------------------------------------------------
-  app.get('/admin', requireRole(...DATA_ROLES), (req, res) => {
+  app.get('/admin', requireRole(...ANY_ROLE), (req, res) => {
     const counts = {
       players: db.prepare('SELECT COUNT(*) AS n FROM players').get().n,
       tournaments: db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n,
@@ -864,13 +865,13 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
   );
 
   // --- свой пароль --------------------------------------------------------
-  app.get('/admin/account', requireRole(...DATA_ROLES), (req, res) => {
+  app.get('/admin/account', requireRole(...ANY_ROLE), (req, res) => {
     res.render('admin/account', { title: 'Мой аккаунт — админка ФТСО' });
   });
 
   app.post(
     '/admin/account/password',
-    requireRole(...DATA_ROLES),
+    requireRole(...ANY_ROLE),
     limitWrites,
     guard((req, res) => {
       // Смена СВОЕГО пароля требует ТЕКУЩИЙ пароль — иначе угон сессии = постоянный
