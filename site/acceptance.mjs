@@ -568,7 +568,7 @@ await check('CRUD игроков и турниров полон: редакти�
 
   const upd = await http(`/admin/players/${player.id}/update`, {
     method: 'POST',
-    form: { _csrf: _pCsrf, full_name: 'Изменённый Игрок', city: 'Десногорск', sex: 'F', age_group: '35-44' },
+    form: { _csrf: _pCsrf, full_name: 'Изменённый Игрок', city: 'Десногорск', sex: 'F' },
     jar,
   });
   eq(upd.status, 302, 'обновление игрока');
@@ -3368,10 +3368,10 @@ const cabLogin19 = async () => {
 };
 const jpeg19 = (color) => sharpLib({ create: { width: 640, height: 480, channels: 3, background: color } }).jpeg().toBuffer();
 
-await check('§8.1 профиль открывается: ФИО, город, пол, возраст в годах, группа, очки, место, матчи со счётом', async () => {
+await check('§8.1 профиль открывается: ФИО, город, пол, возраст в годах, очки, место, матчи со счётом (группы нет — она считается)', async () => {
   const page = await http(`/player/${p19}`);
   eq(page.status, 200, '/player/:id');
-  for (const s of [P19.name, 'Смоленск', 'муж.', 'возраст: 14 лет', 'группа: до 19', '6:4 3:6 10:8', 'победа', 'Открытый кубок профиля']) {
+  for (const s of [P19.name, 'Смоленск', 'муж.', 'возраст: 14 лет', '6:4 3:6 10:8', 'победа', 'Открытый кубок профиля']) {
     assert(page.text.includes(s), `на профиле нет «${s}»`);
   }
   const st = currentStandings(db);
@@ -4070,15 +4070,21 @@ try {
     }
   });
 
-  await check('регистрация: поля возрастной группы нет, дата рождения идёт сразу после пола; группу подсунуть нельзя', async () => {
-    const { registrationInput } = await import('./server/lib/validate.mjs');
+  await check('возрастная группа нигде не вводится: ни в регистрации, ни в админке, ни на профиле; дата рождения сразу после пола', async () => {
+    const { registrationInput, playerInput } = await import('./server/lib/validate.mjs');
+    const { jar: aj } = await login(ADMIN.user, ADMIN.pass);
+    const adminHtml = (await http('/admin/players', { jar: aj })).text;
+    assert(!adminHtml.includes('name="age_group"') && !adminHtml.includes('<th>Группа</th>'), 'в админке осталось поле группы');
+    assert(!('age_group' in playerInput({ full_name: 'А Б', city: 'С', sex: 'M', age_group: '35-44' })), 'playerInput читает группу');
+    const anyPlayer = db.prepare('SELECT id FROM players WHERE anonymized_at IS NULL LIMIT 1').get();
+    if (anyPlayer) assert(!(await http(`/player/${anyPlayer.id}`)).text.includes('группа:'), 'на профиле остался тег «группа»');
     const html = (await http('/register')).text;
     assert(!html.includes('name="age_group"'), 'в форме регистрации осталось поле возрастной группы');
     const order = ['full_name', 'city', 'sex', 'birth_date'].map((n) => html.indexOf(`name="${n}"`));
     assert(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1])), `порядок полей не ФИО→город→пол→дата: ${order}`);
     const data = registrationInput({ full_name: 'Тест Тестов', city: 'Смоленск', sex: 'M', birth_date: '1990-01-01', email: 't@example.com', age_group: '35-44', consent_processing: '1' });
     eq(data.age_group, null, 'подсунутая группа должна игнорироваться');
-    return 'поля нет; порядок ФИО→город→пол→дата; подсунутая группа → null';
+    return 'регистрация и админка без поля; playerInput группу не читает; на профиле тега нет; порядок ФИО→город→пол→дата';
   });
 
   await check('пароль: у каждого поля кнопка «Показать/Скрыть», клик меняет тип поля', async () => {
