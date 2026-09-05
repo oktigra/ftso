@@ -52,6 +52,36 @@ export function findNameMatches(db, fullName, birthDate = null) {
 }
 
 /**
+ * ИГРОК ПО ТЕКСТУ ИЗ ПОЛЯ С ПОДСКАЗКОЙ (ускорение ввода, 05.09.2026). Принимает
+ * «Фамилия Имя Отчество (Город)» из datalist, просто ФИО, «#12» или «12».
+ * Один найден — его id; ни одного — null; несколько тёзок — ошибка с их
+ * id и городами, чтобы секретарь выбрал «#id». Ничего не создаёт.
+ */
+export function resolvePlayer(db, value, { ValidationError }) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const byId = /^#?(\d+)$/.exec(raw);
+  if (byId) {
+    const p = db.prepare('SELECT id FROM players WHERE id = ?').get(Number(byId[1]));
+    return p ? p.id : null;
+  }
+  const cityMatch = /^(.*?)\s*\(([^()]*)\)\s*$/.exec(raw);
+  const name = normalizeName(cityMatch ? cityMatch[1] : raw);
+  const city = cityMatch ? cityMatch[2].trim().toLowerCase() : '';
+  if (!name) return null;
+  let found = db
+    .prepare('SELECT id, full_name, city FROM players WHERE anonymized_at IS NULL')
+    .all()
+    .filter((p) => normalizeName(p.full_name) === name);
+  if (found.length > 1 && city) found = found.filter((p) => String(p.city || '').trim().toLowerCase() === city);
+  if (found.length === 1) return found[0].id;
+  if (found.length === 0) return null;
+  throw new ValidationError(
+    `Несколько игроков с таким ФИО: ${found.map((p) => `#${p.id} (${p.city})`).join(', ')} — введите «#номер»`,
+  );
+}
+
+/**
  * ДУБЛИ ИГРОКОВ — правила владельца 05.09.2026, стоп до секретаря:
  *  · e-mail взрослого заявителя уже у кабинета игрока или у ждущей заявки —
  *    дубль (адрес представителя не считается: родитель сам может играть, а

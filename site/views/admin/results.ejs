@@ -9,15 +9,38 @@
 
   <div class="panel">
     <h2>Добавить результат</h2>
+    <%
+    /* УСКОРЕНИЕ ВВОДА (05.09.2026): игрок — поле с подсказкой по первым буквам
+       (datalist), а не список на сотни фамилий. Если игрока в базе нет —
+       заполняются три поля ниже, и он заводится этим же нажатием. */
+    %>
+    <datalist id="players-list">
+      <% players.forEach(function (p) { %><option value="<%= p.full_name %> (<%= p.city %>)"></option><% }); %>
+    </datalist>
     <form method="post" action="/admin/tournaments/<%= tournament.id %>/results" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <div class="field"><label for="r-player">Игрок</label>
-        <select id="r-player" name="player_id" required>
-          <% players.forEach(function (p) { %><option value="<%= p.id %>"><%= p.full_name %> (<%= p.city %>)</option><% }); %>
-        </select>
+      <div class="field field--wide"><label for="r-player">Игрок</label>
+        <input id="r-player" name="player" list="players-list" autocomplete="off" required maxlength="140"
+               placeholder="первые буквы фамилии" value="<%= typeof form !== 'undefined' && form.player ? form.player : '' %>">
       </div>
       <div class="field"><label for="r-place">Место</label><input id="r-place" name="place" inputmode="numeric" required></div>
       <button class="btn btn--primary" type="submit">Добавить</button>
+      <details class="field new-player">
+        <summary>Игрока нет в базе — завести здесь</summary>
+        <div class="inline-form">
+          <div class="field"><label for="r-new-city">Город</label><input id="r-new-city" name="new_city" maxlength="80"></div>
+          <div class="field"><label for="r-new-sex">Пол</label>
+            <select id="r-new-sex" name="new_sex"><option value="">—</option><option value="M">муж.</option><option value="F">жен.</option></select>
+          </div>
+          <div class="field"><label for="r-new-birth">Дата рождения</label><input id="r-new-birth" name="new_birth_date" placeholder="ГГГГ-ММ-ДД" maxlength="10"></div>
+        </div>
+        <p class="muted">ФИО берётся из поля «Игрок» (Фамилия Имя Отчество). Дубли по ФИО + дате рождения не заводятся.</p>
+      </details>
+    </form>
+    <p class="muted">Внесли все результаты турнира — пересчитайте рейтинг, чтобы они попали в таблицу на сайте:</p>
+    <form method="post" action="/admin/rating/recompute" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="btn btn--secondary btn--small" type="submit">Пересчитать рейтинг</button>
     </form>
   </div>
 
@@ -49,15 +72,11 @@
     <h2>Матчи (необязательно — для тай-брейка)</h2>
     <form method="post" action="/admin/tournaments/<%= tournament.id %>/matches" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <div class="field"><label for="m-win">Победитель</label>
-        <select id="m-win" name="winner_player_id" required>
-          <% players.forEach(function (p) { %><option value="<%= p.id %>"><%= p.full_name %></option><% }); %>
-        </select>
+      <div class="field field--wide"><label for="m-win">Победитель</label>
+        <input id="m-win" name="winner" list="players-list" autocomplete="off" required maxlength="140" placeholder="первые буквы фамилии">
       </div>
-      <div class="field"><label for="m-lose">Проигравший</label>
-        <select id="m-lose" name="loser_player_id" required>
-          <% players.forEach(function (p) { %><option value="<%= p.id %>"><%= p.full_name %></option><% }); %>
-        </select>
+      <div class="field field--wide"><label for="m-lose">Проигравший</label>
+        <input id="m-lose" name="loser" list="players-list" autocomplete="off" required maxlength="140" placeholder="первые буквы фамилии">
       </div>
       <div class="field"><label for="m-score">Счёт</label>
         <input id="m-score" name="score" type="text" maxlength="60" placeholder="6:4 3:6 10:8">

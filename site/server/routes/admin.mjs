@@ -28,6 +28,7 @@ import {
   decidedRegistrations,
   findNameMatches,
   findDuplicate,
+  resolvePlayer,
   approveRegistration,
   rejectRegistration,
   byId as registrationById,
@@ -693,12 +694,33 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     limitWrites,
     guard((req, res) => {
       const tournamentId = intAtLeast(req.params.id, 'Турнир');
-      const playerId = intAtLeast(req.body.player_id, 'Игрок');
       const place = intAtLeast(req.body.place, 'Место', 1);
       const back = `/admin/tournaments/${tournamentId}/results`;
 
       if (!db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(tournamentId)) {
         throw new ValidationError('Турнир не найден');
+      }
+      // Игрок — из поля с подсказкой (текст) либо по старому player_id. Если по
+      // тексту никого нет, а заполнены город/пол/дата — заводим нового здесь же
+      // (с той же проверкой дублей, что и в «Игроках»), без ухода со страницы.
+      let playerId = req.body.player_id ? intAtLeast(req.body.player_id, 'Игрок') : resolvePlayer(db, req.body.player, { ValidationError });
+      let created = false;
+      if (!playerId) {
+        const typed = String(req.body.player || '').replace(/\s*\([^()]*\)\s*$/, '').trim();
+        if (!typed) throw new ValidationError('Игрок: обязательное поле');
+        if (!req.body.new_city && !req.body.new_sex && !req.body.new_birth_date) {
+          throw new ValidationError(`Игрок «${typed}» не найден. Проверьте написание или заполните город, пол и дату рождения — он будет заведён сразу`);
+        }
+        const fresh = playerInput({
+          full_name: typed, city: req.body.new_city, sex: req.body.new_sex, birth_date: req.body.new_birth_date, rni: '',
+        });
+        const dup = findDuplicate(db, { full_name: fresh.full_name, birth_date: fresh.birth_date });
+        if (dup) throw new ValidationError(dup.replace(/ Если у вас.*$/, ''));
+        playerId = Number(db
+          .prepare('INSERT INTO players (full_name, city, sex, birth_date, rni) VALUES (?, ?, ?, ?, ?)')
+          .run(fresh.full_name, fresh.city, fresh.sex, fresh.birth_date, fresh.rni).lastInsertRowid);
+        logAction(db, req.session.user.id, 'player.create', playerId, { ...fresh, via: 'results' });
+        created = true;
       }
       if (!db.prepare('SELECT 1 FROM players WHERE id = ?').get(playerId)) {
         throw new ValidationError('Игрок не найден');
@@ -725,7 +747,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         throw err;
       }
       logAction(db, req.session.user.id, 'result.create', tournamentId, { playerId, place });
-      flash(req, res, 'ok', 'Результат добавлен.', back);
+      flash(req, res, 'ok', created ? `Игрок заведён (#${playerId}) и результат добавлен.` : 'Результат добавлен.', back);
     }),
   );
 
@@ -754,8 +776,14 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     limitWrites,
     guard((req, res) => {
       const tournamentId = intAtLeast(req.params.id, 'Турнир');
-      const winner = intAtLeast(req.body.winner_player_id, 'Победитель');
-      const loser = intAtLeast(req.body.loser_player_id, 'Проигравший');
+      const pick = (idField, textField, label) => {
+        if (req.body[idField]) return intAtLeast(req.body[idField], label);
+        const id = resolvePlayer(db, req.body[textField], { ValidationError });
+        if (!id) throw new ValidationError(`${label}: игрок «${String(req.body[textField] || '').trim()}» не найден`);
+        return id;
+      };
+      const winner = pick('winner_player_id', 'winner', 'Победитель');
+      const loser = pick('loser_player_id', 'loser', 'Проигравший');
       // Счёт и дата — для публичного профиля (ТЗ ред. 6 §5). Оба необязательны:
       // пустая дата на витрине подменяется датой окончания турнира.
       const score = str(req.body.score, 'Счёт', { max: 60, required: false }) || null;
@@ -824,13 +852,13 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
           result.reason === 'too-soon'
             ? `Рейтинг только что пересчитан. Повторный пересчёт возможен через ${result.retryAfter} с — так два почти одинаковых снимка не обнулят колонку «Изменение».`
             : 'Пересчёт уже идёт — подождите.';
-        return flash(req, res, 'error', text, '/admin');
+        return flash(req, res, 'error', text, safeRefererPath(req, '/admin'));
       }
       logAction(db, req.session.user.id, 'rating.recompute', result.snapshotId, {
         players: result.players,
       });
       const warn = result.warnings.length ? ` Предупреждения: ${result.warnings.join('; ')}` : '';
-      flash(req, res, 'ok', `Рейтинг пересчитан: ${result.players} игроков.${warn}`, '/admin');
+      flash(req, res, 'ok', `Рейтинг пересчитан: ${result.players} игроков.${warn}`, safeRefererPath(req, '/admin'));
     }),
   );
 
