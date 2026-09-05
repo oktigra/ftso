@@ -1967,6 +1967,55 @@ await check('сетка, слой 2 — олимпийка на 8: посев, b
   return 'сетка на 8: посев 7 + bye, счёт от верхнего (переворот к победителю, wo), чемпион, отмена полуфинала снимает финал и матчи, места 1/2/3/5';
 });
 
+await check('сетка, слой 3 — группы + плей-офф: посев из двух групп по 2 лучших (змейкой по половинам), места сетка + группы', async () => {
+  const { seedOrder } = await import('./server/lib/brackets.mjs');
+  eq(seedOrder(8).map((p) => p + 1).join(' '), '1 5 7 3 4 8 6 2', 'стандартный порядок посева на 8');
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Группы+плейофф', date('now','-1 day'), 'B')").run().lastInsertRowid);
+  const mk = (n) => Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES (?, 'Смоленск', 'M')").run(n).lastInsertRowid);
+  const A = ['ГрА Первый', 'ГрА Второй', 'ГрА Третий'].map(mk); const B = ['ГрБ Первый', 'ГрБ Второй', 'ГрБ Третий'].map(mk);
+  const _csrf = tokenFrom((await http(`/admin/tournaments/${t}/results`, { jar })).text);
+  const post = (path, form) => http(`/admin/tournaments/${t}${path}`, { method: 'POST', form: { _csrf, ...form }, jar });
+  for (const [name, ids] of [['A', A], ['B', B]]) {
+    eq((await post('/groups', { name, kind: 'single' })).status, 302, `группа ${name}`);
+    const gid = db.prepare('SELECT id FROM tournament_groups WHERE tournament_id = ? AND name = ?').get(t, name).id;
+    for (const id of ids) eq((await post(`/groups/${gid}/members`, { player: `#${id}` })).status, 302, 'участник');
+    // Первый бьёт всех, Второй бьёт Третьего.
+    eq((await post(`/groups/${gid}/cell`, { a: ids[0], b: ids[1], score: '6:1 6:1' })).status, 302, 'c1');
+    eq((await post(`/groups/${gid}/cell`, { a: ids[0], b: ids[2], score: '6:2 6:2' })).status, 302, 'c2');
+    if (name === 'A') eq((await post(`/groups/${gid}/cell`, { a: ids[1], b: ids[2], score: '6:3 6:3' })).status, 302, 'c3');
+  }
+  eq((await post('/brackets', { name: 'Плей-офф', size: '4', kind: 'single' })).status, 302, 'сетка на 4');
+  const bid = db.prepare('SELECT id FROM tournament_brackets WHERE tournament_id = ?').get(t).id;
+  // Группа B не доиграна — посев из групп отказывает.
+  eq((await post(`/brackets/${bid}/seed-from-groups`, { per_group: '2' })).status, 302, 'ответ при недоигранной группе');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM bracket_slots WHERE bracket_id = ?').get(bid).n, 0, 'посев при недоигранной группе');
+  const gB = db.prepare('SELECT id FROM tournament_groups WHERE tournament_id = ? AND name = ?').get(t, 'B').id;
+  eq((await post(`/groups/${gB}/cell`, { a: B[1], b: B[2], score: '6:4 6:4' })).status, 302, 'доигрываем B');
+  eq((await post(`/brackets/${bid}/seed-from-groups`, { per_group: '2' })).status, 302, 'посев из групп');
+  const slots = db.prepare('SELECT position, player_id FROM bracket_slots WHERE bracket_id = ? AND round = 0 ORDER BY position').all(bid);
+  // Сеяные: A1, B1 (первые места), затем B2, A2 (змейка) → позиции 1,3,4,2 → пары (A1 vs A2?) нет: pos: A1→1, B1→3, B2→4, A2→2 → пары (A1,A2)? проверяем разведение по половинам: A1 и B1 в разных парах.
+  const posOf = (id) => slots.find((s) => s.player_id === id).position;
+  eq(slots.length, 4, 'посеяно 4');
+  assert(Math.floor(posOf(A[0]) / 2) !== Math.floor(posOf(B[0]) / 2), 'первые места двух групп должны быть в разных парах');
+  assert(Math.floor(posOf(A[0]) / 2) === Math.floor(posOf(B[1]) / 2) && Math.floor(posOf(B[0]) / 2) === Math.floor(posOf(A[1]) / 2), 'пары должны быть A1–B2 и B1–A2');
+  // Играем полуфиналы и финал по фактическим парам, затем места сетка + группы.
+  const pair = (k) => [slots.find((s) => s.position === 2 * k).player_id, slots.find((s) => s.position === 2 * k + 1).player_id];
+  eq((await post(`/brackets/${bid}/decide`, { r: '0', k: '0', score: '6:0 6:0' })).status, 302, '1/2 пара 0');
+  eq((await post(`/brackets/${bid}/decide`, { r: '0', k: '1', score: '6:0 6:0' })).status, 302, '1/2 пара 1');
+  eq((await post(`/brackets/${bid}/decide`, { r: '1', k: '0', score: '6:0 6:0' })).status, 302, 'финал');
+  const champ = pair(0)[0];
+  eq((await post(`/brackets/${bid}/places-with-groups`, {})).status, 302, 'места сетка + группы');
+  const res = db.prepare('SELECT player_id, place FROM results WHERE tournament_id = ? ORDER BY place, player_id').all(t);
+  eq(res.length, 6, 'результаты для всех шести');
+  eq(res[0].player_id + ':' + res[0].place, `${champ}:1`, 'чемпион — 1 место');
+  eq(res.filter((r) => r.place === 5).map((r) => r.player_id).sort().join(','), [A[2], B[2]].sort().join(','), 'третьи в группах — место 5 (корзина за сеткой на 4)');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
+  db.prepare("DELETE FROM players WHERE full_name LIKE 'Гр%'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'две группы по 3 → сетка на 4 по 2 лучших, первые места в разных парах; недоигранная группа блокирует посев; места: сетка 1/2/3, не вышедшие — 5';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

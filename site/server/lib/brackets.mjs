@@ -142,3 +142,68 @@ export function bracketPlaces(db, tournamentId, bid) {
   })();
   return places.length;
 }
+
+// ---------------------------------------------------------------------------
+// СЛОЙ 3: «группы + плей-офф». Посев сетки из мест в круговых группах.
+import { listGroups } from './groups.mjs';
+
+/** Стандартный порядок посева: seeds[i] = позиция (0-based) для сеяного №i+1. 1 и 2 — в разных половинах и т. д. */
+export function seedOrder(size) {
+  let order = [1];
+  while (order.length < size) {
+    const n = order.length * 2;
+    const next = [];
+    for (const s of order) next.push(s, n + 1 - s);
+    order = next;
+  }
+  // order[pos] = номер сеяного на позиции pos → инвертируем в pos по сеяному
+  const pos = new Array(size);
+  order.forEach((seedNo, p) => { pos[seedNo - 1] = p; });
+  return pos;
+}
+
+/**
+ * Посев из групп: по perGroup лучших из каждой сыгранной группы того же разряда.
+ * Сеяные: все первые места (в порядке групп), затем все вторые — стандартный
+ * посев сводит первого одной группы со вторым другой.
+ */
+export function seedFromGroups(db, tournamentId, bid, perGroup) {
+  const b = bracketOf(db, tournamentId, bid);
+  if (db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ?').get(b.id)) throw new ValidationError('Сетка уже посеяна — сначала удалите её слоты (или создайте новую сетку)');
+  const groups = listGroups(db, tournamentId).filter((g) => g.kind === b.kind);
+  if (!groups.length) throw new ValidationError('Нет круговых групп этого разряда');
+  const notDone = groups.filter((g) => !g.complete);
+  if (notDone.length) throw new ValidationError(`Не сыграны до конца группы: ${notDone.map((g) => g.name).join(', ')}`);
+  if (!(perGroup >= 1)) throw new ValidationError('Сколько лучших из группы — от 1');
+  const entrants = [];
+  // Порядок групп одинаков для каждого места: со стандартным посевом (1 против
+  // последнего сеяного и т. д.) это даёт пары «первый группы X — второй группы Y».
+  for (let place = 0; place < perGroup; place++) {
+    for (const g of groups) if (g.order[place]) entrants.push(g.order[place]);
+  }
+  if (entrants.length > b.size) throw new ValidationError(`Выходят ${entrants.length} игроков, а сетка на ${b.size}`);
+  if (entrants.length < 2) throw new ValidationError('Слишком мало игроков для сетки');
+  const pos = seedOrder(b.size);
+  db.transaction(() => {
+    entrants.forEach((pid, i) => db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, 0, ?, ?)').run(b.id, pos[i], pid));
+  })();
+  return { seeded: entrants.length, groups: groups.length };
+}
+
+/**
+ * Места «группы + плей-офф»: игроки сетки — по сетке; не вышедшие из групп —
+ * место size+1 (корзина следующая за сеткой, у 8 — 9-е), их результаты дописываются.
+ */
+export function placesWithGroups(db, tournamentId, bid) {
+  const b = bracketOf(db, tournamentId, bid);
+  const n = bracketPlaces(db, tournamentId, bid);
+  const inBracket = new Set(db.prepare('SELECT DISTINCT player_id FROM bracket_slots WHERE bracket_id = ?').all(b.id).map((r) => r.player_id));
+  const rest = [];
+  for (const g of listGroups(db, tournamentId).filter((x) => x.kind === b.kind)) for (const pid of g.order) if (!inBracket.has(pid)) rest.push(pid);
+  db.transaction(() => {
+    const del = db.prepare('DELETE FROM results WHERE tournament_id = ? AND player_id = ?');
+    const ins = db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)');
+    for (const pid of rest) { del.run(tournamentId, pid); ins.run(tournamentId, pid, b.size + 1); }
+  })();
+  return { bracket: n, rest: rest.length };
+}
