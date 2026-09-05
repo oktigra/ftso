@@ -54,10 +54,30 @@
         <% footerLegal.forEach(function (item) { %>
           <a href="<%= item.path %>"><%= item.title %></a>
         <% }); %>
+        <% if (typeof metrikaId !== 'undefined' && metrikaId) { %>
+          <a href="#" data-cookie-settings>Настройки cookie</a>
+        <% } %>
       </div>
     </div>
   </div>
 </footer>
+<% if (typeof metrikaId !== 'undefined' && metrikaId) { %>
+  <%
+  /* БАННЕР СОГЛАСИЯ НА АНАЛИТИКУ. Показывается, пока посетитель не решил.
+     Счётчик Метрики грузится ТОЛЬКО после «Принять» (см. app.js), до этого
+     на сайте нет ни одного запроса к Яндексу. «Отклонить» — тоже на год.
+     Выбор — cookie ftso.analytics (техническая: хранит само решение). */
+  %>
+  <div class="cookie-bar" data-cookie-bar data-metrika="<%= metrikaId %>" data-choice="<%= analyticsChoice %>"<%= analyticsChoice ? ' hidden' : '' %> role="region" aria-label="Согласие на аналитику">
+    <p>Мы используем Яндекс.Метрику, чтобы понимать, какие разделы сайта востребованы. Счётчик включится только с вашего согласия;
+      без него на сайте работают лишь технически необходимые cookie. Подробнее — в
+      <a href="/privacy#cookies">Политике</a>, раздел 8.</p>
+    <div class="cookie-bar__actions">
+      <button class="btn btn--primary btn--small" type="button" data-cookie-accept>Принять</button>
+      <button class="btn btn--secondary btn--small" type="button" data-cookie-decline>Отклонить</button>
+    </div>
+  </div>
+<% } %>
 <script src="/static/js/app.js?v=<%= assetVersion %>" defer></script>
 </body>
 </html>

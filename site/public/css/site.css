@@ -540,6 +540,11 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .lightbox__nav--prev{left:1rem;} .lightbox__nav--next{right:1rem;}
 .lightbox__close:hover, .lightbox__nav:hover{background:rgba(255,255,255,.28);}
 .btn--max{margin-top:.5rem;}
+/* Баннер согласия на аналитику (Метрика грузится только после «Принять») */
+.cookie-bar{position:fixed; left:1rem; right:1rem; bottom:1rem; z-index:50; background:var(--surface); color:var(--text); border:1px solid var(--border); border-radius:1rem; padding:1rem 1.1rem; box-shadow:0 10px 30px rgba(0,0,0,.25); display:flex; gap:1rem; align-items:center; flex-wrap:wrap; max-width:60rem; margin:0 auto;}
+.cookie-bar p{margin:0; flex:1 1 20rem; font-size:.92rem;}
+.cookie-bar__actions{display:flex; gap:.5rem;}
+.cookie-bar[hidden]{display:none;}
 .footer-max{margin:.6rem 0 0;}
 
 /* Поле пароля с кнопкой «Показать/Скрыть» (кнопку добавляет app.js) */

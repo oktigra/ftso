@@ -149,6 +149,9 @@ export function loadConfig({ requireSecrets = true } = {}) {
     // Мессенджер MAX — единственная интеграция с соцсетями/мессенджерами
     // (решение владельца 05.09.2026). Пусто — кнопки нет. Только https://max.ru/…
     maxUrl: /^https:\/\/max\.ru\/\S+$/.test(process.env.MAX_URL || '') ? process.env.MAX_URL : '',
+    // Яндекс.Метрика (решение владельца 05.09.2026). Номер счётчика — только цифры.
+    // Пусто — ни баннера согласия, ни скрипта, ни доменов Яндекса в CSP.
+    metrikaId: /^\d{5,12}$/.test(process.env.METRIKA_ID || '') ? process.env.METRIKA_ID : '',
     feedback: {
       // Обработанные обращения живут ещё год (срок исковой давности по спорам об ответе).
       retentionDays: Number(process.env.FEEDBACK_RETENTION_DAYS || 365),

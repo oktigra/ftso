@@ -82,12 +82,13 @@ export function createApp(config) {
         directives: {
           'default-src': ["'self'"],
           // img-src ... data: — под фоновое зерно из дизайна (SVG в data:-URI)
-          'img-src': ["'self'", 'data:'],
-          'script-src': ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
+          // Яндекс.Метрика — единственный внешний домен, и только когда счётчик задан.
+          'img-src': ["'self'", 'data:', ...(config.metrikaId ? ['https://mc.yandex.ru'] : [])],
+          'script-src': ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`, ...(config.metrikaId ? ['https://mc.yandex.ru'] : [])],
           'style-src': ["'self'"],
           // шрифты ЛОКАЛЬНЫЕ, внешних доменов нет
           'font-src': ["'self'"],
-          'connect-src': ["'self'"],
+          'connect-src': ["'self'", ...(config.metrikaId ? ['https://mc.yandex.ru'] : [])],
           'form-action': ["'self'"],
           'frame-ancestors': ["'none'"],
           'base-uri': ["'self'"],
@@ -137,6 +138,11 @@ export function createApp(config) {
     // как недостоверные сведения об операторе.
     res.locals.operator = OPERATOR;
     res.locals.maxUrl = config.maxUrl;
+    // Метрика: номер счётчика и решение посетителя из cookie ftso.analytics
+    // ('1' принял, '0' отказался, нет — баннер). Куки читаем сами: парсер не подключён.
+    res.locals.metrikaId = config.metrikaId;
+    const m = /(?:^|;\s*)ftso\.analytics=([01])/.exec(req.headers.cookie || '');
+    res.locals.analyticsChoice = m ? m[1] : '';
     res.locals.currentPath = req.path;
     // Канонический адрес: боевой домен из конфига + путь без query и без «/» в конце.
     res.locals.siteUrl = config.siteUrl.replace(/\/$/, '');
