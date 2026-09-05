@@ -58,6 +58,7 @@
             <th>ID</th>
             <% spec.fields.forEach(function (f) { %><th><%= f.label %></th><% }); %>
             <% if (spec.personal) { %><th>Основание</th><th>Дата документа</th><% } %>
+            <% if (spec.photo) { %><th>Фото</th><% } %>
             <th>Действия</th>
           </tr>
         </thead>
@@ -73,6 +74,14 @@
               <% if (spec.personal) { %>
                 <td><input form="edit-<%= spec.key %>-<%= row.id %>" name="basis" maxlength="200" required value="<%= row.basis || '' %>"></td>
                 <td><input form="edit-<%= spec.key %>-<%= row.id %>" name="document_date" required value="<%= row.document_date || '' %>"></td>
+              <% } %>
+              <% if (spec.photo) { %>
+                <td class="dir-photo">
+                  <% if (row.photo_upload_id) { %><img src="<%= spec.path %>/<%= row.id %>/photo" alt="" width="56" height="56"><% } %>
+                  <input form="photo-<%= spec.key %>-<%= row.id %>" type="file" name="photo" accept="image/*" aria-label="Файл фото">
+                  <button class="btn btn--secondary btn--small" type="submit" form="photo-<%= spec.key %>-<%= row.id %>">Загрузить</button>
+                  <% if (row.photo_upload_id) { %><button class="btn btn--danger btn--small" type="submit" form="photo-del-<%= spec.key %>-<%= row.id %>" data-confirm="Снять фото?">Снять</button><% } %>
+                </td>
               <% } %>
               <td class="inline-form">
                 <button class="btn btn--secondary btn--small" type="submit" form="edit-<%= spec.key %>-<%= row.id %>">Сохранить</button>
@@ -90,6 +99,14 @@
       <form id="del-<%= spec.key %>-<%= row.id %>" method="post" action="/admin/directories/<%= spec.key %>/<%= row.id %>/delete" hidden>
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       </form>
+      <% if (spec.photo) { %>
+        <form id="photo-<%= spec.key %>-<%= row.id %>" method="post" action="/admin/directories/<%= spec.key %>/<%= row.id %>/photo" enctype="multipart/form-data" hidden>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        </form>
+        <form id="photo-del-<%= spec.key %>-<%= row.id %>" method="post" action="/admin/directories/<%= spec.key %>/<%= row.id %>/photo/delete" hidden>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        </form>
+      <% } %>
     <% }); %>
   </div>
 </div>
