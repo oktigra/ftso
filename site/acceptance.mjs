@@ -1611,6 +1611,43 @@ await check('ускорение ввода: игрок по подсказке (
   return 'подсказка вместо select; тёзки → «#id» или город в скобках; новый игрок заводится из формы (дубли — стоп); матч по тексту; пересчёт возвращает на турнир';
 });
 
+await check('массовый ввод результатов: разбор протокола, предпросмотр со сверкой, сохранение только при полностью зелёном', async () => {
+  const { parseBulkResults } = await import('./server/lib/registrations.mjs');
+  const parsed = parseBulkResults('1 Иванов Иван\n2. Петров Пётр; 3-4 Сидоров Сидор, Козлов Козьма (Вязьма)\n5–8 Один, Два\nбез места');
+  eq(parsed.map((r) => `${r.place}:${r.name}`).join('|'), '1:Иванов Иван|2:Петров Пётр|3:Сидоров Сидор|3:Козлов Козьма (Вязьма)|5:Один|5:Два|null:без места', 'разбор строк/диапазонов/запятых');
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Массовый ввод', date('now','-1 day'), 'B')").run().lastInsertRowid);
+  const ids = ['Массов Один Первый', 'Массов Два Второй', 'Массов Три Третий'].map((n) => Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES (?, 'Смоленск', 'M')").run(n).lastInsertRowid));
+  const page = await http(`/admin/tournaments/${t}/results`, { jar });
+  const _csrf = tokenFrom(page.text);
+  assert(/name="text"/.test(page.text) && /results\/bulk/.test(page.text), 'на странице нет формы массового ввода');
+  const post = (form) => http(`/admin/tournaments/${t}/results/bulk`, { method: 'POST', form: { _csrf, ...form }, jar });
+  // Предпросмотр с ошибкой: неизвестный игрок — красная строка, кнопки «Сохранить всё» нет, в базе пусто.
+  const bad = await post({ mode: 'preview', text: '1 Массов Один Первый\n2 Неизвестный Игрок\n3-4 Массов Два Второй, Массов Три Третий' });
+  eq(bad.status, 200, 'предпросмотр');
+  assert(/bulk-missing/.test(bad.text) && /не найден/.test(bad.text), 'неизвестный не подсвечен');
+  assert(!/value="save"/.test(bad.text), 'кнопка «Сохранить всё» показана при ошибке');
+  // Попытка сохранить с ошибкой — не сохраняет.
+  const forced = await post({ mode: 'save', text: '1 Массов Один Первый\n2 Неизвестный Игрок' });
+  eq(forced.status, 200, 'сохранение с ошибкой возвращает предпросмотр');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(t).n, 0, 'при ошибке ничего не должно сохраниться');
+  // Зелёный предпросмотр → сохранение всех строк одной транзакцией; диапазон 3-4 → место 3 обоим.
+  const goodText = '1 Массов Один Первый\n3-4 Массов Два Второй, Массов Три Третий';
+  const ok = await post({ mode: 'preview', text: goodText });
+  assert(/value="save"/.test(ok.text) && !/bulk-missing/.test(ok.text), 'зелёный предпросмотр без кнопки сохранения');
+  eq((await post({ mode: 'save', text: goodText })).status, 302, 'сохранение');
+  const rows = db.prepare('SELECT player_id, place FROM results WHERE tournament_id = ? ORDER BY place, player_id').all(t);
+  eq(rows.map((r) => `${r.player_id}:${r.place}`).join('|'), `${ids[0]}:1|${ids[1]}:3|${ids[2]}:3`, 'состав сохранённых результатов');
+  // Повтор того же протокола — дубли подсвечены, не сохраняются.
+  const again = await post({ mode: 'save', text: goodText });
+  assert(/bulk-dup/.test(again.text), 'повтор не подсвечен как дубль');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(t).n, 3, 'повтор продублировал результаты');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
+  db.prepare("DELETE FROM players WHERE full_name LIKE 'Массов %'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'разбор ок; неизвестный → красная строка и нет кнопки; save с ошибкой не пишет; зелёный → 3 результата одной транзакцией; повтор → дубли';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
