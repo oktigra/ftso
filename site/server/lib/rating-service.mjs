@@ -15,7 +15,7 @@ export const DISCIPLINE_RU = { single: 'одиночный', double: 'парны
 /** Вход движка ровно в его формате: {tournaments, results, matches} — для одного разряда. */
 export function collectEngineInput(db, discipline = 'single') {
   const tournaments = db
-    .prepare('SELECT id, name, end_date AS endDate, category FROM tournaments ORDER BY id')
+    .prepare('SELECT id, name, end_date AS endDate, category FROM tournaments WHERE is_published = 1 ORDER BY id')
     .all();
   // Имя и город берутся из players — имя одно на игрока, движок не ругается.
   const results = db
@@ -23,15 +23,17 @@ export function collectEngineInput(db, discipline = 'single') {
       `SELECT r.player_id AS playerId, p.full_name AS playerName,
               r.tournament_id AS tournamentId, r.place AS place
          FROM results r JOIN players p ON p.id = r.player_id
-        WHERE r.discipline = ?
+         JOIN tournaments t ON t.id = r.tournament_id
+        WHERE r.discipline = ? AND t.is_published = 1
         ORDER BY r.id`,
     )
     .all(discipline);
   const matches = db
     .prepare(
-      `SELECT tournament_id AS tournamentId, winner_player_id AS winnerPlayerId,
-              loser_player_id AS loserPlayerId
-         FROM matches WHERE kind = ? ORDER BY id`,
+      `SELECT m.tournament_id AS tournamentId, m.winner_player_id AS winnerPlayerId,
+              m.loser_player_id AS loserPlayerId
+         FROM matches m JOIN tournaments t ON t.id = m.tournament_id
+        WHERE m.kind = ? AND t.is_published = 1 ORDER BY m.id`,
     )
     .all(discipline);
   return { tournaments, results, matches };

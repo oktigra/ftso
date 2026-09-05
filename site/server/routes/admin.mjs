@@ -17,6 +17,7 @@ import {
   SEXES,
   CATEGORIES,
   TOURNAMENT_KIND_RU,
+  TOURNAMENT_AGES,
   ValidationError,
   splitName,
 } from '../lib/validate.mjs';
@@ -620,8 +621,24 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         .all(),
       categories: CATEGORIES,
       kindRu: TOURNAMENT_KIND_RU,
+      ages: TOURNAMENT_AGES,
     });
   });
+
+  // Опубликовать / снять с публикации — одной кнопкой в строке.
+  app.post(
+    '/admin/tournaments/:id/publish',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const on = req.body.value === '1' ? 1 : 0;
+      const info = db.prepare('UPDATE tournaments SET is_published = ? WHERE id = ?').run(on, id);
+      if (!info.changes) throw new ValidationError('Турнир не найден');
+      logAction(db, req.session.user.id, on ? 'tournament.publish' : 'tournament.unpublish', id, null);
+      flash(req, res, 'ok', on ? 'Турнир опубликован — виден в календаре и на сайте.' : 'Турнир снят с публикации — черновик, виден только здесь.', '/admin/tournaments');
+    }),
+  );
 
   app.post(
     '/admin/tournaments',
@@ -629,11 +646,14 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     limitWrites,
     guard((req, res) => {
       const data = tournamentInput(req.body);
+      // «Сохранить черновик» / «Опубликовать» — две кнопки одной формы (поле action);
+      // без action (старые формы, тесты) — опубликован, как было до 06.09.2026.
+      const published = req.body.action === 'draft' ? 0 : 1;
       const info = db
-        .prepare('INSERT INTO tournaments (name, end_date, category, city, start_date, kind, age_group) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.age_group);
+        .prepare('INSERT INTO tournaments (name, end_date, category, city, start_date, kind, age_group, is_published) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.age_group, published);
       logAction(db, req.session.user.id, 'tournament.create', info.lastInsertRowid, data);
-      flash(req, res, 'ok', `Турнир «${data.name}» добавлен.`, '/admin/tournaments');
+      flash(req, res, 'ok', published ? `Турнир «${data.name}» опубликован.` : `Черновик «${data.name}» сохранён — виден только в админке.`, '/admin/tournaments');
     }),
   );
 
@@ -644,9 +664,11 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     guard((req, res) => {
       const id = intAtLeast(req.params.id, 'id');
       const data = tournamentInput(req.body);
+      // action: draft — сохранить черновиком, publish — сохранить и опубликовать, иначе — не менять статус.
+      const pub = req.body.action === 'publish' ? 1 : req.body.action === 'draft' ? 0 : null;
       const info = db
-        .prepare('UPDATE tournaments SET name = ?, end_date = ?, category = ?, city = ?, start_date = ?, kind = ?, age_group = ? WHERE id = ?')
-        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.age_group, id);
+        .prepare('UPDATE tournaments SET name = ?, end_date = ?, category = ?, city = ?, start_date = ?, kind = ?, age_group = ?, is_published = COALESCE(?, is_published) WHERE id = ?')
+        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.age_group, pub, id);
       if (!info.changes) throw new ValidationError('Турнир не найден');
       logAction(db, req.session.user.id, 'tournament.update', id, data);
       flash(req, res, 'ok', 'Турнир обновлён.', '/admin/tournaments');

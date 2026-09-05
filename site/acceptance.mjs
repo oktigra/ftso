@@ -1818,7 +1818,7 @@ await check('главная: цифры и «ближайший турнир» �
   const players = stat(home.text, 'игроков в рейтинге');
   assert(Number.isFinite(players) && players <= ratingN, `игроков в рейтинге на главной (${players}) больше, чем игроков в базе (${ratingN})`);
   const tours = stat(home.text, 'турниров за год');
-  eq(tours, db.prepare("SELECT COUNT(*) AS n FROM tournaments WHERE end_date >= date('now','-12 months')").get().n, 'турниров за год — не по базе');
+  eq(tours, db.prepare("SELECT COUNT(*) AS n FROM tournaments WHERE is_published = 1 AND end_date >= date('now','-12 months')").get().n, 'турниров за год — не по базе');
   // Ближайший турнир: заводим будущий — карточка показывает его дату и ссылку; без будущих — «скоро в календаре».
   const future = new Date(Date.now() + 20 * 864e5).toISOString().slice(0, 10);
   const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Ближайший тест', ?, 'B')").run(future).lastInsertRowid);
@@ -2206,6 +2206,54 @@ await check('протокол секретаря: пустая сетка в PDF
   db.prepare("DELETE FROM players WHERE full_name LIKE 'Протоколов %'").run();
   db.prepare('DELETE FROM write_attempts').run();
   return 'пустая сетка с «счёт: ____»; протокол 5 пар с ключами; заливка записала 3+1 матч, -wo продвинул B; повтор без дублей; следующий протокол — оставшиеся пары; чужой файл отбит';
+});
+
+await check('форма турнира: черновик / опубликовать / снять; черновик не виден в календаре, на витрине, в sitemap и в рейтинге; возраст из списка и вручную', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/tournaments', { jar });
+  const _csrf = tokenFrom(page.text);
+  // Порядок полей формы: название → начало → завершение → категория → город → тип → возраст.
+  const form = page.text.slice(page.text.indexOf('action="/admin/tournaments"'), page.text.indexOf('Сохранить черновик'));
+  const order = ['name="name"', 'name="start_date"', 'name="end_date"', 'name="category"', 'name="city"', 'name="kind"', 'name="age_group"'].map((n) => form.indexOf(n));
+  assert(order.every((x, i) => x > 0 && (i === 0 || x > order[i - 1])), `порядок полей нарушен: ${order.join(',')}`);
+  assert(/value="draft">Сохранить черновик/.test(page.text) && /value="publish">Опубликовать/.test(page.text), 'нет кнопок черновик/опубликовать');
+  assert(/<option value="до 14">/.test(form) && /<option value="55\+">/.test(form) && /<option value="custom">ввод вручную/.test(form), 'в возрасте нет списка/ввода вручную');
+  const post = (form) => http('/admin/tournaments', { method: 'POST', form: { _csrf, category: 'B', kind: 'other', ...form }, jar });
+  eq((await post({ name: 'Черновик турнира', end_date: '2026-10-10', start_date: '2026-10-09', city: 'Смоленск', age_group: 'до 14', action: 'draft' })).status, 302, 'черновик');
+  eq((await post({ name: 'Опубликованный турнир', end_date: '2026-10-12', age_group: 'custom', age_group_custom: '35–44', action: 'publish' })).status, 302, 'опубликовать');
+  const draft = db.prepare("SELECT id, is_published, age_group FROM tournaments WHERE name = 'Черновик турнира'").get();
+  const pub = db.prepare("SELECT id, is_published, age_group FROM tournaments WHERE name = 'Опубликованный турнир'").get();
+  eq(draft.is_published + ':' + draft.age_group, '0:до 14', 'черновик: статус и возраст из списка');
+  eq(pub.is_published + ':' + pub.age_group, '1:35–44', 'опубликован: статус и возраст вручную');
+  // Витрина: черновика нет нигде.
+  const list = (await http('/tournaments')).text;
+  assert(!/Черновик турнира/.test(list) && /Опубликованный турнир/.test(list), 'черновик виден в календаре или опубликованный не виден');
+  eq((await http(`/tournaments/${draft.id}`)).status, 404, 'карточка черновика');
+  eq((await http(`/tournaments/${draft.id}/print`)).status, 404, 'печать черновика');
+  eq((await http(`/tournaments/${draft.id}/bracket.pdf`)).status, 404, 'PDF черновика');
+  eq((await http(`/tournaments/${pub.id}`)).status, 200, 'карточка опубликованного');
+  const sm = (await http('/sitemap.xml')).text;
+  assert(!sm.includes(`/tournaments/${draft.id}<`) && sm.includes(`/tournaments/${pub.id}<`), 'sitemap: черновик попал или опубликованный пропал');
+  // Рейтинг: результат в черновике не считается, после публикации — считается.
+  const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Черновиков Чер','Смоленск','M')").run().lastInsertRowid);
+  db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, 1)').run(draft.id, pid);
+  const { collectEngineInput } = await import('./server/lib/rating-service.mjs');
+  assert(!collectEngineInput(db, 'single').results.some((r) => r.playerId === pid), 'результат черновика попал в движок рейтинга');
+  eq((await http(`/admin/tournaments/${draft.id}/publish`, { method: 'POST', form: { _csrf, value: '1' }, jar })).status, 302, 'опубликовать кнопкой');
+  eq(db.prepare('SELECT is_published FROM tournaments WHERE id = ?').get(draft.id).is_published, 1, 'кнопка «Опубликовать» не сработала');
+  assert(collectEngineInput(db, 'single').results.some((r) => r.playerId === pid), 'после публикации результат должен считаться');
+  eq((await http(`/admin/tournaments/${draft.id}/publish`, { method: 'POST', form: { _csrf, value: '0' }, jar })).status, 302, 'снять с публикации');
+  eq(db.prepare('SELECT is_published FROM tournaments WHERE id = ?').get(draft.id).is_published, 0, 'снятие не сработало');
+  // Правка строки: без action статус не меняется; action=publish публикует.
+  eq((await http(`/admin/tournaments/${draft.id}/update`, { method: 'POST', form: { _csrf, name: 'Черновик турнира 2', end_date: '2026-10-10', category: 'B', kind: 'other', age_group: '45+' }, jar })).status, 302, 'правка');
+  eq(db.prepare('SELECT is_published, name, age_group FROM tournaments WHERE id = ?').get(draft.id).is_published, 0, 'правка без action сменила статус');
+  const adm = await http('/admin/tournaments', { jar });
+  assert(/черновик/.test(adm.text) && /data-edit/.test(adm.text) && /Снять с публикации/.test(adm.text), 'в списке нет статуса/кнопок');
+  db.prepare("DELETE FROM tournaments WHERE name IN ('Черновик турнира 2','Опубликованный турнир')").run();
+  db.prepare('DELETE FROM players WHERE id = ?').run(pid);
+  db.prepare('DELETE FROM write_attempts').run();
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  return 'порядок полей; черновик/опубликовать; черновик скрыт в календаре, карточке, печати, PDF, sitemap и рейтинге; возраст из списка и вручную; снять с публикации';
 });
 
 await check('rate-limit на /register срабатывает', async () => {

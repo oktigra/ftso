@@ -9,6 +9,20 @@
   // правило на все формы админки: 05.09.2026 владелец удалил сам себя одним
   // кликом. Текст — из data-confirm кнопки либо общий. Без JS форма уйдёт как
   // раньше — сервер и так проверяет права и CSRF.
+  // ТУРНИРЫ: возраст «ввод вручную» показывает поле; «Редактировать» открывает поля строки.
+  document.querySelectorAll('[data-age-select]').forEach(function (sel) {
+    var scope = sel.closest('td') || sel.closest('form') || document;
+    var custom = scope.querySelector('[data-age-custom]');
+    if (!custom) return;
+    var sync = function () { var on = sel.value === 'custom'; custom.hidden = !on; if (custom.tagName !== 'DIV') custom.style.display = on ? '' : 'none'; };
+    sel.addEventListener('change', sync); sync();
+  });
+  document.querySelectorAll('tr[data-editable]').forEach(function (tr) {
+    tr.classList.add('t-row--ro');
+    var btn = tr.querySelector('[data-edit]');
+    if (btn) btn.addEventListener('click', function () { tr.classList.remove('t-row--ro'); tr.classList.add('t-row--ed'); });
+  });
+
   // ЯНДЕКС.МЕТРИКА — ТОЛЬКО ПОСЛЕ СОГЛАСИЯ. Без cookie ftso.analytics=1 счётчик
   // не грузится вовсе; «Отклонить» пишет 0 на год и больше не спрашивает.
   // «Настройки cookie» в подвале снова показывают баннер.
