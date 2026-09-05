@@ -416,6 +416,13 @@ CREATE TABLE IF NOT EXISTS news (
 );
 CREATE INDEX IF NOT EXISTS idx_news_published ON news (is_published, published_at DESC);
 
+-- КАРТИНКИ САЙТА по ключу (фото баннера главной и т. п.), грузятся из админки.
+CREATE TABLE IF NOT EXISTS site_assets (
+  key        TEXT PRIMARY KEY,
+  upload_id  INTEGER NOT NULL REFERENCES uploads(id) ON DELETE CASCADE,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- SEO-НАСТРОЙКИ СТРАНИЦ (ТЗ п. 5): title/description по адресу, правятся в админке.
 CREATE TABLE IF NOT EXISTS seo_pages (
   path        TEXT PRIMARY KEY,

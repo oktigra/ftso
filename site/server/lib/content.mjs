@@ -93,6 +93,12 @@ export function tournamentList(db, filters = {}) {
   return filters.status ? rows.filter((t) => t.status === filters.status) : rows;
 }
 
+/** Картинка сайта по ключу (например, 'home-hero') → id загрузки либо null. */
+export function siteAsset(db, key) {
+  const row = db.prepare('SELECT upload_id FROM site_assets WHERE key = ?').get(key);
+  return row ? row.upload_id : null;
+}
+
 /**
  * ЖИВЫЕ ЦИФРЫ ГЛАВНОЙ (05.09.2026): вместо «318 игроков» из макета — счёт по базе.
  * Турниров за 12 месяцев, игроков в текущем снимке рейтинга, городов (игроки + турниры).
@@ -259,6 +265,7 @@ export function isPubliclyVisibleUpload(db, uploadId) {
          UNION ALL SELECT upload_id FROM gallery_items
          UNION ALL SELECT cover_upload_id AS upload_id FROM news WHERE is_published = 1
          UNION ALL SELECT a.upload_id FROM news_attachments a JOIN news n ON n.id = a.news_id WHERE n.is_published = 1
+         UNION ALL SELECT upload_id FROM site_assets
        ) WHERE upload_id = ? LIMIT 1`,
     )
     .get(uploadId);

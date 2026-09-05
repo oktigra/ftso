@@ -60,6 +60,23 @@
   </div>
 
   <div class="panel">
+    <h2>Фото баннера главной</h2>
+    <p class="muted">Большое фото в шапке главной страницы (корт, матч; 4:3, около 1200×900). Служебные данные снимка снимаются.</p>
+    <% if (heroUploadId) { %><p><img src="/site/hero?v=<%= heroUploadId %>" alt="" width="240" class="hero-preview"></p><% } %>
+    <form method="post" action="/admin/library/hero" class="inline-form" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="hero-file">Файл</label><input id="hero-file" type="file" name="file" accept="image/*" required></div>
+      <button class="btn btn--primary btn--small" type="submit"><%= heroUploadId ? 'Заменить' : 'Загрузить' %></button>
+    </form>
+    <% if (heroUploadId) { %>
+      <form method="post" action="/admin/library/hero/delete" class="inline-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn btn--danger btn--small" type="submit" data-confirm="Снять фото баннера главной?">Снять</button>
+      </form>
+    <% } %>
+  </div>
+
+  <div class="panel">
     <h2>Галерея (<%= gallery.length %>)</h2>
     <% if (!gallery.length) { %><p class="muted">Пока нет.</p><% } %>
     <ul class="log-list">
