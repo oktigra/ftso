@@ -124,6 +124,15 @@
     <% brackets.forEach(function (b) { %>
       <div class="group-block">
         <h3>Сетка «<%= b.name %>» на <%= b.size %> <span class="muted">(<%= b.kind === 'double' ? 'парный' : 'одиночный' %>, посеяно <%= b.filled %> из <%= b.size %><%= b.champion ? ', победитель: ' + b.champion.full_name : '' %>)</span></h3>
+        <% if (!b.filled && groups.some(function (g) { return g.kind === b.kind; })) { %>
+          <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/seed-from-groups" class="inline-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <div class="field"><label for="bg-<%= b.id %>">Из групп — лучших из каждой</label>
+              <input id="bg-<%= b.id %>" name="per_group" inputmode="numeric" maxlength="2" value="2"></div>
+            <button class="btn btn--secondary btn--small" type="submit">Посеять из групп</button>
+            <span class="muted">первые места разводятся по разным половинам</span>
+          </form>
+        <% } %>
         <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/seed" class="inline-form">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
           <div class="field"><label for="bp-<%= b.id %>">Позиция</label><input id="bp-<%= b.id %>" name="position" inputmode="numeric" maxlength="2" placeholder="1–<%= b.size %>" required></div>
@@ -168,6 +177,12 @@
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <button class="btn btn--primary btn--small" type="submit"<%= b.championId ? '' : ' disabled title="Финал не сыгран"' %>>Записать места в результаты</button>
           </form>
+          <% if (groups.some(function (g) { return g.kind === b.kind; })) { %>
+            <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/places-with-groups">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button class="btn btn--primary btn--small" type="submit"<%= b.championId ? '' : ' disabled title="Финал не сыгран"' %>>Записать места (сетка + группы)</button>
+            </form>
+          <% } %>
           <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/delete">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <button class="btn btn--danger btn--small" type="submit" data-confirm="Удалить сетку «<%= b.name %>»? Сыгранные матчи останутся.">Удалить сетку</button>

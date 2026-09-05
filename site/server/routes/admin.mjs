@@ -2,7 +2,7 @@ import { requireRole, ROLES, ACTIVE_ROLES, rolesFor } from '../middleware/auth.m
 import { parseMultipart } from '../lib/multipart.mjs';
 import { rowsFromXlsx, rowsFromCsv, protocolTextFromRows } from '../lib/xlsx.mjs';
 import { listGroups, setCell, writeGroupPlaces } from '../lib/groups.mjs';
-import { listBrackets, seed, unseed, decide, undo, bracketPlaces, BRACKET_SIZES } from '../lib/brackets.mjs';
+import { listBrackets, seed, unseed, decide, undo, bracketPlaces, BRACKET_SIZES, seedFromGroups, placesWithGroups } from '../lib/brackets.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
 import { logAction, recentActions } from '../lib/action-log.mjs';
@@ -851,6 +851,16 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     const n = bracketPlaces(db, tid, intAtLeast(req.params.bid, 'Сетка'));
     logAction(db, req.session.user.id, 'bracket.places', tid, { bracket: Number(req.params.bid), count: n });
     return `Места по сетке записаны в результаты: ${n}. Внесли всё — пересчитайте рейтинг.`;
+  });
+  bracketRoute('/admin/tournaments/:id/brackets/:bid/seed-from-groups', (req, tid) => {
+    const out = seedFromGroups(db, tid, intAtLeast(req.params.bid, 'Сетка'), Number(req.body.per_group || 2));
+    logAction(db, req.session.user.id, 'bracket.seed_from_groups', tid, { bracket: Number(req.params.bid), ...out });
+    return `Посеяно из ${out.groups} групп: ${out.seeded} игроков.`;
+  });
+  bracketRoute('/admin/tournaments/:id/brackets/:bid/places-with-groups', (req, tid) => {
+    const out = placesWithGroups(db, tid, intAtLeast(req.params.bid, 'Сетка'));
+    logAction(db, req.session.user.id, 'bracket.places_with_groups', tid, { bracket: Number(req.params.bid), ...out });
+    return `Места записаны: по сетке ${out.bracket}, не вышедшие из групп ${out.rest}. Внесли всё — пересчитайте рейтинг.`;
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/delete', (req, tid) => {
     const bid = intAtLeast(req.params.bid, 'Сетка');
