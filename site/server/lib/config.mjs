@@ -148,7 +148,12 @@ export function loadConfig({ requireSecrets = true } = {}) {
     rememberDays: Number(process.env.REMEMBER_DAYS || 30),
     // Мессенджер MAX — единственная интеграция с соцсетями/мессенджерами
     // (решение владельца 05.09.2026). Пусто — кнопки нет. Только https://max.ru/…
-    maxUrl: /^https:\/\/max\.ru\/\S+$/.test(process.env.MAX_URL || '') ? process.env.MAX_URL : '',
+    // Адрес канала федерации в MAX — публичный, дан владельцем 05.09.2026 (снимок экрана
+    // MAX: «https://max.ru/channel_ftso», 171 подписчик). В коде как умолчание;
+    // MAX_URL в .env переопределяет, MAX_URL=off — выключает кнопку.
+    maxUrl: process.env.MAX_URL === 'off' ? ''
+      : /^https:\/\/max\.ru\/\S+$/.test(process.env.MAX_URL || '') ? process.env.MAX_URL
+      : 'https://max.ru/channel_ftso',
     // Яндекс.Метрика (решение владельца 05.09.2026). Номер счётчика — только цифры.
     // Пусто — ни баннера согласия, ни скрипта, ни доменов Яндекса в CSP.
     metrikaId: /^\d{5,12}$/.test(process.env.METRIKA_ID || '') ? process.env.METRIKA_ID : '',

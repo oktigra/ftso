@@ -1532,13 +1532,15 @@ await check('MAX (ТЗ 8, решение владельца): кнопка то�
   const saved = process.env.MAX_URL;
   try {
     delete process.env.MAX_URL;
-    eq(loadConfig({ requireSecrets: false }).maxUrl, '', 'без MAX_URL — пусто');
+    eq(loadConfig({ requireSecrets: false }).maxUrl, 'https://max.ru/channel_ftso', 'без MAX_URL — канал федерации по умолчанию');
+    process.env.MAX_URL = 'off';
+    eq(loadConfig({ requireSecrets: false }).maxUrl, '', 'MAX_URL=off выключает кнопку');
     process.env.MAX_URL = 'https://max.ru/ftso67';
     eq(loadConfig({ requireSecrets: false }).maxUrl, 'https://max.ru/ftso67', 'корректный адрес принят');
     process.env.MAX_URL = 'https://evil.example/ftso';
-    eq(loadConfig({ requireSecrets: false }).maxUrl, '', 'чужой домен должен отбрасываться');
+    eq(loadConfig({ requireSecrets: false }).maxUrl, 'https://max.ru/channel_ftso', 'чужой домен отбрасывается — остаётся канал федерации');
     process.env.MAX_URL = 'javascript:alert(1)';
-    eq(loadConfig({ requireSecrets: false }).maxUrl, '', 'javascript: должен отбрасываться');
+    eq(loadConfig({ requireSecrets: false }).maxUrl, 'https://max.ru/channel_ftso', 'javascript: отбрасывается — остаётся канал федерации');
   } finally {
     if (saved === undefined) delete process.env.MAX_URL; else process.env.MAX_URL = saved;
   }
@@ -1548,7 +1550,8 @@ await check('MAX (ТЗ 8, решение владельца): кнопка то�
   eq(hasBtn, Boolean(config.maxUrl), 'кнопка в подвале должна быть ровно при заданном MAX_URL');
   eq(/Написать в MAX/.test(contacts.text), Boolean(config.maxUrl), 'кнопка на /contacts должна быть ровно при заданном MAX_URL');
   assert(!/vk\.com|t\.me|telegram|instagram|facebook/i.test(home.text), 'в подвале появились чужие соцсети — MAX единственный');
-  return `MAX_URL валидируется (только https://max.ru/…); сейчас в тесте ${config.maxUrl ? 'задан — кнопка есть' : 'не задан — кнопки нет'}; других соцсетей нет`;
+  if (config.maxUrl) assert(new RegExp(`href="${config.maxUrl}"`).test(home.text), 'ссылка кнопки MAX не совпадает с конфигом');
+  return `MAX по умолчанию — канал федерации, off выключает, чужие адреса отбрасываются; кнопка ${config.maxUrl ? 'есть, ведёт на ' + config.maxUrl : 'выключена'}; других соцсетей нет`;
 });
 
 await check('ТЗ п. 11: инструкция по администрированию — /admin/guide, разделы по роли, ссылка в меню', async () => {
