@@ -44,6 +44,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * Запрос — LIMIT 1 по таблице, микросекунды; кэша нарочно нет, чтобы плашка
  * ушла тем же запросом, что показал первый результат.
  */
+/** Домены Метрики для CSP: скрипт — .ru, хит визита и cookie-sync — .com. */
+export const METRIKA_HOSTS = ['https://mc.yandex.ru', 'https://mc.yandex.com'];
+
 export function devNoticeOn(db, config) {
   if (config.devNotice) return true;
   return !db.prepare('SELECT 1 AS ok FROM results LIMIT 1').get();
@@ -83,13 +86,16 @@ export function createApp(config) {
         directives: {
           'default-src': ["'self'"],
           // img-src ... data: — под фоновое зерно из дизайна (SVG в data:-URI)
-          // Яндекс.Метрика — единственный внешний домен, и только когда счётчик задан.
-          'img-src': ["'self'", 'data:', ...(config.metrikaId ? ['https://mc.yandex.ru'] : [])],
-          'script-src': ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`, ...(config.metrikaId ? ['https://mc.yandex.ru'] : [])],
+          // Яндекс.Метрика — единственная внешняя зависимость, и только когда счётчик
+          // задан. tag.js грузится с mc.yandex.ru, а ХИТ визита (/watch) и синк cookie
+          // уходят на mc.yandex.com — без него счётчик молча теряет визиты (замер
+          // 05.09.2026: tag.js 200, watch отбит CSP). Пара доменов Яндекса — ровно две.
+          'img-src': ["'self'", 'data:', ...(config.metrikaId ? METRIKA_HOSTS : [])],
+          'script-src': ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`, ...(config.metrikaId ? METRIKA_HOSTS : [])],
           'style-src': ["'self'"],
           // шрифты ЛОКАЛЬНЫЕ, внешних доменов нет
           'font-src': ["'self'"],
-          'connect-src': ["'self'", ...(config.metrikaId ? ['https://mc.yandex.ru'] : [])],
+          'connect-src': ["'self'", ...(config.metrikaId ? METRIKA_HOSTS : [])],
           'form-action': ["'self'"],
           'frame-ancestors': ["'none'"],
           'base-uri': ["'self'"],
