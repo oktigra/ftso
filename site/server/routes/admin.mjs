@@ -835,6 +835,11 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
   );
 
   // --- свой пароль --------------------------------------------------------
+  // ИНСТРУКЦИЯ ПО АДМИНИСТРИРОВАНИЮ (ТЗ п. 11) — всем ролям, разделы по правам.
+  app.get('/admin/guide', requireRole(...ANY_ROLE), (req, res) => {
+    res.render('admin/guide', { title: 'Инструкция — админка ФТСО' });
+  });
+
   app.get('/admin/account', requireRole(...ANY_ROLE), (req, res) => {
     res.render('admin/account', { title: 'Мой аккаунт — админка ФТСО' });
   });
