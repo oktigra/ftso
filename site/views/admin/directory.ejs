@@ -16,6 +16,13 @@
 
   <div class="panel form-panel">
     <h2>Добавить запись</h2>
+    <% if (typeof seedCount !== 'undefined' && seedCount) { %>
+      <form method="post" action="/admin/directories/<%= spec.key %>/seed" class="inline-form">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button class="btn btn--secondary btn--small" type="submit">Загрузить стартовый список ФТСО (<%= seedCount %>)</button>
+        <span class="muted">корты и клубы области по открытым источникам на 05.09.2026; уже добавленные названия пропускаются, пометки «уточнить» — проверить</span>
+      </form>
+    <% } %>
     <form method="post" action="/admin/directories/<%= spec.key %>" class="stacked-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <% spec.fields.forEach(function (f) { %>

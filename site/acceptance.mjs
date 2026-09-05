@@ -2020,6 +2020,30 @@ await check('сетка, слой 3 — группы + плей-офф: посе
   return 'две группы по 3 → сетка на 4 по 2 лучших, первые места в разных парах; недоигранная группа блокирует посев; места: сетка 1/2/3, не вышедшие — 5';
 });
 
+await check('стартовый список кортов и клубов: кнопка в админке, вставка по названию идемпотентна, у судей кнопки нет', async () => {
+  const { DIRECTORY_SEED } = await import('./server/lib/directory-seed.mjs');
+  assert(DIRECTORY_SEED.courts.length >= 5 && DIRECTORY_SEED.clubs.length >= 3, 'список слишком короткий');
+  for (const r of [...DIRECTORY_SEED.courts, ...DIRECTORY_SEED.clubs]) assert(r.name && r.city && r.address && r.map_url, `запись без названия/города/адреса/карты: ${r.name}`);
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/directories/courts', { jar });
+  assert(/directories\/courts\/seed/.test(page.text), 'у кортов нет кнопки стартового списка');
+  assert(!/directories\/referees\/seed/.test((await http('/admin/directories/referees', { jar })).text), 'у судей не должно быть стартового списка');
+  const _csrf = tokenFrom(page.text);
+  const before = db.prepare('SELECT COUNT(*) AS n FROM courts').get().n;
+  eq((await http('/admin/directories/courts/seed', { method: 'POST', form: { _csrf }, jar })).status, 302, 'загрузка');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM courts').get().n, before + DIRECTORY_SEED.courts.length, 'добавлены все корты');
+  eq((await http('/admin/directories/courts/seed', { method: 'POST', form: { _csrf }, jar })).status, 302, 'повтор');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM courts').get().n, before + DIRECTORY_SEED.courts.length, 'повтор не должен дублировать');
+  eq((await http('/admin/directories/clubs/seed', { method: 'POST', form: { _csrf }, jar })).status, 302, 'клубы');
+  const pub = await http('/courts');
+  assert(/Алпина/.test(pub.text) && /Смена/.test(pub.text) && /Сафоново/.test(pub.text), 'на витрине нет стартовых кортов');
+  assert(/name="city"/.test(pub.text) && /name="surface"/.test(pub.text), 'фильтры на витрине не появились');
+  for (const r of DIRECTORY_SEED.courts) db.prepare('DELETE FROM courts WHERE name = ?').run(r.name);
+  for (const r of DIRECTORY_SEED.clubs) db.prepare('DELETE FROM clubs WHERE name = ?').run(r.name);
+  db.prepare('DELETE FROM write_attempts').run();
+  return `кортов ${DIRECTORY_SEED.courts.length}, клубов ${DIRECTORY_SEED.clubs.length}; повтор без дублей; на витрине с фильтрами`;
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
