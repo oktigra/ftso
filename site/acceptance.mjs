@@ -2024,6 +2024,7 @@ await check('стартовый список кортов и клубов: кн�
   const { DIRECTORY_SEED } = await import('./server/lib/directory-seed.mjs');
   assert(DIRECTORY_SEED.courts.length >= 5 && DIRECTORY_SEED.clubs.length >= 3, 'список слишком короткий');
   for (const r of [...DIRECTORY_SEED.courts, ...DIRECTORY_SEED.clubs]) assert(r.name && r.city && r.address && r.map_url, `запись без названия/города/адреса/карты: ${r.name}`);
+  for (const r of DIRECTORY_SEED.courts) assert(r.surface !== 'уточнить' && r.courts_count !== 'уточнить', `«уточнить» в поле фильтра у ${r.name}`);
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const page = await http('/admin/directories/courts', { jar });
   assert(/directories\/courts\/seed/.test(page.text), 'у кортов нет кнопки стартового списка');
@@ -2038,6 +2039,7 @@ await check('стартовый список кортов и клубов: кн�
   const pub = await http('/courts');
   assert(/Алпина/.test(pub.text) && /Смена/.test(pub.text) && /Сафоново/.test(pub.text), 'на витрине нет стартовых кортов');
   assert(/name="city"/.test(pub.text) && /name="surface"/.test(pub.text), 'фильтры на витрине не появились');
+  assert(!/<option value="уточнить"/.test(pub.text), 'в фильтре покрытия всплыло «уточнить»');
   for (const r of DIRECTORY_SEED.courts) db.prepare('DELETE FROM courts WHERE name = ?').run(r.name);
   for (const r of DIRECTORY_SEED.clubs) db.prepare('DELETE FROM clubs WHERE name = ?').run(r.name);
   db.prepare('DELETE FROM write_attempts').run();

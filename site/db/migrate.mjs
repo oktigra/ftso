@@ -232,6 +232,10 @@ export function migrate() {
   for (const c of ['city', 'courts_count', 'season', 'club', 'contact']) addColumnIfMissing(db, 'courts', c, 'TEXT');
   for (const c of ['city', 'map_url']) addColumnIfMissing(db, 'clubs', c, 'TEXT');
   addColumnIfMissing(db, 'news', 'author', 'TEXT'); // ТЗ 4.2 — автор материала
+  // 05.09.2026: в стартовом списке кортов слово «уточнить» попало в поля покрытия/числа
+  // кортов и всплыло вариантом фильтра на витрине — чистим в NULL (примечание остаётся).
+  db.prepare("UPDATE courts SET surface = NULL WHERE surface = 'уточнить'").run();
+  db.prepare("UPDATE courts SET courts_count = NULL WHERE courts_count = 'уточнить'").run();
   // ТЗ 4.5/4.6 «фото» у тренеров, кортов, клубов.
   for (const t of ['coaches', 'courts', 'clubs']) addColumnIfMissing(db, t, 'photo_upload_id', 'INTEGER REFERENCES uploads(id) ON DELETE SET NULL');
   addColumnIfMissing(db, 'users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
