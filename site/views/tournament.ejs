@@ -46,6 +46,9 @@
       <% } %>
     </div>
 
+    <% if (groups.length || brackets.length) { %>
+      <p class="inline-form"><a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/print" target="_blank" rel="noopener">Печать / PDF сетки и результатов</a></p>
+    <% } %>
     <% if (groups.length) { %>
       <div class="panel">
         <h2>Групповой этап</h2>

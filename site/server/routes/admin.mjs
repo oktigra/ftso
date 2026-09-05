@@ -2,7 +2,7 @@ import { requireRole, ROLES, ACTIVE_ROLES, rolesFor } from '../middleware/auth.m
 import { parseMultipart } from '../lib/multipart.mjs';
 import { rowsFromXlsx, rowsFromCsv, protocolTextFromRows } from '../lib/xlsx.mjs';
 import { listGroups, setCell, writeGroupPlaces } from '../lib/groups.mjs';
-import { listBrackets, seed, unseed, decide, undo, bracketPlaces, BRACKET_SIZES, seedFromGroups, placesWithGroups } from '../lib/brackets.mjs';
+import { listBrackets, seed, unseed, decide, undo, bracketPlaces, BRACKET_SIZES, seedFromGroups, placesWithGroups, seedByRating, swapSeeds } from '../lib/brackets.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
 import { logAction, recentActions } from '../lib/action-log.mjs';
@@ -861,6 +861,16 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     const out = placesWithGroups(db, tid, intAtLeast(req.params.bid, 'Сетка'));
     logAction(db, req.session.user.id, 'bracket.places_with_groups', tid, { bracket: Number(req.params.bid), ...out });
     return `Места записаны: по сетке ${out.bracket}, не вышедшие из групп ${out.rest}. Внесли всё — пересчитайте рейтинг.`;
+  });
+  bracketRoute('/admin/tournaments/:id/brackets/:bid/seed-by-rating', (req, tid) => {
+    const out = seedByRating(db, tid, intAtLeast(req.params.bid, 'Сетка'), req.body.players);
+    logAction(db, req.session.user.id, 'bracket.seed_by_rating', tid, { bracket: Number(req.params.bid), ...out });
+    return `Посеяно по рейтингу: ${out.seeded} (с рейтингом ${out.rated}, без — ${out.unrated}, они в конце). Проверьте и поправьте при необходимости.`;
+  });
+  bracketRoute('/admin/tournaments/:id/brackets/:bid/swap', (req, tid) => {
+    swapSeeds(db, tid, intAtLeast(req.params.bid, 'Сетка'), Number(req.body.p1), Number(req.body.p2));
+    logAction(db, req.session.user.id, 'bracket.swap', tid, { bracket: Number(req.params.bid), p1: Number(req.body.p1), p2: Number(req.body.p2) });
+    return 'Позиции поменяны местами.';
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/delete', (req, tid) => {
     const bid = intAtLeast(req.params.bid, 'Сетка');

@@ -207,3 +207,56 @@ export function placesWithGroups(db, tournamentId, bid) {
   })();
   return { bracket: n, rest: rest.length };
 }
+
+// ---------------------------------------------------------------------------
+// ПОСЕВ ПО РЕЙТИНГУ (решение владельца 05.09.2026): участники — списком, порядок
+// сеяных — по текущему снимку рейтинга того же разряда (место в таблице), без
+// рейтинга — после, по фамилии. Дальше секретарь правит вручную: «×» у слота,
+// «Посеять» на свободную позицию, «Поменять местами» две позиции.
+import { currentStandings } from './rating-service.mjs';
+import { resolvePlayer } from './registrations.mjs';
+
+export function seedByRating(db, tournamentId, bid, rawList) {
+  const b = bracketOf(db, tournamentId, bid);
+  if (db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ?').get(b.id)) throw new ValidationError('Сетка уже посеяна — очистите слоты или создайте новую сетку');
+  const items = String(rawList || '').split(/[\n;,]+/).map((s) => s.trim()).filter(Boolean);
+  if (items.length < 2) throw new ValidationError('Нужно минимум два участника (по одному в строке)');
+  if (items.length > b.size) throw new ValidationError(`Участников ${items.length}, а сетка на ${b.size}`);
+  const ids = []; const missing = [];
+  for (const it of items) {
+    const id = resolvePlayer(db, it, { ValidationError });
+    if (!id) missing.push(it); else if (!ids.includes(id)) ids.push(id);
+  }
+  if (missing.length) throw new ValidationError(`Не найдены в базе: ${missing.join('; ')} — заведите их или уточните «#номер»`);
+  const standings = currentStandings(db);
+  const table = standings ? (b.kind === 'double' ? standings.doubles : standings.players) : [];
+  const rank = new Map(table.map((p) => [p.playerId, p.rank]));
+  const names = new Map(db.prepare(`SELECT id, full_name FROM players WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map((p) => [p.id, p.full_name]));
+  const ordered = [...ids].sort((x, y) => {
+    const rx = rank.get(x); const ry = rank.get(y);
+    if (rx && ry) return rx - ry;
+    if (rx) return -1;
+    if (ry) return 1;
+    return String(names.get(x)).localeCompare(String(names.get(y)), 'ru');
+  });
+  const pos = seedOrder(b.size);
+  db.transaction(() => {
+    ordered.forEach((pid, i) => db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, 0, ?, ?)').run(b.id, pos[i], pid));
+  })();
+  return { seeded: ordered.length, rated: ordered.filter((id) => rank.has(id)).length, unrated: ordered.filter((id) => !rank.has(id)).length };
+}
+
+/** Поменять местами две позиции посева (1..size); только пока ни один итог пары не записан. */
+export function swapSeeds(db, tournamentId, bid, p1, p2) {
+  const b = bracketOf(db, tournamentId, bid);
+  if (!(p1 >= 1 && p1 <= b.size && p2 >= 1 && p2 <= b.size) || p1 === p2) throw new ValidationError('Укажите две разные позиции от 1 до ' + b.size);
+  if (db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND round > 0').get(b.id)) throw new ValidationError('Итоги пар уже записаны — сначала отмените их');
+  const get = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = 0 AND position = ?');
+  const a = get.get(b.id, p1 - 1)?.player_id || null; const c = get.get(b.id, p2 - 1)?.player_id || null;
+  if (!a && !c) throw new ValidationError('Обе позиции пусты');
+  db.transaction(() => {
+    db.prepare('DELETE FROM bracket_slots WHERE bracket_id = ? AND round = 0 AND position IN (?, ?)').run(b.id, p1 - 1, p2 - 1);
+    if (c) db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, 0, ?, ?)').run(b.id, p1 - 1, c);
+    if (a) db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, 0, ?, ?)').run(b.id, p2 - 1, a);
+  })();
+}

@@ -305,8 +305,11 @@ tbody tr:hover{background:var(--surface-2);}
 .print-table{width:100%; border-collapse:collapse; font-size:.92rem;}
 .print-table th, .print-table td{border:1px solid var(--border); padding:.35rem .55rem; text-align:left;}
 .print-table th{background:var(--surface-2);}
+.bracket--print .bracket__round{min-width:12rem;}
 @media print{
   .print-toolbar{display:none;}
+  .bracket{overflow:visible; flex-wrap:nowrap;} .bracket__pair{break-inside:avoid;} .bracket__round{min-width:10rem;}
+  .bracket__pair, .bracket__slot{border-color:#999; background:#fff;} .bracket__slot--win{background:#e8f3ec; font-weight:700;}
   body{background:#fff; color:#000;}
   .print-sheet{padding:0;}
   .print-table th, .print-table td{border-color:#999;}
