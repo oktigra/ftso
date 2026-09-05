@@ -30,6 +30,8 @@ process.env.UPLOAD_DIR = resolve(WORK, 'uploads');
 // чистой машине (где нет .env) валилась бы на регистрации и кабинете.
 // Закрытое состояние проверяется в разделе 18 на ОТДЕЛЬНОМ экземпляре приложения.
 process.env.INTAKE_ENABLED = '1';
+// Почта в приёмке ВКЛЮЧЕНА: проверяем очередь и письма; поведение «без почты» — отдельным инстансом.
+process.env.SITE_MAIL = 'on';
 
 const CHROMIUM = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
@@ -2044,6 +2046,36 @@ await check('стартовый список кортов и клубов: кн�
   for (const r of DIRECTORY_SEED.clubs) db.prepare('DELETE FROM clubs WHERE name = ?').run(r.name);
   db.prepare('DELETE FROM write_attempts').run();
   return `кортов ${DIRECTORY_SEED.courts.length}, клубов ${DIRECTORY_SEED.clubs.length}; повтор без дублей; на витрине с фильтрами`;
+});
+
+await check('восстановление пароля кабинета без почты сайта: форма не показывается, POST не принимает адрес, страница ведёт к секретарю', async () => {
+  const { loadConfig } = await import('./server/lib/config.mjs');
+  const saved = process.env.SITE_MAIL;
+  try {
+    delete process.env.SITE_MAIL;
+    eq(loadConfig({ requireSecrets: false }).siteMail, false, 'по умолчанию письма выключены');
+    process.env.SITE_MAIL = 'on';
+    eq(loadConfig({ requireSecrets: false }).siteMail, true, 'SITE_MAIL=on включает');
+  } finally { if (saved === undefined) delete process.env.SITE_MAIL; else process.env.SITE_MAIL = saved; }
+  const offApp = createApp({ ...config, siteMail: false });
+  const offInst = await new Promise((res) => { const server = offApp.listen(0, '127.0.0.1', () => res({ server, base: `http://127.0.0.1:${server.address().port}` })); });
+  const h = makeClient(offInst.base);
+  try {
+    const page = await h('/cabinet/forgot');
+    eq(page.status, 200, 'страница восстановления');
+    assert(!/name="email"/.test(page.text) && !/Прислать ссылку/.test(page.text), 'без почты форма «прислать ссылку» не должна показываться');
+    assert(/секретар/i.test(page.text) && /tel:/.test(page.text) && /mailto:/.test(page.text) && /\/contacts/.test(page.text), 'нет пути через секретаря с контактами');
+    const jar = new Jar();
+    const lp = await h('/cabinet/login', { jar });
+    const before = db.prepare('SELECT COUNT(*) AS n FROM mail_outbox').get().n;
+    const post = await h('/cabinet/forgot', { method: 'POST', form: { _csrf: tokenFrom(lp.text), email: 'timofey@example.com' }, jar });
+    eq(post.status, 200, 'POST при выключенной почте — та же страница');
+    assert(!/письмо со ссылкой уже отправлено/.test(post.text), 'обещание письма при выключенной почте');
+    eq(db.prepare('SELECT COUNT(*) AS n FROM mail_outbox').get().n, before, 'письмо не должно вставать в очередь');
+  } finally { await new Promise((r) => offInst.server.close(r)); }
+  // С включённой почтой (основной инстанс тестов) форма есть — как раньше.
+  assert(/name="email"/.test((await http('/cabinet/forgot')).text), 'с включённой почтой форма должна быть');
+  return 'по умолчанию off: страница без формы, контакты секретаря, POST ничего не ставит в очередь; on — форма как раньше';
 });
 
 await check('rate-limit на /register срабатывает', async () => {
