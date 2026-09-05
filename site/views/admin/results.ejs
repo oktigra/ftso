@@ -37,6 +37,43 @@
         <p class="muted">ФИО берётся из поля «Игрок» (Фамилия Имя Отчество). Дубли по ФИО + дате рождения не заводятся.</p>
       </details>
     </form>
+  </div>
+
+  <div class="panel">
+    <h2>Массовый ввод из протокола</h2>
+    <%
+    /* Одно поле — весь протокол. Сначала «Проверить»: каждая строка сверяется с базой
+       и подсвечивается; «Сохранить всё» доступно, только когда все строки зелёные. */
+    %>
+    <form method="post" action="/admin/tournaments/<%= tournament.id %>/results/bulk" class="stacked-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field">
+        <label for="bulk-text">Место и игрок в каждой строке (или через «;»); несколько игроков на одно место — через запятую</label>
+        <textarea id="bulk-text" name="text" rows="8" maxlength="20000" placeholder="1 Иванов Иван Иванович&#10;2 Петров Пётр Петрович&#10;3-4 Сидоров Сидор, Козлов Козьма (Вязьма)&#10;5-8 …"><%= bulk ? bulk.text : '' %></textarea>
+      </div>
+      <div class="inline-form">
+        <button class="btn btn--secondary" type="submit" name="mode" value="preview">Проверить</button>
+        <% if (bulk && bulk.ok) { %><button class="btn btn--primary" type="submit" name="mode" value="save">Сохранить всё (<%= bulk.rows.length %>)</button><% } %>
+      </div>
+    </form>
+    <% if (bulk) { %>
+      <div class="table-scroll">
+        <table class="admin-table bulk-preview">
+          <thead><tr><th>Место</th><th>В протоколе</th><th>В базе</th><th>Итог</th></tr></thead>
+          <tbody>
+            <% bulk.rows.forEach(function (r) { %>
+              <tr class="bulk-<%= r.status %>">
+                <td><%= r.place === null ? '—' : r.place %></td>
+                <td><%= r.name %></td>
+                <td><%= r.label || '—' %></td>
+                <td><%= ({ ok: 'ок', missing: 'не найден', ambiguous: 'несколько тёзок', dup: 'дубль', unparsed: 'не разобрано' })[r.status] %><%= r.hint ? ' — ' + r.hint : '' %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted"><%= bulk.ok ? 'Все строки сверены — можно сохранять.' : 'Исправьте строки с пометками и нажмите «Проверить» ещё раз.' %></p>
+    <% } %>
     <p class="muted">Внесли все результаты турнира — пересчитайте рейтинг, чтобы они попали в таблицу на сайте:</p>
     <form method="post" action="/admin/rating/recompute" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">

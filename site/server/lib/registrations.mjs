@@ -82,6 +82,46 @@ export function resolvePlayer(db, value, { ValidationError }) {
 }
 
 /**
+ * МАССОВЫЙ ВВОД РЕЗУЛЬТАТОВ ТЕКСТОМ (ускорение ввода, п. 1). Формат — как в
+ * протоколе: строки или «;», в каждой «место игрок[, игрок…]»:
+ *   1 Иванов Иван Иванович
+ *   2 Петров Пётр
+ *   3-4 Сидоров Сидор, Козлов Козьма (Вязьма)
+ *   5–8 …
+ * Диапазон «3-4» даёт место 3 обоим (шкала очков по корзинам). Разбор ничего не
+ * пишет — возвращает строки с итогом сверки: ok / missing / ambiguous / dup.
+ */
+export function parseBulkResults(text) {
+  const items = String(text || '').split(/[\n;]+/).map((s) => s.trim()).filter(Boolean);
+  const out = [];
+  for (const item of items) {
+    const m = /^(\d{1,3})(?:\s*[-–—]\s*(\d{1,3}))?[.)]?\s+(.+)$/.exec(item);
+    if (!m) { out.push({ raw: item, place: null, name: item, status: 'unparsed' }); continue; }
+    const place = Number(m[1]);
+    for (const name of m[3].split(',').map((s) => s.trim()).filter(Boolean)) out.push({ raw: item, place, name, status: 'pending' });
+  }
+  return out;
+}
+
+export function checkBulkResults(db, tournamentId, text, { ValidationError }) {
+  const rows = parseBulkResults(text);
+  const seen = new Set();
+  const already = new Set(db.prepare('SELECT player_id FROM results WHERE tournament_id = ?').all(tournamentId).map((r) => r.player_id));
+  for (const r of rows) {
+    if (r.status === 'unparsed') { r.hint = 'нет места в начале строки'; continue; }
+    if (r.place < 1) { r.status = 'unparsed'; r.hint = 'место должно быть от 1'; continue; }
+    let id = null;
+    try { id = resolvePlayer(db, r.name, { ValidationError }); } catch (e) { r.status = 'ambiguous'; r.hint = e.message; continue; }
+    if (!id) { r.status = 'missing'; r.hint = 'нет в базе — заведите в «Игроках» или через форму выше'; continue; }
+    if (seen.has(id) || already.has(id)) { r.status = 'dup'; r.hint = 'у этого игрока уже есть результат в турнире'; r.playerId = id; continue; }
+    seen.add(id);
+    const p = db.prepare('SELECT full_name, city FROM players WHERE id = ?').get(id);
+    r.playerId = id; r.label = `${p.full_name} (${p.city})`; r.status = 'ok';
+  }
+  return rows;
+}
+
+/**
  * ДУБЛИ ИГРОКОВ — правила владельца 05.09.2026, стоп до секретаря:
  *  · e-mail взрослого заявителя уже у кабинета игрока или у ждущей заявки —
  *    дубль (адрес представителя не считается: родитель сам может играть, а

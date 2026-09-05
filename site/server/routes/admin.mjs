@@ -29,6 +29,7 @@ import {
   findNameMatches,
   findDuplicate,
   resolvePlayer,
+  checkBulkResults,
   approveRegistration,
   rejectRegistration,
   byId as registrationById,
@@ -659,7 +660,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
   );
 
   // --- результаты и матчи турнира ----------------------------------------
-  app.get('/admin/tournaments/:id/results', requireRole(...DATA_ROLES), (req, res, next) => {
+  const renderResults = (req, res, next, extra = {}) => {
     if (!/^\d+$/.test(req.params.id)) return next();
     const id = Number(req.params.id);
     const tournament = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(id);
@@ -667,6 +668,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     res.render('admin/results', {
       title: `Результаты: ${tournament.name} — админка ФТСО`,
       tournament,
+      bulk: null,
+      ...extra,
       players: db.prepare('SELECT id, full_name, city FROM players ORDER BY full_name').all(),
       results: db
         .prepare(
@@ -686,7 +689,38 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         .all(id),
       maxParticipants: config.rating.maxParticipants,
     });
-  });
+  };
+  app.get('/admin/tournaments/:id/results', requireRole(...DATA_ROLES), (req, res, next) => renderResults(req, res, next));
+
+  // МАССОВЫЙ ВВОД (ускорение ввода, п. 1): текст протокола → предпросмотр со сверкой →
+  // «Сохранить всё» одной транзакцией. Пока в предпросмотре есть хоть одна не-ok строка,
+  // сохранение не проходит: половинный протокол хуже отсутствующего.
+  app.post(
+    '/admin/tournaments/:id/results/bulk',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    (req, res, next) => {
+      try {
+        const tournamentId = intAtLeast(req.params.id, 'Турнир');
+        if (!db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(tournamentId)) throw new ValidationError('Турнир не найден');
+        const text = String(req.body.text || '').slice(0, 20000);
+        const rows = checkBulkResults(db, tournamentId, text, { ValidationError });
+        const ok = rows.length > 0 && rows.every((r) => r.status === 'ok');
+        if (req.body.mode !== 'save' || !ok) {
+          return renderResults(req, res, next, { bulk: { text, rows, ok, saved: false } });
+        }
+        const have = db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(tournamentId).n;
+        if (have + rows.length > config.rating.maxParticipants) throw new ValidationError(`Превышен потолок участников турнира (${config.rating.maxParticipants})`);
+        const ins = db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)');
+        db.transaction(() => { for (const r of rows) ins.run(tournamentId, r.playerId, r.place); })();
+        logAction(db, req.session.user.id, 'result.bulk', tournamentId, { count: rows.length });
+        return flash(req, res, 'ok', `Сохранено результатов: ${rows.length}. Внесли всё — пересчитайте рейтинг.`, `/admin/tournaments/${tournamentId}/results`);
+      } catch (err) {
+        if (err instanceof ValidationError) return flash(req, res, 'error', err.message, `/admin/tournaments/${req.params.id}/results`);
+        return next(err);
+      }
+    },
+  );
 
   app.post(
     '/admin/tournaments/:id/results',
