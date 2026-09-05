@@ -227,6 +227,10 @@ export function migrate() {
   addColumnIfMissing(db, 'tournaments', 'start_date', 'TEXT');
   addColumnIfMissing(db, 'tournaments', 'kind', "TEXT NOT NULL DEFAULT 'other'");
   addColumnIfMissing(db, 'tournaments', 'age_group', 'TEXT');
+  // ТЗ 4.5/4.6 — поля справочников и фильтры (05.09.2026).
+  for (const c of ['city', 'specialization', 'qualification', 'groups']) addColumnIfMissing(db, 'coaches', c, 'TEXT');
+  for (const c of ['city', 'courts_count', 'season', 'club', 'contact']) addColumnIfMissing(db, 'courts', c, 'TEXT');
+  for (const c of ['city', 'map_url']) addColumnIfMissing(db, 'clubs', c, 'TEXT');
   addColumnIfMissing(db, 'users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'gallery_items', 'tournament_id', 'INTEGER REFERENCES tournaments(id) ON DELETE SET NULL');
   const resultsRebuilt = upgradeResults(db);

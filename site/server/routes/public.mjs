@@ -12,7 +12,7 @@ import { queueMail } from '../lib/mailer.mjs';
 import {
   ValidationError, CATEGORIES, TOURNAMENT_KINDS, TOURNAMENT_KIND_RU, TOURNAMENT_STATUSES, TOURNAMENT_STATUS_RU,
 } from '../lib/validate.mjs';
-import { DIRECTORIES, listDirectory } from '../lib/directories.mjs';
+import { DIRECTORIES, listDirectory, directoryFilterOptions } from '../lib/directories.mjs';
 import {
   publishedNews,
   newsById,
@@ -52,9 +52,12 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
 
   // --- новости -------------------------------------------------------------
   app.get('/news', (req, res) => {
+    // Поиск по новостям (ТЗ 4.2): заголовок, анонс, текст. Обычная GET-форма.
+    const q = String(req.query.q || '').trim().slice(0, 80);
     res.render('news-list', {
       title: 'Новости — ФТСО',
-      news: publishedNews(db),
+      news: publishedNews(db, 50, q),
+      q,
       section: sectionFor('/news'),
     });
   });
@@ -114,10 +117,14 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
   // --- справочники ---------------------------------------------------------
   for (const spec of Object.values(DIRECTORIES)) {
     app.get(spec.path, (req, res) => {
+      const filters = {};
+      for (const f of spec.fields) if (f.filter) filters[f.name] = String(req.query[f.name] || '').trim().slice(0, f.max);
       res.render('directory', {
         title: `${spec.title} — ФТСО`,
         spec,
-        rows: listDirectory(db, spec),
+        rows: listDirectory(db, spec, filters),
+        filters,
+        options: directoryFilterOptions(db, spec),
         section: sectionFor(spec.path),
       });
     });

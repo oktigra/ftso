@@ -439,6 +439,10 @@ CREATE TABLE IF NOT EXISTS coaches (
   club          TEXT,
   contact       TEXT,
   note          TEXT,
+  city           TEXT,
+  specialization TEXT,
+  qualification  TEXT,
+  groups         TEXT,
   basis         TEXT NOT NULL CHECK (length(trim(basis)) BETWEEN 1 AND 200),
   document_date TEXT NOT NULL,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -464,6 +468,11 @@ CREATE TABLE IF NOT EXISTS courts (
   surface    TEXT,
   map_url    TEXT,
   note       TEXT,
+  city         TEXT,
+  courts_count TEXT,
+  season       TEXT,
+  club         TEXT,
+  contact      TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -474,6 +483,8 @@ CREATE TABLE IF NOT EXISTS clubs (
   contact    TEXT,
   site       TEXT,
   note       TEXT,
+  city       TEXT,
+  map_url    TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

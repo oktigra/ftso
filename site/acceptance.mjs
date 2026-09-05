@@ -2495,6 +2495,53 @@ await check('справочник с ФИО требует правового о
   return 'тренер без основания отклонён, с основанием добавлен; основание не показывается публично; корт — без основания';
 });
 
+await check('ТЗ 4.2/4.5/4.6: поиск по новостям; фильтры тренеров (город/клуб), кортов (город/покрытие), клубов (город); карта у адреса', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/directories/coaches', { jar })).text);
+  const add = (key, form) => http(`/admin/directories/${key}`, { method: 'POST', form: { _csrf, ...form }, jar });
+  const basis = { basis: 'согласие от 01.07.2026', document_date: '2026-07-01' };
+  eq((await add('coaches', { full_name: 'Фильтров Тренер Первый', city: 'Вязьма', club: 'Ракетка', specialization: 'дети 6–10', qualification: 'КМС', groups: 'дети', ...basis })).status, 302, 'тренер 1');
+  eq((await add('coaches', { full_name: 'Фильтров Тренер Второй', city: 'Смоленск', club: 'Днепр', ...basis })).status, 302, 'тренер 2');
+  eq((await add('courts', { name: 'Фильтров Корт Хард', city: 'Смоленск', address: 'ул. Кортовая, 1', surface: 'хард', courts_count: '4', season: 'круглый год' })).status, 302, 'корт 1');
+  eq((await add('courts', { name: 'Фильтров Корт Грунт', city: 'Вязьма', address: 'ул. Грунтовая, 2', surface: 'грунт', map_url: 'https://yandex.ru/maps/?text=test' })).status, 302, 'корт 2');
+  eq((await add('clubs', { name: 'Фильтров Клуб', city: 'Смоленск', address: 'пр. Клубный, 3' })).status, 302, 'клуб');
+  const rows = (t, prefix) => (t.match(new RegExp(prefix + '[^<]+', 'g')) || []).length;
+  // Тренеры: селекты город и клуб; фильтры работают.
+  const c = await http('/coaches');
+  assert(/name="city"/.test(c.text) && /name="club"/.test(c.text), 'у тренеров нет фильтров город/клуб');
+  assert(/Специализация/.test(c.text) && /дети 6–10/.test(c.text) && /КМС/.test(c.text), 'специализация/квалификация не показаны');
+  eq(rows((await http('/coaches?city=' + encodeURIComponent('Вязьма'))).text, 'Фильтров Тренер'), 1, 'тренеры: фильтр город');
+  eq(rows((await http('/coaches?club=' + encodeURIComponent('Днепр'))).text, 'Фильтров Тренер'), 1, 'тренеры: фильтр клуб');
+  eq(rows((await http('/coaches?city=' + encodeURIComponent('Нигде'))).text, 'Фильтров Тренер'), 0, 'тренеры: чужой город — пусто');
+  // Корты: фильтры город/покрытие, количество и сезонность видны, карта — своя ссылка или по адресу.
+  const k = await http('/courts');
+  assert(/name="city"/.test(k.text) && /name="surface"/.test(k.text), 'у кортов нет фильтров город/покрытие');
+  assert(/круглый год/.test(k.text) && />\s*4\s*</.test(k.text), "кортов/сезонность не показаны");
+  assert(/yandex\.ru\/maps\/\?text=test/.test(k.text), 'своя ссылка на карту не показана');
+  assert(/yandex\.ru\/maps\/\?text=[^"]*%D0%9A%D0%BE%D1%80%D1%82%D0%BE%D0%B2%D0%B0%D1%8F/.test(k.text), 'карта по адресу (без своей ссылки) не построена');
+  eq(rows((await http('/courts?surface=' + encodeURIComponent('грунт'))).text, 'Фильтров Корт'), 1, 'корты: фильтр покрытие');
+  // Клубы: фильтр город.
+  const cl = await http('/clubs');
+  assert(/name="city"/.test(cl.text), 'у клубов нет фильтра город');
+  eq(rows((await http('/clubs?city=' + encodeURIComponent('Смоленск'))).text, 'Фильтров Клуб'), 1, 'клубы: фильтр город');
+  // Новости: поиск по заголовку и тексту, только опубликованные.
+  db.prepare("INSERT INTO news (title, summary, body, is_published, published_at) VALUES ('Поисковая новость про ракетки','анонс','В тексте есть слово ЖЕЛЕЗОБЕТОН.',1,'2026-09-01')").run();
+  db.prepare("INSERT INTO news (title, summary, body, is_published) VALUES ('Черновик про ракетки','','ЖЕЛЕЗОБЕТОН черновика',0)").run();
+  const n = await http('/news');
+  assert(/name="q"/.test(n.text), 'на /news нет поля поиска');
+  const hit = await http('/news?q=' + encodeURIComponent('железобетон'));
+  assert(/Поисковая новость про ракетки/.test(hit.text), 'поиск по тексту не нашёл новость');
+  assert(!/Черновик про ракетки/.test(hit.text), 'поиск показал черновик');
+  assert(/Поисковая новость/.test((await http('/news?q=' + encodeURIComponent('ракетки'))).text), 'поиск по заголовку не нашёл');
+  assert(/ничего не найдено/.test((await http('/news?q=%25')).text), 'символ % не должен работать как маска LIKE');
+  db.prepare("DELETE FROM news WHERE title LIKE '%про ракетки'").run();
+  db.prepare("DELETE FROM coaches WHERE full_name LIKE 'Фильтров %'").run();
+  db.prepare("DELETE FROM courts WHERE name LIKE 'Фильтров %'").run();
+  db.prepare("DELETE FROM clubs WHERE name LIKE 'Фильтров %'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'тренеры: город/клуб; корты: город/покрытие + кортов/сезонность + карта; клубы: город; новости: поиск по заголовку и тексту, черновики скрыты, % экранирован';
+});
+
 await check('публичный файл отдаётся защищённым путём, документ с модерации — нет', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const page = await http('/admin/library', { jar });

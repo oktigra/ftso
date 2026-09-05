@@ -13,8 +13,28 @@
 </section>
 <section class="section-pad section-pad--tight">
   <div class="container">
+    <%
+    /* Фильтры по полям filter:true из описания раздела (ТЗ 4.5/4.6). GET-форма без JS. */
+    const filterFields = spec.fields.filter(function (f) { return f.filter; });
+    const anyFilter = filterFields.some(function (f) { return filters[f.name]; });
+    %>
+    <% if (filterFields.length && (rows.length || anyFilter)) { %>
+      <form method="get" action="<%= spec.path %>" class="filters" aria-label="Фильтры раздела">
+        <% filterFields.forEach(function (f) { %>
+          <div class="field">
+            <label for="df-<%= f.name %>"><%= f.label %></label>
+            <select id="df-<%= f.name %>" name="<%= f.name %>">
+              <option value="">все</option>
+              <% (options[f.name] || []).forEach(function (v) { %><option value="<%= v %>"<%= filters[f.name] === v ? ' selected' : '' %>><%= v %></option><% }); %>
+            </select>
+          </div>
+        <% }); %>
+        <div class="field"><button class="btn btn--secondary" type="submit">Показать</button></div>
+        <% if (anyFilter) { %><div class="field"><a class="btn btn--secondary" href="<%= spec.path %>">Сбросить</a></div><% } %>
+      </form>
+    <% } %>
     <% if (!rows.length) { %>
-      <div class="panel notice">Раздел пока не наполнен.</div>
+      <div class="panel notice"><%= anyFilter ? 'По выбранным фильтрам записей нет.' : 'Раздел пока не наполнен.' %></div>
     <% } else { %>
       <div class="table-scroll">
         <table>
@@ -28,7 +48,9 @@
                 <% spec.fields.forEach(function (f) { %>
                   <td>
                     <% if (f.name === 'map_url' && row[f.name]) { %>
-                      <a href="<%= row[f.name] %>" rel="nofollow noopener">на карте</a>
+                      <a href="<%= row[f.name] %>" rel="nofollow noopener" target="_blank">на карте ↗</a>
+                    <% } else if (f.name === 'address' && row[f.name] && !row.map_url) { %>
+                      <%= row[f.name] %> · <a href="https://yandex.ru/maps/?text=<%= encodeURIComponent(row[f.name]) %>" rel="nofollow noopener" target="_blank">на карте ↗</a>
                     <% } else if (f.name === 'site' && row[f.name]) { %>
                       <a href="<%= row[f.name] %>" rel="nofollow noopener"><%= row[f.name] %></a>
                     <% } else { %><%= row[f.name] || '—' %><% } %>
