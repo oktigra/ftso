@@ -284,7 +284,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       if (!spec || !DIRECTORY_SEED[spec.key]) return next();
       const out = applyDirectorySeed(db, spec);
       logAction(db, req.session.user.id, `${spec.key}.seed`, null, out);
-      flash(req, res, 'ok', `Стартовый список: добавлено ${out.added}, уже было ${out.skipped} из ${out.total}. Проверьте пометки «уточнить».`, `/admin/directories/${spec.key}`);
+      flash(req, res, 'ok', `Стартовый список: добавлено ${out.added}, уже было ${out.skipped} (дозаполнено пустых полей: ${out.filled}) из ${out.total}. Проверьте пометки «уточнить».`, `/admin/directories/${spec.key}`);
     }),
   );
 

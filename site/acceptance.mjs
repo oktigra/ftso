@@ -2037,9 +2037,19 @@ await check('стартовый список кортов и клубов: кн�
   eq(db.prepare('SELECT COUNT(*) AS n FROM courts').get().n, before + DIRECTORY_SEED.courts.length, 'добавлены все корты');
   eq((await http('/admin/directories/courts/seed', { method: 'POST', form: { _csrf }, jar })).status, 302, 'повтор');
   eq(db.prepare('SELECT COUNT(*) AS n FROM courts').get().n, before + DIRECTORY_SEED.courts.length, 'повтор не должен дублировать');
+  // Дозаполнение: пустое поле берётся из списка, заполненное секретарём — не трогается.
+  const kupol = DIRECTORY_SEED.courts.find((r) => /Купол/.test(r.name));
+  db.prepare('UPDATE courts SET contact = NULL, courts_count = ? WHERE name = ?').run('99', kupol.name);
+  const { applyDirectorySeed } = await import('./server/lib/directory-seed.mjs');
+  const { DIRECTORIES } = await import('./server/lib/directories.mjs');
+  const out = applyDirectorySeed(db, DIRECTORIES.courts, { insert: false });
+  eq(out.added, 0, 'insert:false не вставляет');
+  const after = db.prepare('SELECT contact, courts_count FROM courts WHERE name = ?').get(kupol.name);
+  eq(after.contact, kupol.contact, 'пустой контакт не дозаполнен');
+  eq(after.courts_count, '99', 'правка секретаря затёрта списком');
   eq((await http('/admin/directories/clubs/seed', { method: 'POST', form: { _csrf }, jar })).status, 302, 'клубы');
   const pub = await http('/courts');
-  assert(/Алпина/.test(pub.text) && /Смена/.test(pub.text) && /Сафоново/.test(pub.text), 'на витрине нет стартовых кортов');
+  assert(/Алпина/.test(pub.text) && /Смена/.test(pub.text) && /Сафоново/.test(pub.text) && /Кристалл/.test(pub.text), 'на витрине нет стартовых кортов');
   assert(/name="city"/.test(pub.text) && /name="surface"/.test(pub.text), 'фильтры на витрине не появились');
   assert(!/<option value="уточнить"/.test(pub.text), 'в фильтре покрытия всплыло «уточнить»');
   for (const r of DIRECTORY_SEED.courts) db.prepare('DELETE FROM courts WHERE name = ?').run(r.name);
