@@ -140,6 +140,8 @@ CREATE TABLE IF NOT EXISTS registrations (
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_registrations_status ON registrations (status, id DESC);
+-- РНИ (номер игрока в РТТ) — точный идентификатор человека: двух игроков с одним РНИ не бывает.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_players_rni ON players (rni) WHERE rni IS NOT NULL;
 
 -- ЖУРНАЛ СОГЛАСИЙ (152-ФЗ). Доказательство того, ЧТО и КОГДА принял субъект.
 -- Согласий ДВА и они раздельные (ч. 6 ст. 10.1): 'processing' — обработка (ст. 9),
