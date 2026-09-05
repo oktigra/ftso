@@ -80,3 +80,118 @@ export function xlsxFromRows(rows, { sheet = 'Лист1' } = {}) {
     'xl/worksheets/sheet1.xml': sheetXml,
   });
 }
+
+// ---------------------------------------------------------------------------
+// ЧТЕНИЕ (импорт протокола, ускорение ввода п. 2). Ровно столько, чтобы
+// вытащить строки первого листа: zip (stored/deflate), sharedStrings, inlineStr,
+// числа. Стили, формулы, объединения — не нужны, игнорируются.
+import { inflateRawSync } from 'node:zlib';
+
+/** zip → { имя: Buffer } по central directory (переживает data descriptor). */
+export function unzip(buf) {
+  const out = {};
+  const eocd = buf.lastIndexOf(Buffer.from([0x50, 0x4b, 0x05, 0x06]));
+  if (eocd < 0) throw new Error('не zip');
+  const count = buf.readUInt16LE(eocd + 10);
+  let off = buf.readUInt32LE(eocd + 16);
+  for (let i = 0; i < count; i++) {
+    if (buf.readUInt32LE(off) !== 0x02014b50) break;
+    const method = buf.readUInt16LE(off + 10);
+    const csize = buf.readUInt32LE(off + 20);
+    const nlen = buf.readUInt16LE(off + 28); const elen = buf.readUInt16LE(off + 30); const clen = buf.readUInt16LE(off + 32);
+    const lho = buf.readUInt32LE(off + 42);
+    const name = buf.slice(off + 46, off + 46 + nlen).toString('utf8');
+    const lnlen = buf.readUInt16LE(lho + 26); const lelen = buf.readUInt16LE(lho + 28);
+    const start = lho + 30 + lnlen + lelen;
+    const data = buf.slice(start, start + csize);
+    out[name] = method === 8 ? inflateRawSync(data) : method === 0 ? Buffer.from(data) : null;
+    off += 46 + nlen + elen + clen;
+  }
+  return out;
+}
+
+const unesc = (s) => String(s)
+  .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+const colIndex = (ref) => { let n = 0; for (const ch of ref.replace(/\d+/g, '')) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; };
+
+/** Первый лист книги → массив строк (массивов строковых ячеек). */
+export function rowsFromXlsx(buf) {
+  const parts = unzip(buf);
+  const shared = [];
+  if (parts['xl/sharedStrings.xml']) {
+    for (const m of parts['xl/sharedStrings.xml'].toString('utf8').matchAll(/<si>([\s\S]*?)<\/si>/g)) {
+      shared.push(unesc([...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => t[1]).join('')));
+    }
+  }
+  // Первый лист — по workbook.xml.rels (имя файла листа может быть не sheet1).
+  let sheetPath = 'xl/worksheets/sheet1.xml';
+  const wb = parts['xl/workbook.xml'] && parts['xl/workbook.xml'].toString('utf8');
+  const rels = parts['xl/_rels/workbook.xml.rels'] && parts['xl/_rels/workbook.xml.rels'].toString('utf8');
+  if (wb && rels) {
+    const rid = (/<sheet [^>]*r:id="([^"]+)"/.exec(wb) || [])[1];
+    const target = rid && (new RegExp(`<Relationship [^>]*Id="${rid}"[^>]*Target="([^"]+)"`).exec(rels) || [])[1];
+    if (target) sheetPath = target.startsWith('/') ? target.slice(1) : `xl/${target}`;
+  }
+  const xml = parts[sheetPath];
+  if (!xml) throw new Error('в файле нет листа');
+  const rows = [];
+  for (const rm of xml.toString('utf8').matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)) {
+    const cells = [];
+    for (const cm of rm[1].matchAll(/<c r="([A-Z]+)\d+"([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+      const idx = colIndex(cm[1]);
+      const attrs = cm[2] || ''; const inner = cm[3] || '';
+      let val = '';
+      const t = (/ t="([^"]+)"/.exec(attrs) || [])[1];
+      if (t === 's') { const v = (/<v>([^<]*)<\/v>/.exec(inner) || [])[1]; val = shared[Number(v)] || ''; }
+      else if (t === 'inlineStr') { val = unesc([...inner.matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((x) => x[1]).join('')); }
+      else { const v = (/<v>([^<]*)<\/v>/.exec(inner) || [])[1]; val = v === undefined ? '' : unesc(v); }
+      cells[idx] = val.trim();
+    }
+    rows.push(Array.from(cells, (c) => c || ''));
+  }
+  return rows;
+}
+
+/** CSV (; или , или таб; кавычки; BOM) → строки. */
+export function rowsFromCsv(buf) {
+  let text = buf.toString('utf8');
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
+  const first = text.split(/\r?\n/)[0] || '';
+  const sep = (first.match(/;/g) || []).length >= (first.match(/,/g) || []).length ? (first.includes('\t') && !first.includes(';') ? '\t' : ';') : ',';
+  const rows = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const cells = []; let cur = ''; let q = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (q) { if (ch === '"') { if (line[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === sep) { cells.push(cur.trim()); cur = ''; }
+      else cur += ch;
+    }
+    cells.push(cur.trim());
+    rows.push(cells);
+  }
+  return rows;
+}
+
+/**
+ * Строки таблицы → текст протокола для checkBulkResults: «место игрок».
+ * Колонки ищутся по заголовку («место», «игрок/фио/фамилия»), иначе — первые две.
+ */
+export function protocolTextFromRows(rows) {
+  if (!rows.length) return '';
+  const head = rows[0].map((c) => c.toLowerCase());
+  let iPlace = head.findIndex((c) => /^(место|place|№|#)/.test(c));
+  let iName = head.findIndex((c) => /(игрок|фио|фамилия|участник|player|name)/.test(c));
+  const hasHeader = iPlace >= 0 || iName >= 0;
+  if (iPlace < 0) iPlace = 0;
+  if (iName < 0) iName = iPlace === 0 ? 1 : 0;
+  return rows
+    .slice(hasHeader ? 1 : 0)
+    .filter((r) => (r[iPlace] || '').trim() || (r[iName] || '').trim())
+    .map((r) => `${(r[iPlace] || '').trim()} ${(r[iName] || '').trim()}`.trim())
+    .join('\n');
+}

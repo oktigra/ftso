@@ -45,6 +45,13 @@
     /* Одно поле — весь протокол. Сначала «Проверить»: каждая строка сверяется с базой
        и подсвечивается; «Сохранить всё» доступно, только когда все строки зелёные. */
     %>
+    <form method="post" action="/admin/tournaments/<%= tournament.id %>/results/import" class="inline-form" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="import-file">Или загрузите таблицу (.xlsx / .csv, колонки «Место», «Игрок»)</label>
+        <input id="import-file" type="file" name="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"></div>
+      <button class="btn btn--secondary" type="submit">Прочитать файл</button>
+    </form>
+    <% if (bulk && bulk.fromFile) { %><p class="muted">Из файла «<%= bulk.fromFile %>» прочитано строк: <%= bulk.rows.length %> — проверьте и сохраните.</p><% } %>
     <form method="post" action="/admin/tournaments/<%= tournament.id %>/results/bulk" class="stacked-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="field">
