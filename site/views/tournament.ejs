@@ -46,8 +46,62 @@
       <% } %>
     </div>
 
+    <% if (groups.length) { %>
+      <div class="panel">
+        <h2>Групповой этап</h2>
+        <% groups.forEach(function (g) { %>
+          <h3>Группа <%= g.name %> <span class="muted">(<%= g.kind === 'double' ? 'парный' : 'одиночный' %>)</span></h3>
+          <div class="table-scroll">
+            <table class="group-table">
+              <caption class="visually-hidden">Таблица группы <%= g.name %></caption>
+              <thead><tr><th scope="col">#</th><th scope="col">Игрок</th><% g.members.forEach(function (c, j) { %><th scope="col"><%= j + 1 %></th><% }); %><th scope="col">Поб.</th><th scope="col">Место</th></tr></thead>
+              <tbody>
+                <% g.members.forEach(function (r, i) { %>
+                  <tr>
+                    <td><%= i + 1 %></td>
+                    <td class="player"><% if (r.anonymized_at) { %>Игрок удалён<% } else { %><a href="/player/<%= r.id %>"><%= r.full_name %></a><% } %></td>
+                    <% g.members.forEach(function (c) { %>
+                      <% if (r.id === c.id) { %><td class="group-self">—</td><% } else { const cell = g.cells[r.id + ':' + c.id]; %>
+                        <td class="<%= cell ? (cell.won ? 'group-win' : 'group-loss') : '' %>"><%= cell ? (cell.won ? cell.score : cell.score.split(' ').map(function (s) { var m = /^(\d+)[:\-](\d+)(\(\d+\))?$/.exec(s); return m ? m[2] + ':' + m[1] + (m[3] || '') : s; }).join(' ')) : '' %></td>
+                      <% } %>
+                    <% }); %>
+                    <td><%= g.stats[r.id].wins %></td>
+                    <td><strong><%= g.stats[r.id].played ? g.stats[r.id].place : '—' %></strong></td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+        <% }); %>
+      </div>
+    <% } %>
+
+    <% if (brackets.length) { %>
+      <div class="panel">
+        <h2>Сетка плей-офф</h2>
+        <% brackets.forEach(function (b) { %>
+          <h3><%= b.name %> <span class="muted">(на <%= b.size %>, <%= b.kind === 'double' ? 'парный' : 'одиночный' %>)</span></h3>
+          <div class="bracket bracket--public">
+            <% b.rounds.forEach(function (round) { %>
+              <div class="bracket__round">
+                <div class="bracket__title"><%= round.name %></div>
+                <% round.pairs.forEach(function (p) { %>
+                  <div class="bracket__pair<%= p.winner ? ' bracket__pair--done' : '' %>">
+                    <div class="bracket__slot<%= p.winner && p.winner === p.aId ? ' bracket__slot--win' : '' %>"><%= p.a ? p.a.full_name : '—' %></div>
+                    <div class="bracket__slot<%= p.winner && p.winner === p.bId ? ' bracket__slot--win' : '' %>"><%= p.b ? p.b.full_name : '—' %></div>
+                    <% if (p.winner) { %><div class="bracket__score"><%= p.bye ? 'без игры' : (p.score || '') %></div><% } %>
+                  </div>
+                <% }); %>
+              </div>
+            <% }); %>
+            <div class="bracket__round"><div class="bracket__title">Победитель</div><div class="bracket__pair"><div class="bracket__slot bracket__slot--win"><%= b.champion ? b.champion.full_name : '—' %></div></div></div>
+          </div>
+        <% }); %>
+      </div>
+    <% } %>
+
     <div class="panel">
-      <h2>Сетка: сыгранные матчи</h2>
+      <h2>Сыгранные матчи</h2>
       <% if (!matches.length) { %>
         <p class="muted">Матчи ещё не внесены.</p>
       <% } else { %>

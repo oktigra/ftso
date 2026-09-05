@@ -1912,8 +1912,10 @@ await check('сетка, слой 1 — круговая группа: клет�
   eq((await http(`/admin/tournaments/${t}/groups/${gid}/places`, { method: 'POST', form: { _csrf }, jar })).status, 302, 'места');
   const r = db.prepare('SELECT player_id, place FROM results WHERE tournament_id = ? ORDER BY place').all(t);
   eq(r.map((x) => `${x.player_id}:${x.place}`).join('|'), `${A}:1|${B}:2|${V}:3|${G}:4`, 'результаты из мест группы');
-  // Публичная карточка турнира показывает 6 матчей.
-  eq((await http(`/tournaments/${t}`)).status, 200, 'карточка турнира');
+  // Публичная карточка турнира: таблица группы с местами и счётом.
+  const pub = await http(`/tournaments/${t}`);
+  eq(pub.status, 200, 'карточка турнира');
+  assert(/Групповой этап/.test(pub.text) && /Группа A/.test(pub.text) && /group-win/.test(pub.text), 'группа не показана на витрине');
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
   db.prepare("DELETE FROM players WHERE full_name LIKE 'Группов %'").run();
   db.prepare('DELETE FROM write_attempts').run();
@@ -1951,6 +1953,8 @@ await check('сетка, слой 2 — олимпийка на 8: посев, b
   eq((await post(`/${bid}/decide`, { r: '2', k: '0', score: '6:4 6:4' })).status, 302, 'финал');
   eq(db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = 3').get(bid).player_id, ids[0], 'чемпион');
   assert(/победитель: Олимпов Один/.test((await http(`/admin/tournaments/${t}/results`, { jar })).text), 'победитель не показан');
+  const pubB = await http(`/tournaments/${t}`);
+  assert(/Сетка плей-офф/.test(pubB.text) && /Финал/.test(pubB.text) && /bracket__slot--win">Олимпов Один</.test(pubB.text), 'сетка не показана на витрине');
   eq((await post(`/${bid}/undo`, { r: '1', k: '0' })).status, 302, 'отмена полуфинала');
   eq(db.prepare('SELECT COUNT(*) AS n FROM bracket_slots WHERE bracket_id = ? AND round >= 2').get(bid).n, 1, 'откат должен снять финалиста-1 и чемпиона, оставив второго финалиста');
   eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t).n, 4, 'матчи полуфинала (1,4) и финала должны удалиться');

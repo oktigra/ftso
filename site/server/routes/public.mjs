@@ -14,6 +14,8 @@ import {
 import { DIRECTORIES, listDirectory, directoryFilterOptions } from '../lib/directories.mjs';
 import { descriptionFrom } from '../lib/seo.mjs';
 import { siteText, paragraphs } from '../lib/texts.mjs';
+import { listGroups } from '../lib/groups.mjs';
+import { listBrackets } from '../lib/brackets.mjs';
 import {
   publishedNews,
   newsById,
@@ -142,6 +144,8 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
         `категория ${tournament.category}${tournament.age_group ? ', ' + tournament.age_group : ''}. Участники, результаты и матчи — на сайте Федерации тенниса Смоленской области.`,
       ),
       tournament,
+      groups: listGroups(db, tournament.id),
+      brackets: listBrackets(db, tournament.id),
       // Участники и матчи со ссылками на публичные профили /player/:id.
       participants: tournamentParticipants(db, tournament.id, LABELS),
       matches: tournamentMatches(db, tournament.id, LABELS),
