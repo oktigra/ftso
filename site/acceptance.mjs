@@ -4942,16 +4942,23 @@ await check('Метрика (решение владельца): без METRIKA_
     process.env.METRIKA_ID = '12345678';
     eq(loadConfig({ requireSecrets: false }).metrikaId, '12345678', 'номер счётчика принят');
     process.env.METRIKA_ID = '<script>';
-    eq(loadConfig({ requireSecrets: false }).metrikaId, '', 'мусор вместо номера отброшен');
+    eq(loadConfig({ requireSecrets: false }).metrikaId, '112305908', 'мусор вместо номера отброшен — остаётся счётчик федерации');
     delete process.env.METRIKA_ID;
-    eq(loadConfig({ requireSecrets: false }).metrikaId, '', 'без переменной — пусто');
+    eq(loadConfig({ requireSecrets: false }).metrikaId, '112305908', 'без переменной — счётчик федерации по умолчанию');
+    process.env.METRIKA_ID = 'off';
+    eq(loadConfig({ requireSecrets: false }).metrikaId, '', 'METRIKA_ID=off выключает');
   } finally {
     if (saved === undefined) delete process.env.METRIKA_ID; else process.env.METRIKA_ID = saved;
   }
-  // Основной инстанс тестов — без счётчика: ни баннера, ни Яндекса.
-  const plain = await http('/');
-  assert(!/data-cookie-bar/.test(plain.text) && !/mc\.yandex\.ru/.test(plain.text), 'без METRIKA_ID на странице есть баннер или Яндекс');
-  assert(!/mc\.yandex\.ru/.test(plain.headers.get('content-security-policy') || ''), 'без METRIKA_ID Яндекс попал в CSP');
+  // Инстанс с METRIKA_ID=off — ни баннера, ни Яндекса в CSP; статически тег не подключается никогда.
+  const offApp = createApp({ ...config, metrikaId: '' });
+  const offInst = await new Promise((res) => { const server = offApp.listen(0, '127.0.0.1', () => res({ server, base: `http://127.0.0.1:${server.address().port}` })); });
+  try {
+    const plain = await makeClient(offInst.base)('/');
+    assert(!/data-cookie-bar/.test(plain.text) && !/mc\.yandex\.ru/.test(plain.text), 'при off на странице есть баннер или Яндекс');
+    assert(!/mc\.yandex\.ru/.test(plain.headers.get('content-security-policy') || ''), 'при off Яндекс попал в CSP');
+  } finally { await new Promise((r) => offInst.server.close(r)); }
+  assert(!/<script[^>]+mc\.yandex\.ru/.test((await http('/')).text), 'счётчик подключён статически, до согласия');
   // Инстанс со счётчиком.
   const mApp = createApp({ ...config, metrikaId: '12345678' });
   const mInst = await new Promise((res) => { const server = mApp.listen(0, '127.0.0.1', () => res({ server, base: `http://127.0.0.1:${server.address().port}` })); });
