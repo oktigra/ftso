@@ -4956,7 +4956,7 @@ await check('Метрика (решение владельца): без METRIKA_
   try {
     const plain = await makeClient(offInst.base)('/');
     assert(!/data-cookie-bar/.test(plain.text) && !/mc\.yandex\.ru/.test(plain.text), 'при off на странице есть баннер или Яндекс');
-    assert(!/mc\.yandex\.ru/.test(plain.headers.get('content-security-policy') || ''), 'при off Яндекс попал в CSP');
+    assert(!/yandex/.test(plain.headers.get('content-security-policy') || ''), 'при off Яндекс попал в CSP');
   } finally { await new Promise((r) => offInst.server.close(r)); }
   assert(!/<script[^>]+mc\.yandex\.ru/.test((await http('/')).text), 'счётчик подключён статически, до согласия');
   // Инстанс со счётчиком.
@@ -4967,7 +4967,11 @@ await check('Метрика (решение владельца): без METRIKA_
     const home = await mHttp('/');
     assert(/data-cookie-bar data-metrika="12345678"/.test(home.text), 'баннер не показан');
     assert(!/<script[^>]+mc\.yandex\.ru/.test(home.text), 'счётчик подключён статически, до согласия');
-    assert(/mc\.yandex\.ru/.test(home.headers.get('content-security-policy') || ''), 'Яндекс не разрешён в CSP при заданном счётчике');
+    const csp = home.headers.get('content-security-policy') || '';
+    for (const d of ['script-src', 'connect-src', 'img-src']) {
+      const dir = (csp.split(';').find((x) => x.trim().startsWith(d)) || '');
+      assert(/mc\.yandex\.ru/.test(dir) && /mc\.yandex\.com/.test(dir), `${d}: нужны и mc.yandex.ru (tag.js), и mc.yandex.com (хит /watch): ${dir}`);
+    }
     assert(/data-cookie-settings/.test(home.text), 'нет «Настройки cookie» в подвале');
     const declined = await mHttp('/', { headers: { cookie: 'ftso.analytics=0' } });
     assert(/data-cookie-bar[^>]*hidden/.test(declined.text), 'после «Отклонить» баннер должен быть скрыт');
