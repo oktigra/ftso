@@ -5,7 +5,6 @@ import {
   RATING_CONFIG,
   ERASED_LABEL,
 } from '../lib/rating-service.mjs';
-import { HOME_STATS, HOME_NEXT_EVENT } from '../lib/home-content.mjs';
 import { OPERATOR, LEGAL_VERSION, LEGAL_VERSION_LABEL, PUBLIC_DOCUMENTS } from '../lib/legal.mjs';
 import { feedbackInput, createFeedback } from '../lib/feedback.mjs';
 import { queueMail } from '../lib/mailer.mjs';
@@ -20,6 +19,8 @@ import {
   newsAttachments,
   tournamentList,
   tournamentFilterOptions,
+  homeStats,
+  homeNextEvent,
   tournamentParticipants,
   tournamentMatches,
   tournamentFiles,
@@ -46,8 +47,8 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       // Турниры и новости на главной теперь ЖИВЫЕ — из своих таблиц.
       tournaments: tournamentList(db).slice(0, 5),
       news: publishedNews(db, 3),
-      stats: HOME_STATS,
-      nextEvent: HOME_NEXT_EVENT,
+      stats: homeStats(db, standings),
+      nextEvent: homeNextEvent(db),
       rules: RATING_CONFIG,
     });
   });
