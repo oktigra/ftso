@@ -504,10 +504,14 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
 
   // --- сброс пароля по почте ----------------------------------------------
   app.get('/cabinet/forgot', (req, res) => {
-    res.render('cabinet/forgot', { title: 'Восстановление доступа — ФТСО', done: false });
+    res.render('cabinet/forgot', { title: 'Восстановление доступа — ФТСО', done: false, mailOn: config.siteMail, op: OPERATOR });
   });
 
   app.post('/cabinet/forgot', limitCabinet, (req, res) => {
+    if (!config.siteMail) {
+      // Письма выключены: адрес не принимаем и не запоминаем — показываем путь через секретаря.
+      return res.render('cabinet/forgot', { title: 'Восстановление доступа — ФТСО', done: false, mailOn: false, op: OPERATOR });
+    }
     const login = String(req.body.email || '').trim().toLowerCase().slice(0, 160);
     const person = personByEmail(db, login);
     // ОДНО ПИСЬМО НА ЧЕЛОВЕКА, даже если ролей у него две: пароль общий, и
@@ -539,7 +543,7 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
     }
     // Ответ ОДИНАКОВЫЙ независимо от того, есть такой адрес или нет: иначе
     // форма превращается в проверку «зарегистрирован ли этот человек».
-    res.render('cabinet/forgot', { title: 'Восстановление доступа — ФТСО', done: true });
+    res.render('cabinet/forgot', { title: 'Восстановление доступа — ФТСО', done: true, mailOn: true, op: OPERATOR });
   });
 
   app.get('/cabinet/reset/:token', (req, res, next) => {
