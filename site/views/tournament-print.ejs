@@ -6,8 +6,9 @@
 <main id="top" class="print-sheet">
   <div class="container">
     <p class="print-toolbar">
-      <button class="btn btn--primary" type="button" data-print>Сохранить как PDF / напечатать</button>
-      <a class="btn btn--secondary" href="<%= mailHref %>">Отправить ссылку по почте</a>
+      <a class="btn btn--primary" href="/tournaments/<%= tournament.id %>/bracket.pdf">Скачать PDF</a>
+      <a class="btn btn--primary" href="/tournaments/<%= tournament.id %>/bracket.docx">Скачать Word</a>
+      <button class="btn btn--secondary" type="button" data-print>Напечатать</button>
       <a class="btn btn--secondary" href="/tournaments/<%= tournament.id %>">← к турниру</a>
     </p>
     <h1><%= tournament.name %></h1>

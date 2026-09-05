@@ -142,7 +142,11 @@
             <button class="btn btn--secondary btn--small" type="submit">Поменять</button>
           </form>
         <% } %>
-        <p class="inline-form"><a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/print" target="_blank" rel="noopener">Печать / PDF сетки</a></p>
+        <p class="inline-form">
+          <a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/bracket.pdf">Скачать PDF</a>
+          <a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/bracket.docx">Скачать Word</a>
+          <a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/print" target="_blank" rel="noopener">Напечатать</a>
+        </p>
         <% if (!b.filled && groups.some(function (g) { return g.kind === b.kind; })) { %>
           <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/seed-from-groups" class="inline-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
