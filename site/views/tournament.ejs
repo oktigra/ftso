@@ -13,7 +13,8 @@
     <span class="eyebrow">Турнир</span>
     <h1><%= tournament.name %></h1>
     <p class="muted">
-      Дата завершения <%= tournament.end_date %> ·
+      <%= tournament.start_date ? 'Даты ' + tournament.start_date + ' — ' + tournament.end_date : 'Дата завершения ' + tournament.end_date %> ·
+      <%= tournament.city ? tournament.city + ' · ' : '' %><%= ({team:'командная встреча',championship:'первенство',other:'турнир'})[tournament.kind] || 'турнир' %><%= tournament.age_group ? ' · ' + tournament.age_group : '' %> ·
       категория <span class="badge badge--<%= tournament.category.toLowerCase() %>"><%= tournament.category %></span>
     </p>
   </div>

@@ -16,6 +16,12 @@ export class ValidationError extends Error {
 export const AGE_GROUPS = ['до 19', '19-34', '35-44', '45-54', '55+'];
 export const SEXES = ['M', 'F'];
 export const CATEGORIES = ['A', 'B'];
+// Типы турниров по ТЗ п. 4.3: командные встречи, первенства, иные турниры.
+export const TOURNAMENT_KINDS = ['team', 'championship', 'other'];
+export const TOURNAMENT_KIND_RU = { team: 'Командная встреча', championship: 'Первенство', other: 'Турнир' };
+// Возраст турнира — свободная подпись («до 12», «взрослые», «45+»); фильтр по точному значению.
+export const TOURNAMENT_STATUSES = ['upcoming', 'ongoing', 'finished'];
+export const TOURNAMENT_STATUS_RU = { upcoming: 'Предстоящий', ongoing: 'Идёт', finished: 'Завершён' };
 
 export function str(value, field, { min = 1, max = 200, required = true } = {}) {
   const v = typeof value === 'string' ? value.trim() : '';
@@ -262,9 +268,16 @@ export function tournamentRequestInput(body) {
 }
 
 export function tournamentInput(body) {
+  const end_date = isoDate(body.end_date, 'Дата завершения');
+  const start_date = body.start_date ? isoDate(body.start_date, 'Дата начала') : null;
+  if (start_date && start_date > end_date) throw new ValidationError('Дата начала позже даты завершения');
   return {
     name: str(body.name, 'Название', { max: 160 }),
-    end_date: isoDate(body.end_date, 'Дата завершения'),
+    end_date,
     category: oneOf(body.category, 'Категория', CATEGORIES),
+    city: str(body.city, 'Город', { max: 80, required: false }) || null,
+    start_date,
+    kind: body.kind ? oneOf(body.kind, 'Тип турнира', TOURNAMENT_KINDS) : 'other',
+    age_group: str(body.age_group, 'Возраст', { max: 40, required: false }) || null,
   };
 }

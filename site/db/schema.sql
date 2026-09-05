@@ -59,7 +59,13 @@ CREATE TABLE IF NOT EXISTS tournaments (
   end_date TEXT NOT NULL
     CHECK (end_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
     CHECK (end_date IS strftime('%Y-%m-%d', end_date)),
-  category TEXT NOT NULL CHECK (category IN ('A','B'))
+  category TEXT NOT NULL CHECK (category IN ('A','B')),
+  -- ТЗ п. 4.3 (05.09.2026): город, дата начала, тип и возраст — для фильтров календаря.
+  -- kind: 'team' командная встреча, 'championship' первенство/чемпионат, 'other' иной турнир.
+  city       TEXT,
+  start_date TEXT,
+  kind       TEXT NOT NULL DEFAULT 'other' CHECK (kind IN ('team','championship','other')),
+  age_group  TEXT
 );
 
 -- discipline — разряд: 'single' одиночный, 'double' парный. Рейтинги считаются

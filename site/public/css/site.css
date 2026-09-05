@@ -215,6 +215,8 @@ tbody tr:hover{background:var(--surface-2);}
 
 /* rating meta */
 .rating-meta{display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-top:.5rem;}
+.tag--upcoming{color:var(--primary); border-color:var(--primary);}
+.tag--ongoing{color:#b45309; border-color:#b45309;}
 .tag{display:inline-flex; align-items:center; font-family:'Manrope',sans-serif; font-weight:700; font-size:.8rem; padding:.28rem .7rem; border-radius:999px; background:var(--surface-2); color:var(--muted); border:1px solid var(--border);}
 .rules-note{font-size:.92rem; color:var(--muted); max-width:70ch; margin-top:1rem;}
 

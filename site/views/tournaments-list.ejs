@@ -10,19 +10,76 @@
 </section>
 <section class="section-pad section-pad--tight">
   <div class="container">
+    <%
+    /* Фильтры ТЗ п. 4.3: дата (месяц), город, категория, возраст, статус, тип.
+       Обычная GET-форма без JS: адрес с фильтрами можно переслать. */
+    const anyFilter = Object.values(filters).some(Boolean);
+    %>
+    <form method="get" action="/tournaments" class="filters" aria-label="Фильтры турниров">
+        <div class="field">
+          <label for="tf-month">Месяц</label>
+          <select id="tf-month" name="month">
+            <option value="">все</option>
+            <% options.months.forEach(function (m) { %><option value="<%= m %>"<%= filters.month === m ? ' selected' : '' %>><%= m %></option><% }); %>
+          </select>
+        </div>
+        <div class="field">
+          <label for="tf-city">Город</label>
+          <select id="tf-city" name="city">
+            <option value="">все</option>
+            <% options.cities.forEach(function (c) { %><option value="<%= c %>"<%= filters.city === c ? ' selected' : '' %>><%= c %></option><% }); %>
+          </select>
+        </div>
+        <div class="field">
+          <label for="tf-category">Категория</label>
+          <select id="tf-category" name="category">
+            <option value="">все</option>
+            <% categories.forEach(function (c) { %><option value="<%= c %>"<%= filters.category === c ? ' selected' : '' %>><%= c %></option><% }); %>
+          </select>
+        </div>
+        <div class="field">
+          <label for="tf-age">Возраст</label>
+          <select id="tf-age" name="age">
+            <option value="">все</option>
+            <% options.ages.forEach(function (a) { %><option value="<%= a %>"<%= filters.age === a ? ' selected' : '' %>><%= a %></option><% }); %>
+          </select>
+        </div>
+        <div class="field">
+          <label for="tf-status">Статус</label>
+          <select id="tf-status" name="status">
+            <option value="">все</option>
+            <% Object.keys(statusRu).forEach(function (k) { %><option value="<%= k %>"<%= filters.status === k ? ' selected' : '' %>><%= statusRu[k] %></option><% }); %>
+          </select>
+        </div>
+        <div class="field">
+          <label for="tf-kind">Тип</label>
+          <select id="tf-kind" name="kind">
+            <option value="">все</option>
+            <% Object.keys(kindRu).forEach(function (k) { %><option value="<%= k %>"<%= filters.kind === k ? ' selected' : '' %>><%= kindRu[k] %></option><% }); %>
+          </select>
+        </div>
+        <div class="field">
+          <button class="btn btn--secondary" type="submit">Показать</button>
+        </div>
+        <% if (anyFilter) { %><div class="field"><a class="btn btn--secondary" href="/tournaments">Сбросить</a></div><% } %>
+    </form>
     <% if (!tournaments.length) { %>
-      <div class="panel notice">Турниры пока не заведены.</div>
+      <div class="panel notice"><%= anyFilter ? 'По выбранным фильтрам турниров нет.' : 'Турниры пока не заведены.' %></div>
     <% } else { %>
       <div class="table-scroll">
         <table>
           <caption class="visually-hidden">Список турниров Федерации</caption>
-          <thead><tr><th scope="col">Дата завершения</th><th scope="col">Турнир</th><th scope="col">Категория</th><th scope="col">Участников</th></tr></thead>
+          <thead><tr><th scope="col">Даты</th><th scope="col">Турнир</th><th scope="col">Город</th><th scope="col">Тип</th><th scope="col">Возраст</th><th scope="col">Кат.</th><th scope="col">Статус</th><th scope="col">Участников</th></tr></thead>
           <tbody>
             <% tournaments.forEach(function (t) { %>
               <tr>
-                <td class="t-date"><%= t.end_date %></td>
+                <td class="t-date"><%= t.start_date ? t.start_date + ' — ' : '' %><%= t.end_date %></td>
                 <td class="t-name"><a href="/tournaments/<%= t.id %>"><%= t.name %></a></td>
+                <td><%= t.city || '—' %></td>
+                <td><%= kindRu[t.kind] || '—' %></td>
+                <td><%= t.age_group || '—' %></td>
                 <td><span class="badge badge--<%= t.category.toLowerCase() %>"><%= t.category %></span></td>
+                <td><span class="tag tag--<%= t.status %>"><%= statusRu[t.status] %></span></td>
                 <td><%= t.participants %></td>
               </tr>
             <% }); %>
