@@ -416,6 +416,14 @@ CREATE TABLE IF NOT EXISTS news (
 );
 CREATE INDEX IF NOT EXISTS idx_news_published ON news (is_published, published_at DESC);
 
+-- SEO-НАСТРОЙКИ СТРАНИЦ (ТЗ п. 5): title/description по адресу, правятся в админке.
+CREATE TABLE IF NOT EXISTS seo_pages (
+  path        TEXT PRIMARY KEY,
+  title       TEXT,
+  description TEXT,
+  updated_at  TEXT
+);
+
 -- ВЛОЖЕНИЯ К НОВОСТИ (ТЗ 4.2): документ/изображение (upload_id) либо ссылка (url).
 CREATE TABLE IF NOT EXISTS news_attachments (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,

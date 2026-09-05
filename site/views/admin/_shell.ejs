@@ -12,6 +12,7 @@
   <% } %>
   <% if (sections.includes('news')) { %><a href="/admin/news"<%= currentPath.indexOf('/admin/news') === 0 ? ' aria-current="page"' : '' %>>Новости</a><% } %>
   <% if (sections.includes('directories')) { %><a href="/admin/directories/coaches"<%= currentPath.indexOf('/admin/directories') === 0 ? ' aria-current="page"' : '' %>>Справочники</a><% } %>
+  <% if (sections.includes('library')) { %><a href="/admin/seo"<%= currentPath === '/admin/seo' ? ' aria-current="page"' : '' %>>SEO</a><% } %>
   <% if (sections.includes('library')) { %><a href="/admin/library"<%= currentPath.indexOf('/admin/library') === 0 ? ' aria-current="page"' : '' %>>Документы и галерея</a><% } %>
   <% if (sections.includes('feedback')) { %><a href="/admin/feedback"<%= currentPath.indexOf('/admin/feedback') === 0 ? ' aria-current="page"' : '' %>>Обращения</a><% } %>
   <a href="/admin/guide"<%= currentPath === '/admin/guide' ? ' aria-current="page"' : '' %>>Инструкция</a>

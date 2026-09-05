@@ -1766,6 +1766,45 @@ await check('ТЗ 4.2: автор, обложка-изображение, вло
   return 'автор показан; обложка картинкой (EXIF снят) в новости и в списке; файл и ссылка в «Материалах», javascript: отбит; черновик наружу ничего не отдаёт; удаление чистит файлы';
 });
 
+await check('ТЗ п. 5/7 SEO: уникальные description по разделам, из содержимого у новости/турнира/игрока, правка title/description в /admin/seo', async () => {
+  const desc = (t) => (t.match(/<meta name="description" content="([^"]*)"/) || [])[1] || '';
+  const ttl = (t) => (t.match(/<title>([^<]*)<\/title>/) || [])[1] || '';
+  const pages = {};
+  for (const p of ['/', '/news', '/tournaments', '/rating', '/coaches', '/courts', '/clubs', '/documents', '/contacts']) pages[p] = desc((await http(p)).text);
+  eq(new Set(Object.values(pages)).size, Object.keys(pages).length, 'description разделов должны быть уникальными');
+  assert(/рейтинг/i.test(pages['/rating']) && /корты/i.test(pages['/courts']), 'description раздела не про раздел');
+  // Из содержимого.
+  const nid = Number(db.prepare("INSERT INTO news (title, summary, body, is_published, published_at) VALUES ('SEO-новость','Короткий анонс для description','Тело',1,'2026-09-05')").run().lastInsertRowid);
+  eq(desc((await http(`/news/${nid}`)).text), 'Короткий анонс для description', 'description новости — из анонса');
+  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, city, kind) VALUES ('SEO-турнир', '2026-09-01', 'A', 'Вязьма', 'championship')").run().lastInsertRowid);
+  const td = desc((await http(`/tournaments/${tid}`)).text);
+  assert(/Первенство «SEO-турнир», Вязьма, 2026-09-01, категория A/.test(td), `description турнира: ${td}`);
+  const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Сеошников Сео Сеович','Рославль','M')").run().lastInsertRowid);
+  assert(/Сеошников Сео Сеович, Рославль — результаты/.test(desc((await http(`/player/${pid}`)).text)), 'description профиля игрока');
+  // Админка: правка title/description раздела; og-теги совпадают; чужой адрес отбит.
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const adm = await http('/admin/seo', { jar });
+  eq(adm.status, 200, '/admin/seo');
+  assert(/name="path" value="\/rating"/.test(adm.text), 'в форме нет раздела /rating');
+  const _csrf = tokenFrom(adm.text);
+  eq((await http('/admin/seo', { method: 'POST', form: { _csrf, path: '/rating', title: 'Рейтинг теннисистов Смоленской области', description: 'Свежий рейтинг: очки, места, изменения.' }, jar })).status, 302, 'сохранение SEO');
+  const r = await http('/rating');
+  eq(ttl(r.text), 'Рейтинг теннисистов Смоленской области', 'title не подменён');
+  eq(desc(r.text), 'Свежий рейтинг: очки, места, изменения.', 'description не подменён');
+  assert(/<meta property="og:title" content="Рейтинг теннисистов Смоленской области">/.test(r.text), 'og:title не совпадает');
+  eq((await http('/admin/seo', { method: 'POST', form: { _csrf, path: '/etc/passwd', title: 'x' }, jar })).status, 302, 'ответ на чужой адрес');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM seo_pages WHERE path = '/etc/passwd'").get().n, 0, 'чужой адрес не должен сохраняться');
+  eq((await http('/admin/seo', { method: 'POST', form: { _csrf, path: '/rating', title: '', description: '' }, jar })).status, 302, 'очистка');
+  assert(/Рейтинг игроков — ФТСО/.test(ttl((await http('/rating')).text)), 'после очистки title не вернулся к стандартному');
+  db.prepare('DELETE FROM news WHERE id = ?').run(nid);
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
+  db.prepare('DELETE FROM players WHERE id = ?').run(pid);
+  db.prepare('DELETE FROM seo_pages').run();
+  const { loadSeo } = await import('./server/lib/seo.mjs'); loadSeo(db);
+  db.prepare('DELETE FROM write_attempts').run();
+  return `${Object.keys(pages).length} разделов с разными description; новость/турнир/игрок — из содержимого; правка в админке подменяет title/description/og, очистка возвращает стандарт`;
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
