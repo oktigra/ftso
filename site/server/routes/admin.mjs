@@ -2,6 +2,7 @@ import { requireRole, ROLES, ACTIVE_ROLES, rolesFor } from '../middleware/auth.m
 import { parseMultipart } from '../lib/multipart.mjs';
 import { rowsFromXlsx, rowsFromCsv, protocolTextFromRows } from '../lib/xlsx.mjs';
 import { listGroups, setCell, writeGroupPlaces } from '../lib/groups.mjs';
+import { listBrackets, seed, unseed, decide, undo, bracketPlaces, BRACKET_SIZES } from '../lib/brackets.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
 import { logAction, recentActions } from '../lib/action-log.mjs';
@@ -674,6 +675,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       tournament,
       bulk: null,
       groups: listGroups(db, id),
+      brackets: listBrackets(db, id),
+      bracketSizes: BRACKET_SIZES,
       ...extra,
       players: db.prepare('SELECT id, full_name, city FROM players ORDER BY full_name').all(),
       results: db
@@ -799,6 +802,63 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       flash(req, res, 'ok', `Группа «${g.name}» удалена (сыгранные матчи остались).`, resultsBack(tournamentId));
     }),
   );
+
+  // ОЛИМПИЙКА (сетка, слой 2).
+  const bracketBack = (id) => `/admin/tournaments/${id}/results#brackets`;
+  const bracketRoute = (path, fn) => app.post(path, requireRole(...DATA_ROLES), limitWrites, guard((req, res) => {
+    const tournamentId = intAtLeast(req.params.id, 'Турнир');
+    if (!db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(tournamentId)) throw new ValidationError('Турнир не найден');
+    const msg = fn(req, tournamentId);
+    flash(req, res, 'ok', msg, bracketBack(tournamentId));
+  }));
+  bracketRoute('/admin/tournaments/:id/brackets', (req, tid) => {
+    const name = str(req.body.name, 'Название сетки', { max: 40 });
+    const kind = req.body.kind === 'double' ? 'double' : 'single';
+    const size = Number(req.body.size);
+    if (!BRACKET_SIZES.includes(size)) throw new ValidationError('Размер сетки: 4, 8, 16 или 32');
+    try {
+      const info = db.prepare('INSERT INTO tournament_brackets (tournament_id, name, kind, size) VALUES (?, ?, ?, ?)').run(tid, name, kind, size);
+      logAction(db, req.session.user.id, 'bracket.create', tid, { bracket: Number(info.lastInsertRowid), name, kind, size });
+    } catch (err) {
+      if (String(err.message).includes('UNIQUE')) throw new ValidationError(`Сетка «${name}» уже есть`);
+      throw err;
+    }
+    return `Сетка «${name}» на ${size} создана — посейте участников.`;
+  });
+  bracketRoute('/admin/tournaments/:id/brackets/:bid/seed', (req, tid) => {
+    const playerId = resolvePlayer(db, req.body.player, { ValidationError });
+    if (!playerId) throw new ValidationError(`Игрок «${String(req.body.player || '').trim()}» не найден`);
+    const b = seed(db, tid, intAtLeast(req.params.bid, 'Сетка'), intAtLeast(req.body.position, 'Позиция'), playerId);
+    logAction(db, req.session.user.id, 'bracket.seed', tid, { bracket: b.id, playerId, position: Number(req.body.position) });
+    return 'Посеян.';
+  });
+  bracketRoute('/admin/tournaments/:id/brackets/:bid/unseed', (req, tid) => {
+    const b = unseed(db, tid, intAtLeast(req.params.bid, 'Сетка'), intAtLeast(req.body.position, 'Позиция'));
+    logAction(db, req.session.user.id, 'bracket.unseed', tid, { bracket: b.id, position: Number(req.body.position) });
+    return 'Слот освобождён.';
+  });
+  bracketRoute('/admin/tournaments/:id/brackets/:bid/decide', (req, tid) => {
+    const out = decide(db, tid, intAtLeast(req.params.bid, 'Сетка'), Number(req.body.r), Number(req.body.k), req.body.score);
+    logAction(db, req.session.user.id, 'bracket.decide', tid, { bracket: Number(req.params.bid), r: Number(req.body.r), k: Number(req.body.k), ...out });
+    return out.bye ? 'Проход без игры записан.' : 'Итог пары записан.';
+  });
+  bracketRoute('/admin/tournaments/:id/brackets/:bid/undo', (req, tid) => {
+    undo(db, tid, intAtLeast(req.params.bid, 'Сетка'), Number(req.body.r), Number(req.body.k));
+    logAction(db, req.session.user.id, 'bracket.undo', tid, { bracket: Number(req.params.bid), r: Number(req.body.r), k: Number(req.body.k) });
+    return 'Итог пары отменён.';
+  });
+  bracketRoute('/admin/tournaments/:id/brackets/:bid/places', (req, tid) => {
+    const n = bracketPlaces(db, tid, intAtLeast(req.params.bid, 'Сетка'));
+    logAction(db, req.session.user.id, 'bracket.places', tid, { bracket: Number(req.params.bid), count: n });
+    return `Места по сетке записаны в результаты: ${n}. Внесли всё — пересчитайте рейтинг.`;
+  });
+  bracketRoute('/admin/tournaments/:id/brackets/:bid/delete', (req, tid) => {
+    const bid = intAtLeast(req.params.bid, 'Сетка');
+    const info = db.prepare('DELETE FROM tournament_brackets WHERE id = ? AND tournament_id = ?').run(bid, tid);
+    if (!info.changes) throw new ValidationError('Сетка не найдена');
+    logAction(db, req.session.user.id, 'bracket.delete', tid, { bracket: bid });
+    return 'Сетка удалена (сыгранные матчи остались).';
+  });
 
   // ИМПОРТ ИЗ ТАБЛИЦЫ (ускорение ввода, п. 2): xlsx/csv → строки «место игрок» →
   // тот же предпросмотр, что у массового ввода. Файл не сохраняется: он нужен

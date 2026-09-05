@@ -114,6 +114,23 @@ CREATE TABLE IF NOT EXISTS tournament_group_members (
   PRIMARY KEY (group_id, player_id)
 );
 
+-- ОЛИМПИЙКА (сетка, слой 2): слоты по раундам; матчи — в общей matches.
+CREATE TABLE IF NOT EXISTS tournament_brackets (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 40),
+  kind          TEXT NOT NULL DEFAULT 'single' CHECK (kind IN ('single','double')),
+  size          INTEGER NOT NULL CHECK (size IN (4,8,16,32)),
+  UNIQUE (tournament_id, name, kind)
+);
+CREATE TABLE IF NOT EXISTS bracket_slots (
+  bracket_id INTEGER NOT NULL REFERENCES tournament_brackets(id) ON DELETE CASCADE,
+  round      INTEGER NOT NULL,
+  position   INTEGER NOT NULL,
+  player_id  INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  PRIMARY KEY (bracket_id, round, position)
+);
+
 -- Снимки рейтинга. Копятся; retention — последние 24, чистятся при пересчёте.
 CREATE TABLE IF NOT EXISTS rating_cache (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
