@@ -94,9 +94,12 @@ CREATE TABLE IF NOT EXISTS matches (
   kind             TEXT NOT NULL DEFAULT 'single' CHECK (kind IN ('single','double')),
   winner_partner_id INTEGER REFERENCES players(id) ON DELETE CASCADE,
   loser_partner_id  INTEGER REFERENCES players(id) ON DELETE CASCADE,
+  -- Этап: 'manual' (внесён вручную), 'g:<group_id>' (круговая группа), 'b:<bracket_id>' (сетка).
+  -- Одна и та же пара может встретиться в группе и потом в плей-офф — это два разных матча.
+  stage            TEXT NOT NULL DEFAULT 'manual',
   CHECK (winner_player_id <> loser_player_id),
-  -- Одна и та же пара может сыграть в одном турнире и в одиночке, и в паре.
-  UNIQUE (tournament_id, winner_player_id, loser_player_id, kind)
+  -- Одна и та же пара может сыграть в одном турнире и в одиночке, и в паре, и на разных этапах.
+  UNIQUE (tournament_id, winner_player_id, loser_player_id, kind, stage)
 );
 
 -- КРУГОВЫЕ ГРУППЫ ТУРНИРА (сетка, слой 1). Матчи группы — обычные строки matches.

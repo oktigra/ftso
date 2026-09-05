@@ -135,6 +135,40 @@ function upgradeMatches(db) {
 }
 
 /**
+ * ЭТАП МАТЧА (06.09.2026): stage 'manual' / 'g:<group>' / 'b:<bracket>' и уникальность
+ * «турнир + победитель + проигравший + разряд + этап» — те же двое могут встретиться в
+ * группе и в плей-офф. Пересборка одной транзакцией; старые матчи получают 'manual'.
+ */
+function upgradeMatchesStage(db) {
+  const table = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'matches'").get();
+  if (!table || table.sql.includes('stage')) return false;
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE matches_upgraded (
+        id               INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+        tournament_id    INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+        winner_player_id INTEGER NOT NULL REFERENCES players(id)     ON DELETE CASCADE,
+        loser_player_id  INTEGER NOT NULL REFERENCES players(id)     ON DELETE CASCADE,
+        score            TEXT CHECK (score IS NULL OR length(score) <= 60),
+        played_on        TEXT CHECK (played_on IS NULL OR (played_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+                                                           AND played_on IS strftime('%Y-%m-%d', played_on))),
+        kind             TEXT NOT NULL DEFAULT 'single' CHECK (kind IN ('single','double')),
+        winner_partner_id INTEGER REFERENCES players(id) ON DELETE CASCADE,
+        loser_partner_id  INTEGER REFERENCES players(id) ON DELETE CASCADE,
+        stage            TEXT NOT NULL DEFAULT 'manual',
+        CHECK (winner_player_id <> loser_player_id),
+        UNIQUE (tournament_id, winner_player_id, loser_player_id, kind, stage)
+      );
+      INSERT INTO matches_upgraded (id, tournament_id, winner_player_id, loser_player_id, score, played_on, kind, winner_partner_id, loser_partner_id)
+      SELECT id, tournament_id, winner_player_id, loser_player_id, score, played_on, kind, winner_partner_id, loser_partner_id FROM matches;
+      DROP TABLE matches;
+      ALTER TABLE matches_upgraded RENAME TO matches;
+    `);
+  })();
+  return true;
+}
+
+/**
  * ПОЧТА АККАУНТА СТАЛА НЕОБЯЗАТЕЛЬНОЙ. Пока за ребёнка отвечает законный
  * представитель, своего входа у ребёнка нет вовсе: логин и пароль — у
  * представителя (таблица guardians), а player_accounts.email пуст. NOT NULL в
@@ -252,6 +286,7 @@ export function migrate() {
   addColumnIfMissing(db, 'gallery_items', 'tournament_id', 'INTEGER REFERENCES tournaments(id) ON DELETE SET NULL');
   const resultsRebuilt = upgradeResults(db);
   const matchesRebuilt = upgradeMatches(db);
+  upgradeMatchesStage(db); // этап матча + UNIQUE со stage (06.09.2026) — после партнёров по паре
   db.exec(readFileSync(resolve(HERE, 'after-upgrade.sql'), 'utf8'));
   if (resultsRebuilt) console.log('[migrate] результаты пересобраны: добавлен разряд (одиночный/парный)');
   if (matchesRebuilt) console.log('[migrate] матчи пересобраны: счёт, дата, разряд и партнёры по паре');

@@ -6,6 +6,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import PDFDocument from 'pdfkit';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, HeadingLevel } from 'docx';
+import { xlsxFromRows } from './xlsx.mjs';
 
 const FONT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../assets/fonts');
 const FONT = readFileSync(resolve(FONT_DIR, 'DejaVuSans.ttf'));
@@ -14,7 +15,9 @@ const KIND_RU = { team: 'Командная встреча', championship: 'Пе
 
 /** Общая «модель листа» из данных турнира: заголовок, группы (таблицы), сетки (по раундам), результаты. */
 export function sheetModel({ tournament, groups, brackets, results }) {
-  const flip = (s) => s.split(' ').map((x) => { const m = /^(\d+)[:\-](\d+)(\(\d+\))?$/.exec(x); return m ? `${m[2]}:${m[1]}${m[3] || ''}` : x; }).join(' ');
+  // Счёт с точки зрения ПРОИГРАВШЕЙ стороны: сеты переворачиваются, «w/o» → «-wo».
+  const flip = (s) => (s === 'w/o' ? '-wo' : s.split(' ').map((x) => { const m = /^(\d+)[:\-](\d+)(\(\d+\))?$/.exec(x); return m ? `${m[2]}:${m[1]}${m[3] || ''}` : x; }).join(' '));
+  const fromA = (score, aWon) => (score === 'w/o' && aWon ? 'wo' : aWon ? score : flip(score));
   return {
     title: tournament.name,
     subtitle: [
@@ -40,18 +43,33 @@ export function sheetModel({ tournament, groups, brackets, results }) {
       ]),
     })),
     brackets: brackets.map((b) => ({
+      id: b.id,
       title: `Сетка «${b.name}» на ${b.size} (${b.kind === 'double' ? 'парный' : 'одиночный'})`,
       rounds: b.rounds.map((r) => ({
         name: r.name,
         pairs: r.pairs.map((p) => ({
           a: p.a ? p.a.full_name : '—',
           b: p.b ? p.b.full_name : '—',
+          aId: p.aId, bId: p.bId, k: p.k, r: r.r,
           winner: p.winner ? (p.winner === p.aId ? 'a' : 'b') : null,
           score: p.winner ? (p.bye ? 'без игры' : (p.score || '')) : '',
+          pending: !p.winner && Boolean(p.aId && p.bId),
         })),
       })),
       champion: b.champion ? b.champion.full_name : null,
     })),
+    // МАТЧИ К ЗАПОЛНЕНИЮ (протокол для секретаря → обратная заливка): все ещё не
+    // сыгранные пары групп и сеток с техническим ключом g:<group>:<a>:<b> / b:<bracket>:<r>:<k>.
+    pending: [
+      ...groups.flatMap((g) => g.members.flatMap((r, i) => g.members.slice(i + 1).map((c) => ({
+        where: `Группа ${g.name}`, key: `g:${g.id}:${r.id}:${c.id}`, aId: r.id, a: r.full_name, bId: c.id, b: c.full_name,
+        score: g.cells[`${r.id}:${c.id}`] ? fromA(g.cells[`${r.id}:${c.id}`].score, g.cells[`${r.id}:${c.id}`].won) : '',
+      })))),
+      ...brackets.flatMap((b) => b.rounds.flatMap((r) => r.pairs.filter((p) => p.aId && p.bId).map((p) => ({
+        where: `Сетка «${b.name}», ${r.name}, пара ${p.k + 1}`, key: `b:${b.id}:${r.r}:${p.k}`, aId: p.aId, a: p.a.full_name, bId: p.bId, b: p.b.full_name,
+        score: p.winner ? (p.bye ? 'без игры' : fromA(p.score || '', p.winner === p.aId)) : '',
+      })))),
+    ],
     results: results.map((r) => [String(r.place), `${r.name}${r.discipline === 'double' ? ' (парный)' : ''}`, r.city || '']),
     footer: `ftso67.ru/tournaments/${tournament.id} · Федерация тенниса Смоленской области · ${new Date().toISOString().slice(0, 10)}`,
   };
@@ -107,7 +125,7 @@ export function tournamentPdf(model) {
           doc.rect(x, y, colW - 8, pairH).stroke(p.winner ? '#0e7a52' : '#999');
           doc.font(p.winner === 'a' ? 'B' : 'R').fontSize(8).text(p.a, x + 4, y + 4, { width: colW - 16, lineBreak: false, ellipsis: true });
           doc.font(p.winner === 'b' ? 'B' : 'R').fontSize(8).text(p.b, x + 4, y + 16, { width: colW - 16, lineBreak: false, ellipsis: true });
-          doc.font('R').fontSize(7).fillColor('#555').text(p.score, x + 4, y + 29, { width: colW - 16, lineBreak: false }).fillColor('#000');
+          doc.font('R').fontSize(7).fillColor('#555').text(p.score || (p.pending ? 'счёт: ______________' : ''), x + 4, y + 29, { width: colW - 16, lineBreak: false }).fillColor('#000');
         });
       });
       const xw = 40 + b.rounds.length * colW; const spanW = (pairH + gap) * 2 ** b.rounds.length;
@@ -143,7 +161,7 @@ export async function tournamentDocx(model) {
       const line = (pick) => rounds.map((r) => { const p = r.pairs[Math.floor(k / (r.pairs.length ? maxPairs / r.pairs.length : 1))]; if (!p) return ''; const idx = k % (maxPairs / r.pairs.length); return idx === 0 ? pick(p) : ''; });
       rows.push([...line((p) => (p.winner === 'a' ? '✔ ' : '') + p.a), k === 0 ? (b.champion || '—') : '']);
       rows.push([...line((p) => (p.winner === 'b' ? '✔ ' : '') + p.b), '']);
-      rows.push([...line((p) => p.score), '']);
+      rows.push([...line((p) => p.score || (p.pending ? 'счёт: ____________' : '')), '']);
     }
     kids.push(tbl(header, rows), P('', { after: 160 }));
   }
@@ -151,4 +169,19 @@ export async function tournamentDocx(model) {
   kids.push(P(model.footer, { color: '777777', size: 16 }));
   const doc = new Document({ sections: [{ properties: { page: { size: { orientation: 'landscape' } } }, children: kids }] });
   return Packer.toBuffer(doc);
+}
+
+/**
+ * ПРОТОКОЛ ДЛЯ ЗАПОЛНЕНИЯ (Excel): все пары групп и сеток одной таблицей; секретарь
+ * вписывает счёт в колонку «Счёт (от игрока A)» — «6:3 6:4», «wo», «-wo» — и загружает
+ * файл обратно в админку: сайт разносит счёт по группам и сетке. Колонка «Ключ» —
+ * техническая, её не трогать.
+ */
+export function tournamentProtocolXlsx(model) {
+  const rows = [
+    ['Где', 'Игрок A', 'Игрок B', 'Счёт (от игрока A)', 'Ключ'],
+    ...model.pending.map((m) => [m.where, `${m.a} (#${m.aId})`, `${m.b} (#${m.bId})`, m.score, m.key]),
+  ];
+  if (rows.length === 1) rows.push(['Пар для заполнения нет — посейте сетку или заполните группы', '', '', '', '']);
+  return xlsxFromRows(rows, { sheet: 'Протокол' });
 }

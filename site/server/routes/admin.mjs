@@ -3,6 +3,7 @@ import { parseMultipart } from '../lib/multipart.mjs';
 import { rowsFromXlsx, rowsFromCsv, protocolTextFromRows } from '../lib/xlsx.mjs';
 import { listGroups, setCell, writeGroupPlaces } from '../lib/groups.mjs';
 import { listBrackets, seed, unseed, decide, undo, bracketPlaces, BRACKET_SIZES, seedFromGroups, placesWithGroups, seedByRating, swapSeeds } from '../lib/brackets.mjs';
+import { rowsFromXlsx as protoRowsFromXlsx } from '../lib/xlsx.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
 import { logAction, recentActions } from '../lib/action-log.mjs';
@@ -879,6 +880,58 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     logAction(db, req.session.user.id, 'bracket.delete', tid, { bracket: bid });
     return 'Сетка удалена (сыгранные матчи остались).';
   });
+
+  // ОБРАТНАЯ ЗАЛИВКА ПРОТОКОЛА (решение владельца 06.09.2026): секретарь скачал
+  // protocol.xlsx, вписал счёт, загрузил — счёт разносится по группам (setCell) и
+  // сеткам (decide) по техническому ключу строки. Пустой счёт — пропуск; уже
+  // записанный итог пары сетки не перезаписывается (сначала «отменить»).
+  app.post(
+    '/admin/tournaments/:id/protocol/import',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    async (req, res, next) => {
+      const tournamentId = Number(req.params.id);
+      const back = `/admin/tournaments/${tournamentId}/results`;
+      try {
+        if (!/^\d+$/.test(req.params.id) || !db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(tournamentId)) throw new ValidationError('Турнир не найден');
+        const { files } = await parseMultipart(req, { maxFiles: 1, maxFileBytes: 5 * 1024 * 1024 });
+        const file = files.find((f) => f.field === 'file');
+        if (!file) throw new ValidationError('Файл не выбран.');
+        let rows;
+        try { rows = file.buffer[0] === 0x50 && file.buffer[1] === 0x4b ? protoRowsFromXlsx(file.buffer) : rowsFromCsv(file.buffer); }
+        catch (e) { throw new ValidationError(`Не удалось прочитать файл: ${e.message}`); }
+        const head = (rows[0] || []).map((c) => c.toLowerCase());
+        const iKey = head.findIndex((c) => c === 'ключ'); const iScore = head.findIndex((c) => /^счёт|^счет/.test(c));
+        if (iKey < 0 || iScore < 0) throw new ValidationError('Это не протокол сайта: нет колонок «Счёт» и «Ключ». Скачайте протокол заново.');
+        const done = []; const errors = []; let skipped = 0;
+        for (const r of rows.slice(1)) {
+          const key = (r[iKey] || '').trim(); const score = (r[iScore] || '').trim();
+          if (!key) continue;
+          if (!score) { skipped++; continue; }
+          const m = /^([gb]):(\d+):(\d+):(\d+)$/.exec(key);
+          if (!m) { errors.push(`${key}: ключ не разобран`); continue; }
+          try {
+            if (m[1] === 'g') {
+              const g = db.prepare('SELECT id, name, kind FROM tournament_groups WHERE id = ? AND tournament_id = ?').get(Number(m[2]), tournamentId);
+              if (!g) throw new ValidationError('группа не найдена');
+              setCell(db, tournamentId, g, Number(m[3]), Number(m[4]), score);
+            } else {
+              const bid = Number(m[2]); const rr = Number(m[3]); const k = Number(m[4]);
+              if (db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(bid, rr + 1, k)) { skipped++; continue; }
+              decide(db, tournamentId, bid, rr, k, score);
+            }
+            done.push(key);
+          } catch (e) { errors.push(`${(r[1] || key).replace(/\s*\(#\d+\)$/, '')} — ${(r[2] || '').replace(/\s*\(#\d+\)$/, '')}: ${e.message}`); }
+        }
+        logAction(db, req.session.user.id, 'protocol.import', tournamentId, { applied: done.length, skipped, errors: errors.length });
+        const msg = `Протокол разобран: записано ${done.length}, пропущено (пусто или уже есть) ${skipped}${errors.length ? `; ошибки (${errors.length}): ${errors.slice(0, 5).join('; ')}${errors.length > 5 ? '…' : ''}` : ''}. Если сетка продвинулась — скачайте протокол заново для следующего круга.`;
+        return flash(req, res, errors.length ? 'error' : 'ok', msg, back);
+      } catch (err) {
+        if (err instanceof ValidationError) return flash(req, res, 'error', err.message, back);
+        return next(err);
+      }
+    },
+  );
 
   // ИМПОРТ ИЗ ТАБЛИЦЫ (ускорение ввода, п. 2): xlsx/csv → строки «место игрок» →
   // тот же предпросмотр, что у массового ввода. Файл не сохраняется: он нужен
