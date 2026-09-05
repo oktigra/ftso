@@ -1,6 +1,7 @@
 import { requireRole, ROLES, ACTIVE_ROLES, rolesFor } from '../middleware/auth.mjs';
 import { parseMultipart } from '../lib/multipart.mjs';
 import { rowsFromXlsx, rowsFromCsv, protocolTextFromRows } from '../lib/xlsx.mjs';
+import { listGroups, setCell, writeGroupPlaces } from '../lib/groups.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
 import { logAction, recentActions } from '../lib/action-log.mjs';
@@ -672,6 +673,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       title: `Результаты: ${tournament.name} — админка ФТСО`,
       tournament,
       bulk: null,
+      groups: listGroups(db, id),
       ...extra,
       players: db.prepare('SELECT id, full_name, city FROM players ORDER BY full_name').all(),
       results: db
@@ -694,6 +696,109 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     });
   };
   app.get('/admin/tournaments/:id/results', requireRole(...DATA_ROLES), (req, res, next) => renderResults(req, res, next));
+
+  // КРУГОВЫЕ ГРУППЫ (сетка, слой 1): группа → участники → счёт в клетках → места.
+  const groupOf = (tournamentId, gid) => {
+    const g = db.prepare('SELECT id, name, kind FROM tournament_groups WHERE id = ? AND tournament_id = ?').get(gid, tournamentId);
+    if (!g) throw new ValidationError('Группа не найдена');
+    return g;
+  };
+  const resultsBack = (id) => `/admin/tournaments/${id}/results#groups`;
+
+  app.post(
+    '/admin/tournaments/:id/groups',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const tournamentId = intAtLeast(req.params.id, 'Турнир');
+      if (!db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(tournamentId)) throw new ValidationError('Турнир не найден');
+      const name = str(req.body.name, 'Название группы', { max: 40 });
+      const kind = req.body.kind === 'double' ? 'double' : 'single';
+      try {
+        const info = db.prepare('INSERT INTO tournament_groups (tournament_id, name, kind) VALUES (?, ?, ?)').run(tournamentId, name, kind);
+        logAction(db, req.session.user.id, 'group.create', tournamentId, { group: Number(info.lastInsertRowid), name, kind });
+      } catch (err) {
+        if (String(err.message).includes('UNIQUE')) throw new ValidationError(`Группа «${name}» уже есть`);
+        throw err;
+      }
+      flash(req, res, 'ok', `Группа «${name}» создана — добавьте участников.`, resultsBack(tournamentId));
+    }),
+  );
+
+  app.post(
+    '/admin/tournaments/:id/groups/:gid/members',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const tournamentId = intAtLeast(req.params.id, 'Турнир');
+      const g = groupOf(tournamentId, intAtLeast(req.params.gid, 'Группа'));
+      const playerId = resolvePlayer(db, req.body.player, { ValidationError });
+      if (!playerId) throw new ValidationError(`Игрок «${String(req.body.player || '').trim()}» не найден — заведите его в «Игроках» или через форму результата`);
+      const n = db.prepare('SELECT COUNT(*) AS n FROM tournament_group_members WHERE group_id = ?').get(g.id).n;
+      if (n >= 16) throw new ValidationError('В группе не больше 16 участников');
+      const dup = db.prepare('INSERT OR IGNORE INTO tournament_group_members (group_id, player_id, seed) VALUES (?, ?, ?)').run(g.id, playerId, n + 1);
+      if (!dup.changes) throw new ValidationError('Этот игрок уже в группе');
+      logAction(db, req.session.user.id, 'group.member.add', tournamentId, { group: g.id, playerId });
+      flash(req, res, 'ok', 'Участник добавлен.', resultsBack(tournamentId));
+    }),
+  );
+
+  app.post(
+    '/admin/tournaments/:id/groups/:gid/members/:pid/delete',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const tournamentId = intAtLeast(req.params.id, 'Турнир');
+      const g = groupOf(tournamentId, intAtLeast(req.params.gid, 'Группа'));
+      const pid = intAtLeast(req.params.pid, 'Игрок');
+      // Его матчи в группе остаются в базе (это сыгранные матчи), убираем только из состава.
+      db.prepare('DELETE FROM tournament_group_members WHERE group_id = ? AND player_id = ?').run(g.id, pid);
+      logAction(db, req.session.user.id, 'group.member.delete', tournamentId, { group: g.id, playerId: pid });
+      flash(req, res, 'ok', 'Участник убран из группы.', resultsBack(tournamentId));
+    }),
+  );
+
+  app.post(
+    '/admin/tournaments/:id/groups/:gid/cell',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const tournamentId = intAtLeast(req.params.id, 'Турнир');
+      const g = groupOf(tournamentId, intAtLeast(req.params.gid, 'Группа'));
+      const a = intAtLeast(req.body.a, 'Игрок строки'); const b = intAtLeast(req.body.b, 'Игрок столбца');
+      const inGroup = db.prepare('SELECT COUNT(*) AS n FROM tournament_group_members WHERE group_id = ? AND player_id IN (?, ?)').get(g.id, a, b).n;
+      if (inGroup !== 2) throw new ValidationError('Оба игрока должны быть в группе');
+      const out = setCell(db, tournamentId, g, a, b, req.body.score);
+      logAction(db, req.session.user.id, out.cleared ? 'group.cell.clear' : 'group.cell.set', tournamentId, { group: g.id, a, b, ...out });
+      flash(req, res, 'ok', out.cleared ? 'Клетка очищена.' : 'Счёт записан.', resultsBack(tournamentId));
+    }),
+  );
+
+  app.post(
+    '/admin/tournaments/:id/groups/:gid/places',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const tournamentId = intAtLeast(req.params.id, 'Турнир');
+      const g = groupOf(tournamentId, intAtLeast(req.params.gid, 'Группа'));
+      const n = writeGroupPlaces(db, tournamentId, g);
+      logAction(db, req.session.user.id, 'group.places', tournamentId, { group: g.id, count: n });
+      flash(req, res, 'ok', `Места группы «${g.name}» записаны в результаты: ${n}. Внесли всё — пересчитайте рейтинг.`, `/admin/tournaments/${tournamentId}/results`);
+    }),
+  );
+
+  app.post(
+    '/admin/tournaments/:id/groups/:gid/delete',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const tournamentId = intAtLeast(req.params.id, 'Турнир');
+      const g = groupOf(tournamentId, intAtLeast(req.params.gid, 'Группа'));
+      db.prepare('DELETE FROM tournament_groups WHERE id = ?').run(g.id);
+      logAction(db, req.session.user.id, 'group.delete', tournamentId, { group: g.id });
+      flash(req, res, 'ok', `Группа «${g.name}» удалена (сыгранные матчи остались).`, resultsBack(tournamentId));
+    }),
+  );
 
   // ИМПОРТ ИЗ ТАБЛИЦЫ (ускорение ввода, п. 2): xlsx/csv → строки «место игрок» →
   // тот же предпросмотр, что у массового ввода. Файл не сохраняется: он нужен
