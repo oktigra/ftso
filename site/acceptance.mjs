@@ -2120,17 +2120,33 @@ await check('сетка по рейтингу: посев из списка по
   eq((await post(`/${bid}/decide`, { r: '0', k: '0', score: '6:1 6:1' })).status, 302, 'итог пары');
   eq((await post(`/${bid}/swap`, { p1: '1', p2: '4' })).status, 302, 'ответ на обмен после итога');
   eq(slot(0), rated[0], 'обмен после итога не должен проходить');
-  // Печатная страница: без шапки сайта, с сеткой, кнопкой печати и mailto со ссылкой.
+  // Печатная страница: без шапки сайта, с сеткой, кнопками PDF / Word / печать.
   const pr = await http(`/tournaments/${t}/print`);
   eq(pr.status, 200, 'печатная страница');
   assert(!/class="site-header"/.test(pr.text) && /data-print/.test(pr.text) && /bracket--print/.test(pr.text), 'печатная страница без сетки/кнопки или с шапкой');
-  assert(new RegExp(`href="mailto:\\?subject=[^"]*body=[^"]*tournaments%2F${t}%2Fprint`).test(pr.text), 'нет кнопки «Отправить ссылку по почте» с адресом страницы');
-  assert(new RegExp(`/tournaments/${t}/print`).test((await http(`/tournaments/${t}`)).text), 'на карточке турнира нет ссылки на печать');
+  assert(new RegExp(`/tournaments/${t}/bracket\\.pdf`).test(pr.text) && new RegExp(`/tournaments/${t}/bracket\\.docx`).test(pr.text), 'нет кнопок «Скачать PDF» / «Скачать Word»');
+  const card = (await http(`/tournaments/${t}`)).text;
+  assert(new RegExp(`/tournaments/${t}/bracket\\.pdf`).test(card) && new RegExp(`/tournaments/${t}/bracket\\.docx`).test(card), 'на карточке турнира нет кнопок скачивания');
+  // PDF: настоящий файл, с сеткой (имя чемпиона попадает в поток текста как глифы — проверяем сигнатуру, размер и метаданные).
+  const pdfRes = await http(`/tournaments/${t}/bracket.pdf`);
+  eq(pdfRes.status, 200, 'GET bracket.pdf');
+  assert(/application\/pdf/.test(pdfRes.headers.get('content-type')) && /attachment; filename="bracket-/.test(pdfRes.headers.get('content-disposition')), 'PDF: заголовки');
+  const pdfBuf = Buffer.from(await (await fetch(inst.base + `/tournaments/${t}/bracket.pdf`)).arrayBuffer());
+  eq(pdfBuf.slice(0, 5).toString('latin1'), '%PDF-', 'PDF: сигнатура');
+  assert(pdfBuf.length > 20000 && pdfBuf.includes('/FontFile2'), 'PDF: шрифт с кириллицей не встроен');
+  // Word: zip с document.xml, в нём — название турнира и имя игрока.
+  const docxBuf = Buffer.from(await (await fetch(inst.base + `/tournaments/${t}/bracket.docx`)).arrayBuffer());
+  eq(docxBuf.slice(0, 2).toString('latin1'), 'PK', 'DOCX: сигнатура zip');
+  const { unzip } = await import('./server/lib/xlsx.mjs');
+  const parts = unzip(docxBuf);
+  const docXml = parts['word/document.xml'] && parts['word/document.xml'].toString('utf8');
+  assert(docXml && docXml.includes('Посев по рейтингу') && docXml.includes('Победитель') && docXml.includes('1/2 финала'), 'DOCX: в документе нет турнира/сетки');
+  eq((await http('/tournaments/999999/bracket.pdf')).status, 404, 'PDF несуществующего турнира');
   eq((await http('/tournaments/999999/print')).status, 404, 'печать несуществующего турнира');
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
   db.prepare('DELETE FROM players WHERE id = ?').run(rookie);
   db.prepare('DELETE FROM write_attempts').run();
-  return 'посев по рейтингу расставил №1 и №2 по половинам, новичка — последним; обмен работает до итогов; печатная страница с PDF и mailto';
+  return 'посев по рейтингу расставил №1 и №2 по половинам, новичка — последним; обмен работает до итогов; PDF (шрифт встроен) и Word (сетка в document.xml) скачиваются';
 });
 
 await check('rate-limit на /register срабатывает', async () => {

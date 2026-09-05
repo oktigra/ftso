@@ -16,6 +16,7 @@ import { descriptionFrom } from '../lib/seo.mjs';
 import { siteText, paragraphs } from '../lib/texts.mjs';
 import { listGroups } from '../lib/groups.mjs';
 import { listBrackets } from '../lib/brackets.mjs';
+import { sheetModel, tournamentPdf, tournamentDocx } from '../lib/tournament-export.mjs';
 import {
   publishedNews,
   newsById,
@@ -130,6 +131,36 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
     });
   });
 
+  // СКАЧАТЬ СЕТКУ: PDF и Word (решение владельца 05.09.2026). Публично, как и сама сетка.
+  const tournamentSheet = (id) => {
+    const tournament = db.prepare('SELECT id, name, end_date, start_date, category, city, kind, age_group FROM tournaments WHERE id = ?').get(id);
+    if (!tournament) return null;
+    return sheetModel({ tournament, groups: listGroups(db, id), brackets: listBrackets(db, id), results: tournamentParticipants(db, id, LABELS) });
+  };
+  const safeFile = (name) => name.replace(/[^\p{L}\p{N} _-]+/gu, '').trim().slice(0, 60) || 'tournament';
+  app.get('/tournaments/:id/bracket.pdf', async (req, res, next) => {
+    if (!/^\d+$/.test(req.params.id)) return next();
+    const model = tournamentSheet(Number(req.params.id));
+    if (!model) return next();
+    try {
+      const buf = await tournamentPdf(model);
+      res.type('application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="bracket-${req.params.id}.pdf"; filename*=UTF-8''${encodeURIComponent(safeFile(model.title) + '.pdf')}`);
+      res.send(buf);
+    } catch (err) { next(err); }
+  });
+  app.get('/tournaments/:id/bracket.docx', async (req, res, next) => {
+    if (!/^\d+$/.test(req.params.id)) return next();
+    const model = tournamentSheet(Number(req.params.id));
+    if (!model) return next();
+    try {
+      const buf = await tournamentDocx(model);
+      res.type('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="bracket-${req.params.id}.docx"; filename*=UTF-8''${encodeURIComponent(safeFile(model.title) + '.docx')}`);
+      res.send(buf);
+    } catch (err) { next(err); }
+  });
+
   // ПЕЧАТНАЯ ВЕРСИЯ ТУРНИРА (сетка, группы, результаты) — без шапки и подвала:
   // «Сохранить как PDF» делает браузер; ссылку на страницу можно отправить по почте.
   app.get('/tournaments/:id/print', (req, res, next) => {
@@ -147,7 +178,6 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       brackets: listBrackets(db, tournament.id),
       results: tournamentParticipants(db, tournament.id, LABELS),
       printUrl: url,
-      mailHref: `mailto:?subject=${encodeURIComponent(`Сетка турнира «${tournament.name}» — ФТСО`)}&body=${encodeURIComponent(`Сетка, группы и результаты турнира «${tournament.name}»:\n${url}\n\nНа странице — кнопка «Сохранить как PDF».`)}`,
     });
   });
 

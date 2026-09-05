@@ -1,0 +1,2 @@
+DejaVu Sans — шрифт для PDF-выгрузок (кириллица). Лицензия: Bitstream Vera Fonts Copyright + DejaVu changes (public domain) —
+свободное использование и распространение. Источник: пакет fonts-dejavu-core Ubuntu 24.04.

@@ -47,7 +47,11 @@
     </div>
 
     <% if (groups.length || brackets.length) { %>
-      <p class="inline-form"><a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/print" target="_blank" rel="noopener">Печать / PDF сетки и результатов</a></p>
+      <p class="inline-form">
+        <a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/bracket.pdf">Скачать сетку PDF</a>
+        <a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/bracket.docx">Скачать сетку Word</a>
+        <a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/print" target="_blank" rel="noopener">Печать</a>
+      </p>
     <% } %>
     <% if (groups.length) { %>
       <div class="panel">
