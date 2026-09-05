@@ -2149,6 +2149,65 @@ await check('сетка по рейтингу: посев из списка по
   return 'посев по рейтингу расставил №1 и №2 по половинам, новичка — последним; обмен работает до итогов; PDF (шрифт встроен) и Word (сетка в document.xml) скачиваются';
 });
 
+await check('протокол секретаря: пустая сетка в PDF/Word с местом для счёта, Excel-протокол с парами, обратная заливка разносит счёт по группе и сетке', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Протокол тест', date('now','+3 days'), 'B')").run().lastInsertRowid);
+  const ids = ['Протоколов Один', 'Протоколов Два', 'Протоколов Три', 'Протоколов Четыре'].map((n) => Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES (?, 'Смоленск', 'M')").run(n).lastInsertRowid));
+  const _csrf = tokenFrom((await http(`/admin/tournaments/${t}/results`, { jar })).text);
+  const post = (path, form) => http(`/admin/tournaments/${t}${path}`, { method: 'POST', form: { _csrf, ...form }, jar });
+  eq((await post('/groups', { name: 'A', kind: 'single' })).status, 302, 'группа');
+  const gid = db.prepare('SELECT id FROM tournament_groups WHERE tournament_id = ?').get(t).id;
+  for (const id of ids.slice(0, 3)) eq((await post(`/groups/${gid}/members`, { player: `#${id}` })).status, 302, 'участник группы');
+  eq((await post('/brackets', { name: 'Основная', size: '4', kind: 'single' })).status, 302, 'сетка');
+  const bid = db.prepare('SELECT id FROM tournament_brackets WHERE tournament_id = ?').get(t).id;
+  for (let i = 0; i < 4; i++) eq((await post(`/brackets/${bid}/seed`, { position: String(i + 1), player: `#${ids[i]}` })).status, 302, 'посев');
+  // Пустая сетка: PDF с местом для счёта, Word тоже.
+  const pdfBuf = Buffer.from(await (await fetch(inst.base + `/tournaments/${t}/bracket.pdf`)).arrayBuffer());
+  eq(pdfBuf.slice(0, 5).toString('latin1'), '%PDF-', 'PDF пустой сетки');
+  const { unzip, rowsFromXlsx, xlsxFromRows } = await import('./server/lib/xlsx.mjs');
+  const docXml = unzip(Buffer.from(await (await fetch(inst.base + `/tournaments/${t}/bracket.docx`)).arrayBuffer()))['word/document.xml'].toString('utf8');
+  assert(docXml.includes('счёт: ____________'), 'в Word пустой сетки нет места для счёта');
+  // Протокол Excel: 3 пары группы + 2 пары 1/2 сетки = 5 строк с ключами.
+  const xl = await http(`/tournaments/${t}/protocol.xlsx`);
+  eq(xl.status, 200, 'protocol.xlsx');
+  const rows = rowsFromXlsx(Buffer.from(await (await fetch(inst.base + `/tournaments/${t}/protocol.xlsx`)).arrayBuffer()));
+  eq(rows[0].join('|'), 'Где|Игрок A|Игрок B|Счёт (от игрока A)|Ключ', 'шапка протокола');
+  eq(rows.length - 1, 5, 'пар к заполнению');
+  assert(rows.slice(1).every((r) => /^[gb]:\d+:\d+:\d+$/.test(r[4]) && r[3] === ''), 'ключи/пустой счёт');
+  // Секретарь заполняет: все пары группы и одну пару сетки; одну строку оставляет пустой.
+  const filled = rows.map((r, i) => {
+    if (i === 0) return r;
+    const [where] = r;
+    if (/Группа/.test(where)) return [r[0], r[1], r[2], '6:2 6:2', r[4]];
+    if (/пара 1$/.test(where)) return [r[0], r[1], r[2], '-wo', r[4]];
+    return r;
+  });
+  const up = await http(`/admin/tournaments/${t}/protocol/import`, {
+    method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'file', filename: 'protocol.xlsx', type: 'application/octet-stream', buffer: xlsxFromRows(filled, { sheet: 'Протокол' }) }] }, jar,
+  });
+  eq(up.status, 302, 'загрузка протокола');
+  const flashText = ((await http(`/admin/tournaments/${t}/results`, { jar })).text.match(/class="flash[^"]*"[^>]*>([\s\S]{0,400}?)<\//) || [])[1] || '';
+  eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t).n, 4, `записано матчей: 3 группы + 1 сетки; флеш: ${flashText.replace(/\s+/g, ' ').trim()}`);
+  const r1 = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = 1 AND position = 0').get(bid)?.player_id;
+  eq(r1, ids[1], '«-wo» в паре 1 сетки: прошёл игрок B');
+  // Повторная загрузка того же файла — сетка не перезаписывается, группа перезаписывается тем же счётом без дублей.
+  eq((await http(`/admin/tournaments/${t}/protocol/import`, { method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'file', filename: 'protocol.xlsx', type: 'application/octet-stream', buffer: xlsxFromRows(filled, { sheet: 'Протокол' }) }] }, jar })).status, 302, 'повтор');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t).n, 4, 'повтор не должен дублировать');
+  // Новый протокол — только оставшаяся пара 1/2 (пара 2); финал появится после неё.
+  const rows2 = rowsFromXlsx(Buffer.from(await (await fetch(inst.base + `/tournaments/${t}/protocol.xlsx`)).arrayBuffer()));
+  eq(rows2.length - 1, 5, 'в новом протоколе — 3 пары группы и 2 пары 1/2 (сыгранная со счётом, несыгранная — пустая)');
+  assert(rows2.slice(1).filter((r) => /Группа/.test(r[0])).every((r) => r[3] === '6:2 6:2'), 'счёт группы в новом протоколе не показан');
+  eq(rows2.slice(1).find((r) => /пара 1$/.test(r[0]))[3], '-wo', 'сыгранная пара сетки показана счётом от игрока A («-wo»)');
+  eq(rows2.slice(1).find((r) => /пара 2$/.test(r[0]))[3], '', 'несыгранная пара — пустой счёт');
+  // Чужой файл без ключей — отказ.
+  const bad = await http(`/admin/tournaments/${t}/protocol/import`, { method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'file', filename: 'x.xlsx', type: 'application/octet-stream', buffer: xlsxFromRows([['Место', 'Игрок'], [1, 'Кто-то']]) }] }, jar });
+  eq(bad.status, 302, 'чужой файл — ответ'); eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t).n, 4, 'чужой файл ничего не пишет');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
+  db.prepare("DELETE FROM players WHERE full_name LIKE 'Протоколов %'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'пустая сетка с «счёт: ____»; протокол 5 пар с ключами; заливка записала 3+1 матч, -wo продвинул B; повтор без дублей; следующий протокол — оставшиеся пары; чужой файл отбит';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

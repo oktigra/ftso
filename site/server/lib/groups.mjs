@@ -46,8 +46,8 @@ export function groupTable(db, tournamentId, group) {
   const matches = ids.length
     ? db.prepare(
       `SELECT winner_player_id AS w, loser_player_id AS l, score FROM matches
-        WHERE tournament_id = ? AND kind = ? AND winner_player_id IN (${ids.map(() => '?').join(',')}) AND loser_player_id IN (${ids.map(() => '?').join(',')})`,
-    ).all(tournamentId, group.kind, ...ids, ...ids)
+        WHERE tournament_id = ? AND stage = ? AND winner_player_id IN (${ids.map(() => '?').join(',')}) AND loser_player_id IN (${ids.map(() => '?').join(',')})`,
+    ).all(tournamentId, `g:${group.id}`, ...ids, ...ids)
     : [];
   const cell = new Map(); // "a:b" → { won, score, sets, games } с точки зрения a
   for (const m of matches) {
@@ -93,17 +93,17 @@ export function groupTable(db, tournamentId, group) {
 /** Записать/заменить/удалить матч клетки (row против col) по счёту с точки зрения row. */
 export function setCell(db, tournamentId, group, rowId, colId, rawScore) {
   if (rowId === colId) throw new ValidationError('Игрок не играет сам с собой');
-  const del = db.prepare('DELETE FROM matches WHERE tournament_id = ? AND kind = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))');
+  const del = db.prepare('DELETE FROM matches WHERE tournament_id = ? AND stage = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))');
   const parsed = parseScore(rawScore);
   return db.transaction(() => {
-    del.run(tournamentId, group.kind, rowId, colId, colId, rowId);
+    del.run(tournamentId, `g:${group.id}`, rowId, colId, colId, rowId);
     if (!parsed) return { cleared: true };
     const w = parsed.rowWon ? rowId : colId; const l = parsed.rowWon ? colId : rowId;
     // Счёт хранится с точки зрения ПОБЕДИТЕЛЯ — так он читается в профилях и протоколе.
     // Переворот сета «6:7(5)» → «7:6(5)»: тай-брейк в скобках остаётся при сете.
     const flip = (set) => { const m = /^(\d{1,2})[:\-](\d{1,2})(\(\d+\))?$/.exec(set); return `${m[2]}:${m[1]}${m[3] || ''}`; };
     const score = parsed.score === 'w/o' ? 'w/o' : (parsed.rowWon ? parsed.score.replace(/-/g, ':') : parsed.score.split(' ').map(flip).join(' '));
-    db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind) VALUES (?, ?, ?, ?, ?)').run(tournamentId, w, l, score, group.kind);
+    db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage) VALUES (?, ?, ?, ?, ?, ?)').run(tournamentId, w, l, score, group.kind, `g:${group.id}`);
     return { winner: w, loser: l, score };
   })();
 }

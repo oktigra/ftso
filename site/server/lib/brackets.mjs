@@ -25,7 +25,7 @@ export function bracketView(db, tournamentId, b) {
   const at = new Map(slots.map((s) => [`${s.round}:${s.position}`, s.player_id]));
   const ids = [...new Set(slots.map((s) => s.player_id))];
   const names = new Map(ids.length ? db.prepare(`SELECT id, full_name, city FROM players WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map((p) => [p.id, p]) : []);
-  const scoreOf = (w, l) => db.prepare('SELECT score FROM matches WHERE tournament_id = ? AND kind = ? AND winner_player_id = ? AND loser_player_id = ?').get(tournamentId, b.kind, w, l)?.score ?? null;
+  const scoreOf = (w, l) => db.prepare('SELECT score FROM matches WHERE tournament_id = ? AND stage = ? AND winner_player_id = ? AND loser_player_id = ?').get(tournamentId, `b:${b.id}`, w, l)?.score ?? null;
   const rounds = [];
   const R = roundsOf(b.size);
   for (let r = 0; r < R; r++) {
@@ -92,8 +92,8 @@ export function decide(db, tournamentId, bid, r, k, rawScore) {
     const w = parsed.rowWon ? a : c; const l = parsed.rowWon ? c : a;
     const flip = (set) => { const m = /^(\d{1,2})[:\-](\d{1,2})(\(\d+\))?$/.exec(set); return `${m[2]}:${m[1]}${m[3] || ''}`; };
     const score = parsed.score === 'w/o' ? 'w/o' : (parsed.rowWon ? parsed.score.replace(/-/g, ':') : parsed.score.split(' ').map(flip).join(' '));
-    db.prepare('DELETE FROM matches WHERE tournament_id = ? AND kind = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))').run(tournamentId, b.kind, a, c, c, a);
-    db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind) VALUES (?, ?, ?, ?, ?)').run(tournamentId, w, l, score, b.kind);
+    db.prepare('DELETE FROM matches WHERE tournament_id = ? AND stage = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))').run(tournamentId, `b:${b.id}`, a, c, c, a);
+    db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage) VALUES (?, ?, ?, ?, ?, ?)').run(tournamentId, w, l, score, b.kind, `b:${b.id}`);
     db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, ?, ?, ?)').run(b.id, r + 1, k, w);
     return { winner: w, loser: l, score };
   })();
@@ -112,10 +112,10 @@ export function undo(db, tournamentId, bid, r, k) {
     for (const s of later) {
       const prevRound = s.round - 1; const pk = s.position;
       const opp = [2 * pk, 2 * pk + 1].map((pos) => db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(b.id, prevRound, pos)?.player_id).find((p) => p && p !== w);
-      if (opp) db.prepare('DELETE FROM matches WHERE tournament_id = ? AND kind = ? AND winner_player_id = ? AND loser_player_id = ?').run(tournamentId, b.kind, w, opp);
+      if (opp) db.prepare('DELETE FROM matches WHERE tournament_id = ? AND stage = ? AND winner_player_id = ? AND loser_player_id = ?').run(tournamentId, `b:${b.id}`, w, opp);
     }
     db.prepare('DELETE FROM bracket_slots WHERE bracket_id = ? AND player_id = ? AND round > ?').run(b.id, w, r);
-    if (a && c) db.prepare('DELETE FROM matches WHERE tournament_id = ? AND kind = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))').run(tournamentId, b.kind, a, c, c, a);
+    if (a && c) db.prepare('DELETE FROM matches WHERE tournament_id = ? AND stage = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))').run(tournamentId, `b:${b.id}`, a, c, c, a);
   })();
 }
 

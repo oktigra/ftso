@@ -16,7 +16,7 @@ import { descriptionFrom } from '../lib/seo.mjs';
 import { siteText, paragraphs } from '../lib/texts.mjs';
 import { listGroups } from '../lib/groups.mjs';
 import { listBrackets } from '../lib/brackets.mjs';
-import { sheetModel, tournamentPdf, tournamentDocx } from '../lib/tournament-export.mjs';
+import { sheetModel, tournamentPdf, tournamentDocx, tournamentProtocolXlsx } from '../lib/tournament-export.mjs';
 import {
   publishedNews,
   newsById,
@@ -159,6 +159,15 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       res.setHeader('Content-Disposition', `attachment; filename="bracket-${req.params.id}.docx"; filename*=UTF-8''${encodeURIComponent(safeFile(model.title) + '.docx')}`);
       res.send(buf);
     } catch (err) { next(err); }
+  });
+
+  app.get('/tournaments/:id/protocol.xlsx', (req, res, next) => {
+    if (!/^\d+$/.test(req.params.id)) return next();
+    const model = tournamentSheet(Number(req.params.id));
+    if (!model) return next();
+    res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="protocol-${req.params.id}.xlsx"; filename*=UTF-8''${encodeURIComponent(safeFile(model.title) + ' — протокол.xlsx')}`);
+    res.send(tournamentProtocolXlsx(model));
   });
 
   // ПЕЧАТНАЯ ВЕРСИЯ ТУРНИРА (сетка, группы, результаты) — без шапки и подвала:

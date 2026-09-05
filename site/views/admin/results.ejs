@@ -106,6 +106,26 @@
     <% }); %>
   </div>
 
+  <div class="panel" id="protocol">
+    <h2>Протокол для секретаря турнира</h2>
+    <%
+    /* Круг «скачал — заполнил — загрузил»: пустая сетка/группы в PDF и Word для печати,
+       Excel-протокол со всеми парами для заполнения счёта и обратной загрузки. */
+    %>
+    <p class="inline-form">
+      <a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/bracket.pdf">Скачать сетку PDF</a>
+      <a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/bracket.docx">Скачать сетку Word</a>
+      <a class="btn btn--primary btn--small" href="/tournaments/<%= tournament.id %>/protocol.xlsx">Скачать протокол Excel (для заполнения)</a>
+    </p>
+    <form method="post" action="/admin/tournaments/<%= tournament.id %>/protocol/import" class="inline-form" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="proto-file">Загрузить заполненный протокол (.xlsx)</label>
+        <input id="proto-file" type="file" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
+      <button class="btn btn--primary btn--small" type="submit">Загрузить протокол</button>
+    </form>
+    <p class="muted">В протоколе все несыгранные пары групп и сетки. Счёт пишется от игрока A: «6:3 6:4», «6:3 3:6 10:8», «wo» — A выиграл без игры, «-wo» — проиграл. Пустая строка — пропускается. Колонку «Ключ» не трогать. После загрузки сетка продвигается — для следующего круга скачайте протокол заново.</p>
+  </div>
+
   <div class="panel" id="brackets">
     <h2>Олимпийка (сетка на выбывание)</h2>
     <%
@@ -143,9 +163,8 @@
           </form>
         <% } %>
         <p class="inline-form">
-          <a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/bracket.pdf">Скачать PDF</a>
-          <a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/bracket.docx">Скачать Word</a>
           <a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/print" target="_blank" rel="noopener">Напечатать</a>
+          <a class="btn btn--secondary btn--small" href="#protocol">Скачать / загрузить протокол — выше</a>
         </p>
         <% if (!b.filled && groups.some(function (g) { return g.kind === b.kind; })) { %>
           <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/seed-from-groups" class="inline-form">
