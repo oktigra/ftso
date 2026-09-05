@@ -1920,6 +1920,53 @@ await check('сетка, слой 1 — круговая группа: клет�
   return 'группа из 4: 6 клеток → 6 матчей (счёт хранится от победителя, wo), места A,B,V,G с личной встречей, очистка/кривой счёт, места → результаты только при полной группе';
 });
 
+await check('сетка, слой 2 — олимпийка на 8: посев, bye, итоги пар по сетам, отмена с откатом, места 1/2/3/5 в результаты', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Олимпийка тест', date('now','-1 day'), 'B')").run().lastInsertRowid);
+  const ids = ['Олимпов Один', 'Олимпов Два', 'Олимпов Три', 'Олимпов Четыре', 'Олимпов Пять', 'Олимпов Шесть', 'Олимпов Семь']
+    .map((n) => Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES (?, 'Смоленск', 'M')").run(n).lastInsertRowid));
+  const _csrf = tokenFrom((await http(`/admin/tournaments/${t}/results`, { jar })).text);
+  const post = (path, form) => http(`/admin/tournaments/${t}/brackets${path}`, { method: 'POST', form: { _csrf, ...form }, jar });
+  eq((await post('', { name: 'Основная', size: '8', kind: 'single' })).status, 302, 'создание сетки');
+  const bid = db.prepare('SELECT id FROM tournament_brackets WHERE tournament_id = ?').get(t).id;
+  // Посев 7 из 8 (позиция 8 пустая → bye для №7 в позиции 7). Дубль игрока и занятая позиция — отказ.
+  for (let i = 0; i < 7; i++) eq((await post(`/${bid}/seed`, { position: String(i + 1), player: `#${ids[i]}` })).status, 302, `посев ${i + 1}`);
+  eq((await post(`/${bid}/seed`, { position: '8', player: `#${ids[0]}` })).status, 302, 'ответ на дубль игрока');
+  eq((await post(`/${bid}/seed`, { position: '1', player: `#${ids[6]}` })).status, 302, 'ответ на занятую позицию');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM bracket_slots WHERE bracket_id = ? AND round = 0').get(bid).n, 7, 'посеяно ровно 7');
+  // 1/4: пары (1,2) (3,4) (5,6) (7,—). Счёт от верхнего.
+  eq((await post(`/${bid}/decide`, { r: '0', k: '0', score: '6:3 6:4' })).status, 302, '1/4 пара 0'); // 1 бьёт 2
+  eq((await post(`/${bid}/decide`, { r: '0', k: '1', score: '-wo' })).status, 302, '1/4 пара 1');   // 4 проходит (3 не вышел)
+  eq((await post(`/${bid}/decide`, { r: '0', k: '2', score: '2:6 6:7(3)' })).status, 302, '1/4 пара 2'); // 6 бьёт 5
+  eq((await post(`/${bid}/decide`, { r: '0', k: '3', score: '6:0 6:0' })).status, 302, 'ответ: счёт при пустом слоте');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM bracket_slots WHERE bracket_id = ? AND round = 1').get(bid).n, 3, 'при пустом слоте счёт не должен проходить');
+  eq((await post(`/${bid}/decide`, { r: '0', k: '3', score: 'bye' })).status, 302, '1/4 пара 3 bye'); // 7 проходит
+  const r1 = db.prepare('SELECT position, player_id FROM bracket_slots WHERE bracket_id = ? AND round = 1 ORDER BY position').all(bid);
+  eq(r1.map((x) => x.player_id).join(','), [ids[0], ids[3], ids[5], ids[6]].join(','), 'состав 1/2');
+  assert(db.prepare("SELECT 1 FROM matches WHERE tournament_id = ? AND winner_player_id = ? AND loser_player_id = ? AND score = '6:2 7:6(3)'").get(t, ids[5], ids[4]), 'счёт пары 2 не перевёрнут к победителю');
+  assert(db.prepare("SELECT 1 FROM matches WHERE tournament_id = ? AND winner_player_id = ? AND loser_player_id = ? AND score = 'w/o'").get(t, ids[3], ids[2]), '-wo не записан');
+  // 1/2: 1 бьёт 4; 6 бьёт 7. Финал: 1 бьёт 6. Затем отмена полуфинала (1,4) снимает и финал.
+  eq((await post(`/${bid}/decide`, { r: '1', k: '0', score: '6:1 6:1' })).status, 302, '1/2 пара 0');
+  eq((await post(`/${bid}/decide`, { r: '1', k: '1', score: '7:5 7:5' })).status, 302, '1/2 пара 1');
+  eq((await post(`/${bid}/decide`, { r: '2', k: '0', score: '6:4 6:4' })).status, 302, 'финал');
+  eq(db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = 3').get(bid).player_id, ids[0], 'чемпион');
+  assert(/победитель: Олимпов Один/.test((await http(`/admin/tournaments/${t}/results`, { jar })).text), 'победитель не показан');
+  eq((await post(`/${bid}/undo`, { r: '1', k: '0' })).status, 302, 'отмена полуфинала');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM bracket_slots WHERE bracket_id = ? AND round >= 2').get(bid).n, 1, 'откат должен снять финалиста-1 и чемпиона, оставив второго финалиста');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t).n, 4, 'матчи полуфинала (1,4) и финала должны удалиться');
+  eq((await post(`/${bid}/places`, { })).status, 302, 'места без финала — ответ');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(t).n, 0, 'места записаны без финала');
+  eq((await post(`/${bid}/decide`, { r: '1', k: '0', score: '6:2 6:2' })).status, 302, 'полуфинал заново');
+  eq((await post(`/${bid}/decide`, { r: '2', k: '0', score: '3:6 6:3 10:7' })).status, 302, 'финал заново');
+  eq((await post(`/${bid}/places`, { })).status, 302, 'места');
+  const res = db.prepare('SELECT player_id, place FROM results WHERE tournament_id = ? ORDER BY place, player_id').all(t);
+  eq(res.map((x) => `${x.player_id}:${x.place}`).join('|'), `${ids[0]}:1|${ids[5]}:2|${ids[3]}:3|${ids[6]}:3|${ids[1]}:5|${ids[2]}:5|${ids[4]}:5`, 'места 1/2/3/5 по сетке');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
+  db.prepare("DELETE FROM players WHERE full_name LIKE 'Олимпов %'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'сетка на 8: посев 7 + bye, счёт от верхнего (переворот к победителю, wo), чемпион, отмена полуфинала снимает финал и матчи, места 1/2/3/5';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

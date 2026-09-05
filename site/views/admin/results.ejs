@@ -106,6 +106,77 @@
     <% }); %>
   </div>
 
+  <div class="panel" id="brackets">
+    <h2>Олимпийка (сетка на выбывание)</h2>
+    <%
+    /* СЕТКА, СЛОЙ 2. Раунды столбцами; в паре — счёт с точки зрения ВЕРХНЕГО игрока
+       («6:3 6:4», «wo», «-wo») или «bye», если второго нет. Отмена снимает и всё дальше. */
+    %>
+    <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="b-name">Новая сетка</label><input id="b-name" name="name" maxlength="40" placeholder="Основная" required></div>
+      <div class="field"><label for="b-size">Размер</label>
+        <select id="b-size" name="size"><% bracketSizes.forEach(function (n) { %><option value="<%= n %>"<%= n === 8 ? ' selected' : '' %>><%= n %></option><% }); %></select></div>
+      <div class="field"><label for="b-kind">Разряд</label>
+        <select id="b-kind" name="kind"><option value="single">одиночный</option><option value="double">парный</option></select></div>
+      <button class="btn btn--secondary btn--small" type="submit">Создать сетку</button>
+    </form>
+    <% brackets.forEach(function (b) { %>
+      <div class="group-block">
+        <h3>Сетка «<%= b.name %>» на <%= b.size %> <span class="muted">(<%= b.kind === 'double' ? 'парный' : 'одиночный' %>, посеяно <%= b.filled %> из <%= b.size %><%= b.champion ? ', победитель: ' + b.champion.full_name : '' %>)</span></h3>
+        <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/seed" class="inline-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="field"><label for="bp-<%= b.id %>">Позиция</label><input id="bp-<%= b.id %>" name="position" inputmode="numeric" maxlength="2" placeholder="1–<%= b.size %>" required></div>
+          <div class="field field--wide"><label for="bs-<%= b.id %>">Игрок</label>
+            <input id="bs-<%= b.id %>" name="player" list="players-list" autocomplete="off" maxlength="140" placeholder="первые буквы фамилии" required></div>
+          <button class="btn btn--secondary btn--small" type="submit">Посеять</button>
+        </form>
+        <div class="bracket">
+          <% b.rounds.forEach(function (round) { %>
+            <div class="bracket__round">
+              <div class="bracket__title"><%= round.name %></div>
+              <% round.pairs.forEach(function (p) { %>
+                <div class="bracket__pair<%= p.winner ? ' bracket__pair--done' : '' %>">
+                  <div class="bracket__slot<%= p.winner && p.winner === p.aId ? ' bracket__slot--win' : '' %>">
+                    <%= p.a ? p.a.full_name : '—' %>
+                    <% if (round.r === 0 && p.aId && !p.winner) { %><form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/unseed" class="bracket__x"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="position" value="<%= 2 * p.k + 1 %>"><button type="submit" class="link-x" aria-label="Убрать">×</button></form><% } %>
+                  </div>
+                  <div class="bracket__slot<%= p.winner && p.winner === p.bId ? ' bracket__slot--win' : '' %>">
+                    <%= p.b ? p.b.full_name : '—' %>
+                    <% if (round.r === 0 && p.bId && !p.winner) { %><form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/unseed" class="bracket__x"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="position" value="<%= 2 * p.k + 2 %>"><button type="submit" class="link-x" aria-label="Убрать">×</button></form><% } %>
+                  </div>
+                  <% if (p.winner) { %>
+                    <div class="bracket__score"><%= p.bye ? 'без игры' : (p.score || 'итог записан') %>
+                      <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/undo" class="bracket__x"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="r" value="<%= round.r %>"><input type="hidden" name="k" value="<%= p.k %>"><button type="submit" class="btn btn--danger btn--small" data-confirm="Отменить итог пары? Снимется и всё, куда прошёл победитель.">отменить</button></form>
+                    </div>
+                  <% } else if (p.aId || p.bId) { %>
+                    <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/decide" class="bracket__form">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="r" value="<%= round.r %>"><input type="hidden" name="k" value="<%= p.k %>">
+                      <input name="score" maxlength="60" placeholder="<%= p.aId && p.bId ? '6:3 6:4' : 'bye' %>" aria-label="Итог пары">
+                      <button class="btn btn--secondary btn--small" type="submit">Ок</button>
+                    </form>
+                  <% } %>
+                </div>
+              <% }); %>
+            </div>
+          <% }); %>
+          <div class="bracket__round"><div class="bracket__title">Победитель</div><div class="bracket__pair"><div class="bracket__slot bracket__slot--win"><%= b.champion ? b.champion.full_name : '—' %></div></div></div>
+        </div>
+        <p class="muted">Счёт — с точки зрения верхнего игрока пары; «wo»/«-wo» — без игры; «bye» — если второго нет. Места: 1, 2, 3 (полуфиналисты), 5 (четвертьфиналисты), 9, 17.</p>
+        <div class="inline-form">
+          <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/places">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn btn--primary btn--small" type="submit"<%= b.championId ? '' : ' disabled title="Финал не сыгран"' %>>Записать места в результаты</button>
+          </form>
+          <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/delete">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn btn--danger btn--small" type="submit" data-confirm="Удалить сетку «<%= b.name %>»? Сыгранные матчи останутся.">Удалить сетку</button>
+          </form>
+        </div>
+      </div>
+    <% }); %>
+  </div>
+
   <div class="panel">
     <h2>Массовый ввод из протокола</h2>
     <%
