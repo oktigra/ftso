@@ -99,6 +99,21 @@ CREATE TABLE IF NOT EXISTS matches (
   UNIQUE (tournament_id, winner_player_id, loser_player_id, kind)
 );
 
+-- КРУГОВЫЕ ГРУППЫ ТУРНИРА (сетка, слой 1). Матчи группы — обычные строки matches.
+CREATE TABLE IF NOT EXISTS tournament_groups (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 40),
+  kind          TEXT NOT NULL DEFAULT 'single' CHECK (kind IN ('single','double')),
+  UNIQUE (tournament_id, name, kind)
+);
+CREATE TABLE IF NOT EXISTS tournament_group_members (
+  group_id  INTEGER NOT NULL REFERENCES tournament_groups(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  seed      INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (group_id, player_id)
+);
+
 -- Снимки рейтинга. Копятся; retention — последние 24, чистятся при пересчёте.
 CREATE TABLE IF NOT EXISTS rating_cache (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,

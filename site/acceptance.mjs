@@ -1872,6 +1872,54 @@ await check('тексты сайта (ТЗ п. 5): заголовок/подво
   return 'заголовок и абзацы правятся, HTML экранирован, чужой ключ отбит, пусто → заготовка; «оплата участия» с главной убрана';
 });
 
+await check('сетка, слой 1 — круговая группа: клетки N×N, победитель по сетам, места (победы → личная встреча → сеты), запись мест в результаты', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Группа тест', date('now','-1 day'), 'B')").run().lastInsertRowid);
+  const names = ['Группов Антон', 'Группов Борис', 'Группов Виктор', 'Группов Григорий'];
+  const ids = names.map((n) => Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES (?, 'Смоленск', 'M')").run(n).lastInsertRowid));
+  const [A, B, V, G] = ids;
+  const page = await http(`/admin/tournaments/${t}/results`, { jar });
+  const _csrf = tokenFrom(page.text);
+  eq((await http(`/admin/tournaments/${t}/groups`, { method: 'POST', form: { _csrf, name: 'A', kind: 'single' }, jar })).status, 302, 'создание группы');
+  const gid = db.prepare('SELECT id FROM tournament_groups WHERE tournament_id = ?').get(t).id;
+  eq((await http(`/admin/tournaments/${t}/groups`, { method: 'POST', form: { _csrf, name: 'A', kind: 'single' }, jar })).status, 302, 'повтор имени — ответ');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM tournament_groups WHERE tournament_id = ?').get(t).n, 1, 'дубль группы');
+  for (const n of names) eq((await http(`/admin/tournaments/${t}/groups/${gid}/members`, { method: 'POST', form: { _csrf, player: n }, jar })).status, 302, 'участник');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM tournament_group_members WHERE group_id = ?').get(gid).n, 4, 'состав группы');
+  const cell = (a, b, score) => http(`/admin/tournaments/${t}/groups/${gid}/cell`, { method: 'POST', form: { _csrf, a, b, score }, jar });
+  // A бьёт всех; B бьёт V и G; V бьёт G — но V проигрывает B «3:6 6:7» (личная встреча), а с G — «6:0 6:0».
+  eq((await cell(A, B, '6:3 6:4')).status, 302, 'A-B'); eq((await cell(A, V, '6:2 6:2')).status, 302, 'A-V'); eq((await cell(A, G, 'wo')).status, 302, 'A-G wo');
+  eq((await cell(V, B, '3:6 6:7(5)')).status, 302, 'V-B (проигрыш строки)'); eq((await cell(B, G, '6:4 4:6 10:8')).status, 302, 'B-G');
+  eq((await cell(V, G, '6:0 6:0')).status, 302, 'V-G');
+  const m = db.prepare('SELECT winner_player_id AS w, loser_player_id AS l, score FROM matches WHERE tournament_id = ? ORDER BY id').all(t);
+  eq(m.length, 6, 'матчей записано');
+  const vb = m.find((x) => (x.w === B && x.l === V));
+  assert(vb && vb.score === '6:3 7:6(5)', `счёт с точки зрения строки-проигравшего должен перевернуться к победителю: ${vb && vb.score}`);
+  assert(m.find((x) => x.w === A && x.l === G && x.score === 'w/o'), 'wo не записан');
+  const view = await http(`/admin/tournaments/${t}/results`, { jar });
+  assert(/group-win/.test(view.text) && /group-loss/.test(view.text), 'клетки не подсвечены');
+  const { groupTable } = await import('./server/lib/groups.mjs');
+  const tb = groupTable(db, t, { id: gid, kind: 'single' });
+  eq(tb.order.join(','), [A, B, V, G].join(','), 'порядок мест (A 3 победы, B 2, V 1, G 0)');
+  assert(tb.complete, 'группа должна считаться сыгранной');
+  // Пустой счёт очищает клетку; кривой счёт — ошибка без записи.
+  eq((await cell(V, G, '')).status, 302, 'очистка'); eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t).n, 5, 'клетка не очищена');
+  eq((await cell(V, G, '6:3 3:6')).status, 302, 'сеты поровну — ответ'); eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t).n, 5, 'кривой счёт записался');
+  // Места в результаты — только при полной группе.
+  eq((await http(`/admin/tournaments/${t}/groups/${gid}/places`, { method: 'POST', form: { _csrf }, jar })).status, 302, 'места при неполной группе — ответ');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(t).n, 0, 'места записаны при неполной группе');
+  eq((await cell(V, G, '6:0 6:0')).status, 302, 'дописываем');
+  eq((await http(`/admin/tournaments/${t}/groups/${gid}/places`, { method: 'POST', form: { _csrf }, jar })).status, 302, 'места');
+  const r = db.prepare('SELECT player_id, place FROM results WHERE tournament_id = ? ORDER BY place').all(t);
+  eq(r.map((x) => `${x.player_id}:${x.place}`).join('|'), `${A}:1|${B}:2|${V}:3|${G}:4`, 'результаты из мест группы');
+  // Публичная карточка турнира показывает 6 матчей.
+  eq((await http(`/tournaments/${t}`)).status, 200, 'карточка турнира');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
+  db.prepare("DELETE FROM players WHERE full_name LIKE 'Группов %'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'группа из 4: 6 клеток → 6 матчей (счёт хранится от победителя, wo), места A,B,V,G с личной встречей, очистка/кривой счёт, места → результаты только при полной группе';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

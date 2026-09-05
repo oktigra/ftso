@@ -39,6 +39,73 @@
     </form>
   </div>
 
+  <div class="panel" id="groups">
+    <h2>Круговые группы</h2>
+    <%
+    /* СЕТКА, СЛОЙ 1: группа «каждый с каждым». Клетка = счёт с точки зрения игрока
+       СТРОКИ («6:3 3:6 10:8»; «wo» — выиграл без игры, «-wo» — проиграл). Победитель
+       считается по сетам, места — по победам → личная встреча → сеты → геймы. */
+    %>
+    <form method="post" action="/admin/tournaments/<%= tournament.id %>/groups" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="g-name">Новая группа</label><input id="g-name" name="name" maxlength="40" placeholder="A" required></div>
+      <div class="field"><label for="g-kind">Разряд</label>
+        <select id="g-kind" name="kind"><option value="single">одиночный</option><option value="double">парный</option></select></div>
+      <button class="btn btn--secondary btn--small" type="submit">Создать группу</button>
+    </form>
+    <% groups.forEach(function (g) { %>
+      <div class="group-block">
+        <h3>Группа <%= g.name %> <span class="muted">(<%= g.kind === 'double' ? 'парный' : 'одиночный' %>, сыграно <%= g.playedTotal %> из <%= g.total %>)</span></h3>
+        <form method="post" action="/admin/tournaments/<%= tournament.id %>/groups/<%= g.id %>/members" class="inline-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="field field--wide"><label for="gm-<%= g.id %>">Добавить участника</label>
+            <input id="gm-<%= g.id %>" name="player" list="players-list" autocomplete="off" maxlength="140" placeholder="первые буквы фамилии" required></div>
+          <button class="btn btn--secondary btn--small" type="submit">Добавить</button>
+        </form>
+        <% if (g.members.length) { %>
+          <div class="table-scroll">
+            <table class="admin-table group-table">
+              <thead><tr><th>#</th><th>Игрок</th><% g.members.forEach(function (c, j) { %><th><%= j + 1 %></th><% }); %><th>Поб.</th><th>Место</th><th></th></tr></thead>
+              <tbody>
+                <% g.members.forEach(function (r, i) { %>
+                  <tr>
+                    <td><%= i + 1 %></td>
+                    <td class="player"><%= r.full_name %></td>
+                    <% g.members.forEach(function (c, j) { %>
+                      <% if (r.id === c.id) { %><td class="group-self">—</td><% } else { const cell = g.cells[r.id + ':' + c.id]; %>
+                        <td class="group-cell<%= cell ? (cell.won ? ' group-win' : ' group-loss') : '' %>">
+                          <form method="post" action="/admin/tournaments/<%= tournament.id %>/groups/<%= g.id %>/cell" class="cell-form">
+                            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                            <input type="hidden" name="a" value="<%= r.id %>"><input type="hidden" name="b" value="<%= c.id %>">
+                            <input name="score" value="<%= cell ? (cell.won ? cell.score : (cell.score === 'w/o' ? '-wo' : cell.score.split(' ').map(function (s) { var m = /^(\d+)[:\-](\d+)(\(\d+\))?$/.exec(s); return m ? m[2] + ':' + m[1] + (m[3] || '') : s; }).join(' '))) : '' %>" maxlength="60" placeholder="6:3 6:4" aria-label="Счёт <%= r.full_name %> — <%= c.full_name %>">
+                          </form>
+                        </td>
+                      <% } %>
+                    <% }); %>
+                    <td><%= g.stats[r.id].wins %></td>
+                    <td><strong><%= g.stats[r.id].played ? g.stats[r.id].place : '—' %></strong></td>
+                    <td><form method="post" action="/admin/tournaments/<%= tournament.id %>/groups/<%= g.id %>/members/<%= r.id %>/delete"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn--danger btn--small" type="submit" data-confirm="Убрать <%= r.full_name %> из группы?">Убрать</button></form></td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
+          <p class="muted">Счёт вводится с точки зрения игрока в строке: «6:3 6:4», «6:3 3:6 10:8», «wo» — выиграл без игры, «-wo» — проиграл без игры. Enter в клетке сохраняет. Пустая клетка — матч удалён.</p>
+          <div class="inline-form">
+            <form method="post" action="/admin/tournaments/<%= tournament.id %>/groups/<%= g.id %>/places">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button class="btn btn--primary btn--small" type="submit"<%= g.complete ? '' : ' disabled title="Сыграны не все матчи"' %>>Записать места в результаты</button>
+            </form>
+            <form method="post" action="/admin/tournaments/<%= tournament.id %>/groups/<%= g.id %>/delete">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button class="btn btn--danger btn--small" type="submit" data-confirm="Удалить группу «<%= g.name %>»? Сыгранные матчи останутся.">Удалить группу</button>
+            </form>
+          </div>
+        <% } %>
+      </div>
+    <% }); %>
+  </div>
+
   <div class="panel">
     <h2>Массовый ввод из протокола</h2>
     <%
