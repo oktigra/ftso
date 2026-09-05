@@ -1551,6 +1551,22 @@ await check('MAX (ТЗ 8, решение владельца): кнопка то�
   return `MAX_URL валидируется (только https://max.ru/…); сейчас в тесте ${config.maxUrl ? 'задан — кнопка есть' : 'не задан — кнопки нет'}; других соцсетей нет`;
 });
 
+await check('ТЗ п. 11: инструкция по администрированию — /admin/guide, разделы по роли, ссылка в меню', async () => {
+  eq((await http('/admin/guide')).status, 302, 'без входа — редирект на /login');
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const g = await http('/admin/guide', { jar });
+  eq(g.status, 200, 'инструкция для супер-админа');
+  for (const id of ['g-login', 'g-players', 'g-tournaments', 'g-rating', 'g-news', 'g-directories', 'g-library', 'g-feedback', 'g-users', 'g-legal', 'g-ops']) {
+    assert(g.text.includes(`id="${id}"`), `у супер-админа нет раздела ${id}`);
+  }
+  assert(/href="\/admin\/guide"/.test((await http('/admin', { jar })).text), 'в меню админки нет «Инструкции»');
+  const t = await login(TADMIN.user, TADMIN.pass);
+  const tg = await http('/admin/guide', { jar: t.jar });
+  eq(tg.status, 200, 'инструкция для tournament-admin');
+  assert(tg.text.includes('id="g-tournaments"') && !tg.text.includes('id="g-users"') && !tg.text.includes('id="g-news"'), 'у tournament-admin показаны чужие разделы или нет своих');
+  return 'супер-админ — 11 разделов; tournament-admin — без «Пользователей» и «Новостей»; ссылка в меню есть';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
