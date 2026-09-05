@@ -570,8 +570,9 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         res,
         'ok',
         `Турнир «${r.name}» согласован и добавлен в календарь (#${out.tournamentId}). ` +
-          'Результаты вносятся через раздел «Результаты».',
-        '/admin/tournament-requests',
+          'Это его страница результатов — сюда вносится протокол после игр.',
+        // Ускорение ввода п. 5: одобрение сразу открывает форму результатов турнира.
+        `/admin/tournaments/${out.tournamentId}/results`,
       );
     }),
   );

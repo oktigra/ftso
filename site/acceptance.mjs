@@ -2030,6 +2030,8 @@ await check('согласование создаёт турнир, отказ о
   eq(appr.status, 302, 'согласование заявки');
   const after = db.prepare('SELECT status, tournament_id FROM tournament_requests WHERE id = ?').get(r.id);
   eq(after.status, 'approved', 'статус заявки');
+  // Ускорение ввода п. 5: после одобрения — сразу страница результатов нового турнира.
+  eq(appr.location, `/admin/tournaments/${after.tournament_id}/results`, 'одобрение должно вести на результаты турнира');
   eq(db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n, before + 1, 'турнир не создан');
   const created = db.prepare('SELECT name, end_date, category FROM tournaments WHERE id = ?').get(after.tournament_id);
   eq(created.name, r.name, 'название турнира');
