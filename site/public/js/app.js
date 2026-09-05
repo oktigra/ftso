@@ -9,6 +9,36 @@
   // правило на все формы админки: 05.09.2026 владелец удалил сам себя одним
   // кликом. Текст — из data-confirm кнопки либо общий. Без JS форма уйдёт как
   // раньше — сервер и так проверяет права и CSRF.
+  // ЯНДЕКС.МЕТРИКА — ТОЛЬКО ПОСЛЕ СОГЛАСИЯ. Без cookie ftso.analytics=1 счётчик
+  // не грузится вовсе; «Отклонить» пишет 0 на год и больше не спрашивает.
+  // «Настройки cookie» в подвале снова показывают баннер.
+  (function () {
+    var bar = document.querySelector('[data-cookie-bar]');
+    if (!bar) return;
+    var id = bar.getAttribute('data-metrika');
+    var loaded = false;
+    function setChoice(v) {
+      document.cookie = 'ftso.analytics=' + v + '; Max-Age=' + (60 * 60 * 24 * 365) + '; Path=/; SameSite=Lax' + (location.protocol === 'https:' ? '; Secure' : '');
+    }
+    function loadMetrika() {
+      if (loaded || !id) return;
+      loaded = true;
+      window.ym = window.ym || function () { (window.ym.a = window.ym.a || []).push(arguments); };
+      window.ym.l = Date.now();
+      var s = document.createElement('script');
+      s.async = true;
+      s.src = 'https://mc.yandex.ru/metrika/tag.js';
+      document.head.appendChild(s);
+      // Без вебвизора: запись действий посетителя федерации не нужна, а объём ПДн — меньше.
+      window.ym(Number(id), 'init', { clickmap: true, trackLinks: true, accurateTrackBounce: true, webvisor: false });
+    }
+    bar.querySelector('[data-cookie-accept]').addEventListener('click', function () { setChoice('1'); bar.hidden = true; loadMetrika(); });
+    bar.querySelector('[data-cookie-decline]').addEventListener('click', function () { setChoice('0'); bar.hidden = true; });
+    var settings = document.querySelector('[data-cookie-settings]');
+    if (settings) settings.addEventListener('click', function (e) { e.preventDefault(); bar.hidden = false; bar.scrollIntoView({ block: 'end' }); });
+    if (bar.getAttribute('data-choice') === '1') loadMetrika();
+  })();
+
   // ГАЛЕРЕЯ: полноэкранный просмотр на <dialog> (ТЗ 4.8). Клик по снимку —
   // открыть, ←/→ или кнопки — листать, Esc/крестик/клик по фону — закрыть.
   (function () {
