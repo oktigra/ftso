@@ -93,6 +93,39 @@ export function tournamentList(db, filters = {}) {
   return filters.status ? rows.filter((t) => t.status === filters.status) : rows;
 }
 
+/**
+ * ЖИВЫЕ ЦИФРЫ ГЛАВНОЙ (05.09.2026): вместо «318 игроков» из макета — счёт по базе.
+ * Турниров за 12 месяцев, игроков в текущем снимке рейтинга, городов (игроки + турниры).
+ */
+export function homeStats(db, standings) {
+  const year = db.prepare("SELECT COUNT(*) AS n FROM tournaments WHERE end_date >= date('now', '-12 months')").get().n;
+  const cities = db.prepare(
+    `SELECT COUNT(*) AS n FROM (SELECT city FROM players WHERE anonymized_at IS NULL AND city IS NOT NULL AND city <> ''
+       UNION SELECT city FROM tournaments WHERE city IS NOT NULL AND city <> '')`,
+  ).get().n;
+  return [
+    { value: String(year), label: 'турниров за год' },
+    { value: String(standings ? standings.players.length : 0), label: 'игроков в рейтинге' },
+    { value: String(cities), label: cities === 1 ? 'город области' : 'городов области' },
+  ];
+}
+
+const RU_MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+/** Ближайший турнир (не завершённый) — для карточки на главной; null, если нет. */
+export function homeNextEvent(db) {
+  const today = new Date().toISOString().slice(0, 10);
+  const t = db.prepare('SELECT id, name, start_date, end_date FROM tournaments WHERE end_date >= ? ORDER BY COALESCE(start_date, end_date), id LIMIT 1').get(today);
+  if (!t) return null;
+  const d = t.start_date || t.end_date;
+  const status = tournamentStatus(t, today);
+  return {
+    id: t.id, name: t.name,
+    date: `${Number(d.slice(8, 10))} ${RU_MONTHS[Number(d.slice(5, 7)) - 1]}`,
+    status: status === 'ongoing' ? 'Идёт' : 'Предстоящий',
+    statusClass: status === 'ongoing' ? 'status--live' : 'status--open',
+  };
+}
+
 export function tournamentFilterOptions(db) {
   return {
     cities: db.prepare("SELECT DISTINCT city FROM tournaments WHERE city IS NOT NULL AND city <> '' ORDER BY city").all().map((r) => r.city),

@@ -36,9 +36,15 @@
         <div class="ph-label"><span>фото · теннисный корт / матч · 4:3 · ~1200×900</span></div>
       </div>
       <div class="info-card fx-card"><%- include('partials/court-card') %>
-        <div class="ic-item"><small>Ближайший турнир</small><b><%= nextEvent.date %></b></div>
-        <div class="ic-sep" aria-hidden="true"></div>
-        <div class="ic-item"><small>Статус</small><span class="status status--open"><%= nextEvent.status %></span></div>
+        <% if (nextEvent) { %>
+          <div class="ic-item"><small>Ближайший турнир</small><b><a href="/tournaments/<%= nextEvent.id %>"><%= nextEvent.date %></a></b></div>
+          <div class="ic-sep" aria-hidden="true"></div>
+          <div class="ic-item"><small>Статус</small><span class="status <%= nextEvent.statusClass %>"><%= nextEvent.status %></span></div>
+        <% } else { %>
+          <div class="ic-item"><small>Ближайший турнир</small><b>скоро в календаре</b></div>
+          <div class="ic-sep" aria-hidden="true"></div>
+          <div class="ic-item"><small>Календарь</small><a href="/tournaments">все турниры →</a></div>
+        <% } %>
       </div>
     </div>
   </div>

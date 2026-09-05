@@ -1805,6 +1805,27 @@ await check('ТЗ п. 5/7 SEO: уникальные description по разде�
   return `${Object.keys(pages).length} разделов с разными description; новость/турнир/игрок — из содержимого; правка в админке подменяет title/description/og, очистка возвращает стандарт`;
 });
 
+await check('главная: цифры и «ближайший турнир» живые, из базы, а не из макета', async () => {
+  const home = await http('/');
+  assert(!/318/.test(home.text.match(/<div class="stats">[\s\S]*?<\/div>\s*<\/div>/)?.[0] || ''), 'на главной остались цифры макета (318)');
+  const stat = (t, label) => Number((t.match(new RegExp(`<b>(\\d+)</b><span>${label}`)) || [])[1]);
+  const ratingN = db.prepare('SELECT COUNT(*) AS n FROM players').get().n;
+  const players = stat(home.text, 'игроков в рейтинге');
+  assert(Number.isFinite(players) && players <= ratingN, `игроков в рейтинге на главной (${players}) больше, чем игроков в базе (${ratingN})`);
+  const tours = stat(home.text, 'турниров за год');
+  eq(tours, db.prepare("SELECT COUNT(*) AS n FROM tournaments WHERE end_date >= date('now','-12 months')").get().n, 'турниров за год — не по базе');
+  // Ближайший турнир: заводим будущий — карточка показывает его дату и ссылку; без будущих — «скоро в календаре».
+  const future = new Date(Date.now() + 20 * 864e5).toISOString().slice(0, 10);
+  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Ближайший тест', ?, 'B')").run(future).lastInsertRowid);
+  const withNext = await http('/');
+  assert(new RegExp(`href="/tournaments/${tid}"`).test(withNext.text) && /Предстоящий/.test(withNext.text), 'карточка «ближайший турнир» не показывает будущий турнир');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
+  if (!db.prepare("SELECT 1 FROM tournaments WHERE end_date >= date('now')").get()) {
+    assert(/скоро в календаре/.test((await http('/')).text), 'без будущих турниров нет честной заглушки');
+  }
+  return `цифры по базе (игроков ${players}, турниров ${tours}); ближайший турнир — ссылка на карточку; без будущих — «скоро в календаре»`;
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
