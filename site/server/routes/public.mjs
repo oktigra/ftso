@@ -130,6 +130,27 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
     });
   });
 
+  // ПЕЧАТНАЯ ВЕРСИЯ ТУРНИРА (сетка, группы, результаты) — без шапки и подвала:
+  // «Сохранить как PDF» делает браузер; ссылку на страницу можно отправить по почте.
+  app.get('/tournaments/:id/print', (req, res, next) => {
+    if (!/^\d+$/.test(req.params.id)) return next();
+    const tournament = db
+      .prepare('SELECT id, name, end_date, start_date, category, city, kind, age_group FROM tournaments WHERE id = ?')
+      .get(Number(req.params.id));
+    if (!tournament) return next();
+    const url = `${req.protocol}://${req.get('host')}/tournaments/${tournament.id}/print`;
+    res.render('tournament-print', {
+      title: `${tournament.name} — сетка и результаты — ФТСО`,
+      tournament,
+      kindRu: TOURNAMENT_KIND_RU,
+      groups: listGroups(db, tournament.id),
+      brackets: listBrackets(db, tournament.id),
+      results: tournamentParticipants(db, tournament.id, LABELS),
+      printUrl: url,
+      mailHref: `mailto:?subject=${encodeURIComponent(`Сетка турнира «${tournament.name}» — ФТСО`)}&body=${encodeURIComponent(`Сетка, группы и результаты турнира «${tournament.name}»:\n${url}\n\nНа странице — кнопка «Сохранить как PDF».`)}`,
+    });
+  });
+
   app.get('/tournaments/:id', (req, res, next) => {
     if (!/^\d+$/.test(req.params.id)) return next();
     const tournament = db

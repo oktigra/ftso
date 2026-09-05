@@ -124,6 +124,25 @@
     <% brackets.forEach(function (b) { %>
       <div class="group-block">
         <h3>Сетка «<%= b.name %>» на <%= b.size %> <span class="muted">(<%= b.kind === 'double' ? 'парный' : 'одиночный' %>, посеяно <%= b.filled %> из <%= b.size %><%= b.champion ? ', победитель: ' + b.champion.full_name : '' %>)</span></h3>
+        <% if (!b.filled) { %>
+          <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/seed-by-rating" class="stacked-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <div class="field">
+              <label for="br-<%= b.id %>">Посеять по рейтингу — участники, по одному в строке (фамилия и имя, «#номер» при тёзках)</label>
+              <textarea id="br-<%= b.id %>" name="players" rows="5" maxlength="4000" placeholder="Иванов Иван&#10;Петров Пётр (Вязьма)&#10;#12"></textarea>
+            </div>
+            <div class="inline-form"><button class="btn btn--primary btn--small" type="submit">Посеять по рейтингу</button>
+              <span class="muted">сеяные — по текущему рейтингу (<%= b.kind === 'double' ? 'парный' : 'одиночный' %> разряд), без рейтинга — в конец; потом можно править</span></div>
+          </form>
+        <% } else if (!b.rounds.some(function (r) { return r.pairs.some(function (p) { return p.winner; }); })) { %>
+          <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/swap" class="inline-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <div class="field"><label for="sw1-<%= b.id %>">Поменять местами позиции</label><input id="sw1-<%= b.id %>" name="p1" inputmode="numeric" maxlength="2" placeholder="1" required></div>
+            <div class="field"><label for="sw2-<%= b.id %>">и</label><input id="sw2-<%= b.id %>" name="p2" inputmode="numeric" maxlength="2" placeholder="8" required></div>
+            <button class="btn btn--secondary btn--small" type="submit">Поменять</button>
+          </form>
+        <% } %>
+        <p class="inline-form"><a class="btn btn--secondary btn--small" href="/tournaments/<%= tournament.id %>/print" target="_blank" rel="noopener">Печать / PDF сетки</a></p>
         <% if (!b.filled && groups.some(function (g) { return g.kind === b.kind; })) { %>
           <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/seed-from-groups" class="inline-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">

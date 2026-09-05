@@ -2088,6 +2088,51 @@ await check('восстановление пароля кабинета без �
   return 'по умолчанию off: страница без формы, контакты секретаря, POST ничего не ставит в очередь; on — форма как раньше';
 });
 
+await check('сетка по рейтингу: посев из списка по текущему рейтингу (без рейтинга — в конец), правка местами, печатная страница турнира с PDF/почтой', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Посев по рейтингу', date('now','+10 days'), 'B')").run().lastInsertRowid);
+  // Три игрока с рейтингом (места известны из снимка) + один новичок.
+  const standings = currentStandings(db);
+  const rated = standings.players.slice(0, 3).map((p) => p.playerId);
+  const rookie = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Новичок Без Рейтинга', 'Смоленск', 'M')").run().lastInsertRowid);
+  const _csrf = tokenFrom((await http(`/admin/tournaments/${t}/results`, { jar })).text);
+  const post = (path, form) => http(`/admin/tournaments/${t}/brackets${path}`, { method: 'POST', form: { _csrf, ...form }, jar });
+  eq((await post('', { name: 'Рейтинговая', size: '4', kind: 'single' })).status, 302, 'сетка');
+  const bid = db.prepare('SELECT id FROM tournament_brackets WHERE tournament_id = ?').get(t).id;
+  // Список в перемешанном порядке: новичок, третий, первый, второй.
+  const list = [`#${rookie}`, `#${rated[2]}`, `#${rated[0]}`, `#${rated[1]}`].join('\n');
+  eq((await post(`/${bid}/seed-by-rating`, { players: list })).status, 302, 'посев по рейтингу');
+  const slot = (pos) => db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = 0 AND position = ?').get(bid, pos)?.player_id;
+  eq(slot(0), rated[0], 'сеяный №1 — первый в рейтинге на позиции 1');
+  eq(slot(2), rated[1], 'сеяный №2 — второй в рейтинге на позиции 3 (другая пара)');
+  eq(slot(3), rated[2], 'сеяный №3 — третий в рейтинге на позиции 4 (против №2)');
+  eq(slot(1), rookie, 'без рейтинга — последний сеяный (позиция 2, против №1)');
+  // Незнакомое имя — отказ до записи.
+  eq((await post(`/${bid}/seed-by-rating`, { players: 'Кто-то Неизвестный\n#1' })).status, 302, 'ответ на незнакомого');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM bracket_slots WHERE bracket_id = ?').get(bid).n, 4, 'повторный посев не должен менять сетку (она уже посеяна)');
+  // Правка секретарём: поменять позиции 2 и 3 местами.
+  const before2 = slot(1); const before3 = slot(2);
+  eq((await post(`/${bid}/swap`, { p1: '2', p2: '3' })).status, 302, 'обмен');
+  eq(slot(1), before3, 'после обмена позиция 2'); eq(slot(2), before2, 'после обмена позиция 3');
+  const adm = await http(`/admin/tournaments/${t}/results`, { jar });
+  assert(/seed-by-rating|\/swap/.test(adm.text) && new RegExp(`/tournaments/${t}/print`).test(adm.text), 'в админке нет формы обмена или ссылки на печать');
+  // После записи итога пары обмен запрещён.
+  eq((await post(`/${bid}/decide`, { r: '0', k: '0', score: '6:1 6:1' })).status, 302, 'итог пары');
+  eq((await post(`/${bid}/swap`, { p1: '1', p2: '4' })).status, 302, 'ответ на обмен после итога');
+  eq(slot(0), rated[0], 'обмен после итога не должен проходить');
+  // Печатная страница: без шапки сайта, с сеткой, кнопкой печати и mailto со ссылкой.
+  const pr = await http(`/tournaments/${t}/print`);
+  eq(pr.status, 200, 'печатная страница');
+  assert(!/class="site-header"/.test(pr.text) && /data-print/.test(pr.text) && /bracket--print/.test(pr.text), 'печатная страница без сетки/кнопки или с шапкой');
+  assert(new RegExp(`href="mailto:\\?subject=[^"]*body=[^"]*tournaments%2F${t}%2Fprint`).test(pr.text), 'нет кнопки «Отправить ссылку по почте» с адресом страницы');
+  assert(new RegExp(`/tournaments/${t}/print`).test((await http(`/tournaments/${t}`)).text), 'на карточке турнира нет ссылки на печать');
+  eq((await http('/tournaments/999999/print')).status, 404, 'печать несуществующего турнира');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
+  db.prepare('DELETE FROM players WHERE id = ?').run(rookie);
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'посев по рейтингу расставил №1 и №2 по половинам, новичка — последним; обмен работает до итогов; печатная страница с PDF и mailto';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
