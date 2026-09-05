@@ -41,7 +41,7 @@ export default function mountServiceFiles(app, { db, config, root }) {
     db.prepare("SELECT id, COALESCE(published_at, date(created_at)) AS d FROM news WHERE is_published = 1 ORDER BY id")
       .all()
       .forEach((n) => add(`/news/${n.id}`, n.d, '0.6'));
-    db.prepare('SELECT id, end_date FROM tournaments ORDER BY id')
+    db.prepare('SELECT id, end_date FROM tournaments WHERE is_published = 1 ORDER BY id')
       .all()
       .forEach((t) => add(`/tournaments/${t.id}`, t.end_date, '0.6'));
     db.prepare('SELECT id FROM players WHERE anonymized_at IS NULL ORDER BY id')

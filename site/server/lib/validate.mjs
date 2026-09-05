@@ -19,7 +19,8 @@ export const CATEGORIES = ['A', 'B'];
 // Типы турниров по ТЗ п. 4.3: командные встречи, первенства, иные турниры.
 export const TOURNAMENT_KINDS = ['team', 'championship', 'other'];
 export const TOURNAMENT_KIND_RU = { team: 'Командная встреча', championship: 'Первенство', other: 'Турнир' };
-// Возраст турнира — свободная подпись («до 12», «взрослые», «45+»); фильтр по точному значению.
+// Возраст турнира: список (решение владельца 06.09.2026) + «ввод вручную» — своя подпись.
+export const TOURNAMENT_AGES = ['до 12', 'до 14', 'до 16', 'до 18', 'взрослые', '45+', '55+'];
 export const TOURNAMENT_STATUSES = ['upcoming', 'ongoing', 'finished'];
 export const TOURNAMENT_STATUS_RU = { upcoming: 'Предстоящий', ongoing: 'Идёт', finished: 'Завершён' };
 
@@ -278,6 +279,9 @@ export function tournamentInput(body) {
     city: str(body.city, 'Город', { max: 80, required: false }) || null,
     start_date,
     kind: body.kind ? oneOf(body.kind, 'Тип турнира', TOURNAMENT_KINDS) : 'other',
-    age_group: str(body.age_group, 'Возраст', { max: 40, required: false }) || null,
+    // Возраст: из списка либо «custom» + своё значение в age_group_custom.
+    age_group: body.age_group === 'custom'
+      ? (str(body.age_group_custom, 'Возраст (вручную)', { max: 40, required: false }) || null)
+      : (str(body.age_group, 'Возраст', { max: 40, required: false }) || null),
   };
 }

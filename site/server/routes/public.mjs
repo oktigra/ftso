@@ -133,7 +133,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
 
   // СКАЧАТЬ СЕТКУ: PDF и Word (решение владельца 05.09.2026). Публично, как и сама сетка.
   const tournamentSheet = (id) => {
-    const tournament = db.prepare('SELECT id, name, end_date, start_date, category, city, kind, age_group FROM tournaments WHERE id = ?').get(id);
+    const tournament = db.prepare('SELECT id, name, end_date, start_date, category, city, kind, age_group FROM tournaments WHERE id = ? AND is_published = 1').get(id);
     if (!tournament) return null;
     return sheetModel({ tournament, groups: listGroups(db, id), brackets: listBrackets(db, id), results: tournamentParticipants(db, id, LABELS) });
   };
@@ -175,7 +175,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
   app.get('/tournaments/:id/print', (req, res, next) => {
     if (!/^\d+$/.test(req.params.id)) return next();
     const tournament = db
-      .prepare('SELECT id, name, end_date, start_date, category, city, kind, age_group FROM tournaments WHERE id = ?')
+      .prepare('SELECT id, name, end_date, start_date, category, city, kind, age_group FROM tournaments WHERE id = ? AND is_published = 1')
       .get(Number(req.params.id));
     if (!tournament) return next();
     const url = `${req.protocol}://${req.get('host')}/tournaments/${tournament.id}/print`;
@@ -193,7 +193,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
   app.get('/tournaments/:id', (req, res, next) => {
     if (!/^\d+$/.test(req.params.id)) return next();
     const tournament = db
-      .prepare('SELECT id, name, end_date, start_date, category, city, kind, age_group FROM tournaments WHERE id = ?')
+      .prepare('SELECT id, name, end_date, start_date, category, city, kind, age_group FROM tournaments WHERE id = ? AND is_published = 1')
       .get(Number(req.params.id));
     if (!tournament) return next(); // -> общий 404-обработчик
     res.status(200).render('tournament', {

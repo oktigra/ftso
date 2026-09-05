@@ -74,7 +74,7 @@ export function tournamentStatus(t, today = new Date().toISOString().slice(0, 10
  * города и возраста — только те, что реально есть.
  */
 export function tournamentList(db, filters = {}) {
-  const where = [];
+  const where = ['t.is_published = 1'];
   const args = [];
   if (filters.month) { where.push("substr(t.end_date, 1, 7) = ?"); args.push(filters.month); }
   if (filters.city) { where.push('t.city = ?'); args.push(filters.city); }
@@ -104,10 +104,10 @@ export function siteAsset(db, key) {
  * Турниров за 12 месяцев, игроков в текущем снимке рейтинга, городов (игроки + турниры).
  */
 export function homeStats(db, standings) {
-  const year = db.prepare("SELECT COUNT(*) AS n FROM tournaments WHERE end_date >= date('now', '-12 months')").get().n;
+  const year = db.prepare("SELECT COUNT(*) AS n FROM tournaments WHERE is_published = 1 AND end_date >= date('now', '-12 months')").get().n;
   const cities = db.prepare(
     `SELECT COUNT(*) AS n FROM (SELECT city FROM players WHERE anonymized_at IS NULL AND city IS NOT NULL AND city <> ''
-       UNION SELECT city FROM tournaments WHERE city IS NOT NULL AND city <> '')`,
+       UNION SELECT city FROM tournaments WHERE is_published = 1 AND city IS NOT NULL AND city <> '')`,
   ).get().n;
   return [
     { value: String(year), label: 'турниров за год' },
@@ -120,7 +120,7 @@ const RU_MONTHS = ['января', 'февраля', 'марта', 'апреля
 /** Ближайший турнир (не завершённый) — для карточки на главной; null, если нет. */
 export function homeNextEvent(db) {
   const today = new Date().toISOString().slice(0, 10);
-  const t = db.prepare('SELECT id, name, start_date, end_date FROM tournaments WHERE end_date >= ? ORDER BY COALESCE(start_date, end_date), id LIMIT 1').get(today);
+  const t = db.prepare('SELECT id, name, start_date, end_date FROM tournaments WHERE is_published = 1 AND end_date >= ? ORDER BY COALESCE(start_date, end_date), id LIMIT 1').get(today);
   if (!t) return null;
   const d = t.start_date || t.end_date;
   const status = tournamentStatus(t, today);
@@ -134,9 +134,9 @@ export function homeNextEvent(db) {
 
 export function tournamentFilterOptions(db) {
   return {
-    cities: db.prepare("SELECT DISTINCT city FROM tournaments WHERE city IS NOT NULL AND city <> '' ORDER BY city").all().map((r) => r.city),
-    ages: db.prepare("SELECT DISTINCT age_group FROM tournaments WHERE age_group IS NOT NULL AND age_group <> '' ORDER BY age_group").all().map((r) => r.age_group),
-    months: db.prepare("SELECT DISTINCT substr(end_date, 1, 7) AS m FROM tournaments ORDER BY m DESC").all().map((r) => r.m),
+    cities: db.prepare("SELECT DISTINCT city FROM tournaments WHERE is_published = 1 AND city IS NOT NULL AND city <> '' ORDER BY city").all().map((r) => r.city),
+    ages: db.prepare("SELECT DISTINCT age_group FROM tournaments WHERE is_published = 1 AND age_group IS NOT NULL AND age_group <> '' ORDER BY age_group").all().map((r) => r.age_group),
+    months: db.prepare("SELECT DISTINCT substr(end_date, 1, 7) AS m FROM tournaments WHERE is_published = 1 ORDER BY m DESC").all().map((r) => r.m),
   };
 }
 

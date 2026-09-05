@@ -65,7 +65,10 @@ CREATE TABLE IF NOT EXISTS tournaments (
   city       TEXT,
   start_date TEXT,
   kind       TEXT NOT NULL DEFAULT 'other' CHECK (kind IN ('team','championship','other')),
-  age_group  TEXT
+  age_group  TEXT,
+  -- ЧЕРНОВИК / ОПУБЛИКОВАН (06.09.2026): черновик виден только в админке — ни в календаре,
+  -- ни на витрине, ни в sitemap, ни в рейтинге.
+  is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0,1))
 );
 
 -- discipline — разряд: 'single' одиночный, 'double' парный. Рейтинги считаются

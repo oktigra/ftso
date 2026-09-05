@@ -306,6 +306,12 @@ tbody tr:hover{background:var(--surface-2);}
 .print-table th, .print-table td{border:1px solid var(--border); padding:.35rem .55rem; text-align:left;}
 .print-table th{background:var(--surface-2);}
 .bracket--print .bracket__round{min-width:12rem;}
+/* Строки турниров: без JS показаны поля; с JS — текст, «Редактировать» открывает поля */
+/* без JS: только поля (.ed), текста (.ro) нет; с JS класс t-row--ro прячет поля, t-row--ed — текст */
+.t-row .ro{display:none;} .t-row .ed{display:inline-block;}
+.t-row.t-row--ro .ro{display:inline-block; padding:.3rem 0;} .t-row.t-row--ro .ed{display:none;}
+.t-row.t-row--ed .ro{display:none;} .t-row.t-row--ed .ed{display:inline-block;}
+.t-row.t-row--ed input[data-age-custom][hidden]{display:none;}
 @media print{
   .print-toolbar{display:none;}
   .bracket{overflow:visible; flex-wrap:nowrap;} .bracket__pair{break-inside:avoid;} .bracket__round{min-width:10rem;}
