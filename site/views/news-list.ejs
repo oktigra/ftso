@@ -9,8 +9,16 @@
 </section>
 <section class="section-pad section-pad--tight">
   <div class="container">
+    <form method="get" action="/news" class="filters" aria-label="Поиск по новостям">
+      <div class="field field--wide">
+        <label for="news-q">Поиск по новостям</label>
+        <input id="news-q" type="search" name="q" value="<%= q %>" maxlength="80" placeholder="слово из заголовка или текста">
+      </div>
+      <div class="field"><button class="btn btn--secondary" type="submit">Найти</button></div>
+      <% if (q) { %><div class="field"><a class="btn btn--secondary" href="/news">Сбросить</a></div><% } %>
+    </form>
     <% if (!news.length) { %>
-      <div class="panel notice">Новостей пока нет.</div>
+      <div class="panel notice"><%= q ? 'По запросу «' + q + '» ничего не найдено.' : 'Новостей пока нет.' %></div>
     <% } else { %>
       <div class="news-grid">
         <% news.forEach(function (n) { %>

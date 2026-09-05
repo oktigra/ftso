@@ -19,9 +19,14 @@ export const DIRECTORIES = {
     path: '/coaches',
     orderBy: 'full_name',
     personal: true,
+    // ТЗ п. 4.5: специализация, квалификация, категории, клуб, контакт; фильтр по городу или клубу.
     fields: [
       { name: 'full_name', label: 'ФИО', required: true, max: 120 },
-      { name: 'club', label: 'Клуб', max: 160 },
+      { name: 'city', label: 'Город', max: 80, filter: true },
+      { name: 'club', label: 'Клуб', max: 160, filter: true },
+      { name: 'specialization', label: 'Специализация', max: 160 },
+      { name: 'qualification', label: 'Квалификация', max: 120 },
+      { name: 'groups', label: 'С кем работает', max: 160 },
       { name: 'contact', label: 'Контакт', max: 160 },
       { name: 'note', label: 'Примечание', max: 500 },
     ],
@@ -47,10 +52,16 @@ export const DIRECTORIES = {
     path: '/courts',
     orderBy: 'name',
     personal: false,
+    // ТЗ п. 4.6: адрес, покрытие, количество кортов, сезонность, контакт, карта.
     fields: [
       { name: 'name', label: 'Название', required: true, max: 160 },
+      { name: 'city', label: 'Город', max: 80, filter: true },
       { name: 'address', label: 'Адрес', max: 200 },
-      { name: 'surface', label: 'Покрытие', max: 80 },
+      { name: 'surface', label: 'Покрытие', max: 80, filter: true },
+      { name: 'courts_count', label: 'Кортов', max: 10 },
+      { name: 'season', label: 'Сезонность', max: 80 },
+      { name: 'club', label: 'Клуб / организация', max: 160 },
+      { name: 'contact', label: 'Контакт', max: 160 },
       { name: 'map_url', label: 'Ссылка на карту', max: 300 },
       { name: 'note', label: 'Примечание', max: 500 },
     ],
@@ -64,9 +75,11 @@ export const DIRECTORIES = {
     personal: false,
     fields: [
       { name: 'name', label: 'Название', required: true, max: 160 },
+      { name: 'city', label: 'Город', max: 80, filter: true },
       { name: 'address', label: 'Адрес', max: 200 },
       { name: 'contact', label: 'Контакт', max: 160 },
       { name: 'site', label: 'Сайт', max: 200 },
+      { name: 'map_url', label: 'Ссылка на карту', max: 300 },
       { name: 'note', label: 'Примечание', max: 500 },
     ],
   },
@@ -95,8 +108,32 @@ export function directoryInput(spec, body) {
 const columnsOf = (spec) =>
   spec.fields.map((f) => f.name).concat(spec.personal ? ['basis', 'document_date'] : []);
 
-export function listDirectory(db, spec) {
-  return db.prepare(`SELECT * FROM ${spec.table} ORDER BY ${spec.orderBy}`).all();
+/**
+ * Список раздела с фильтрами по полям, помеченным filter:true (ТЗ 4.5/4.6:
+ * тренеры — город или клуб; корты — город, покрытие; клубы — город). Значение
+ * фильтра сверяется по точному совпадению, имена полей — только из описания.
+ */
+export function listDirectory(db, spec, filters = {}) {
+  const where = [];
+  const args = [];
+  for (const f of spec.fields) {
+    if (f.filter && filters[f.name]) { where.push(`${f.name} = ?`); args.push(filters[f.name]); }
+  }
+  return db
+    .prepare(`SELECT * FROM ${spec.table} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${spec.orderBy}`)
+    .all(...args);
+}
+
+/** Значения для селектов фильтров — только те, что реально есть в разделе. */
+export function directoryFilterOptions(db, spec) {
+  const out = {};
+  for (const f of spec.fields) {
+    if (!f.filter) continue;
+    out[f.name] = db
+      .prepare(`SELECT DISTINCT ${f.name} AS v FROM ${spec.table} WHERE ${f.name} IS NOT NULL AND ${f.name} <> '' ORDER BY v`)
+      .all().map((r) => r.v);
+  }
+  return out;
 }
 
 export function createDirectoryRow(db, spec, data) {

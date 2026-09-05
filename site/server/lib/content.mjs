@@ -17,13 +17,20 @@ export function newsInput(body) {
   };
 }
 
-export function publishedNews(db, limit = 50) {
-  return db
+export function publishedNews(db, limit = 50, q = '') {
+  const rows = db
     .prepare(
       `SELECT * FROM news WHERE is_published = 1
-        ORDER BY COALESCE(published_at, date(created_at)) DESC, id DESC LIMIT ?`,
+        ORDER BY COALESCE(published_at, date(created_at)) DESC, id DESC ${q ? '' : 'LIMIT ?'}`,
     )
-    .all(limit);
+    .all(...(q ? [] : [limit]));
+  if (!q) return rows;
+  // Поиск (ТЗ 4.2) — в JS, а не LIKE: SQLite не знает регистра кириллицы
+  // («ракетки» и «РАКЕТКИ» для LIKE — разные строки). Новостей — сотни, не миллионы.
+  const needle = q.toLowerCase();
+  return rows
+    .filter((n) => [n.title, n.summary, n.body].some((v) => String(v || '').toLowerCase().includes(needle)))
+    .slice(0, limit);
 }
 
 export function newsById(db, id, { publishedOnly = false } = {}) {
