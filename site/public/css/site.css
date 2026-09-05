@@ -296,6 +296,20 @@ tbody tr:hover{background:var(--surface-2);}
   .header-inner{gap:.6rem;}
   .brand-sub{display:none;}
 }
+/* Печатная версия рейтинга (/rating/print): на экране — простая страница, на бумаге — только таблица. */
+.print-sheet{padding:1.5rem 0 3rem;}
+.print-toolbar{display:flex; gap:.6rem; flex-wrap:wrap; margin-bottom:1.25rem;}
+.print-table{width:100%; border-collapse:collapse; font-size:.92rem;}
+.print-table th, .print-table td{border:1px solid var(--border); padding:.35rem .55rem; text-align:left;}
+.print-table th{background:var(--surface-2);}
+@media print{
+  .print-toolbar{display:none;}
+  body{background:#fff; color:#000;}
+  .print-sheet{padding:0;}
+  .print-table th, .print-table td{border-color:#999;}
+  .print-table th{background:#eee;}
+  .print-table tr{page-break-inside:avoid;}
+}
 /* mobile performance — тушим тяжёлые для телефона эффекты */
 @media (max-width:960px){
   body::before{display:none;}

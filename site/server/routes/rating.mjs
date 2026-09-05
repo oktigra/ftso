@@ -2,6 +2,24 @@ import { currentStandings, statusLabel, RATING_CONFIG, DISCIPLINE_RU } from '../
 import { toCSV as engineCSV } from '../../../rating/export.mjs';
 import { AGE_GROUPS, SEXES } from '../lib/validate.mjs';
 import { AGE_SLICES, sliceById } from '../lib/age.mjs';
+import { xlsxFromRows } from '../lib/xlsx.mjs';
+
+/** Строки витрины под выгрузку (CSV и XLSX — один состав, ТЗ 4.4). */
+function exportRows(table, query) {
+  return [
+    ['Место', 'Игрок', 'Город', 'Пол', 'Возраст', 'Возрастная группа', 'Очки', 'Изменение'],
+    ...applyFilters(table, query).map((p) => [
+      p.rank,
+      p.playerName,
+      p.city,
+      SEX_RU[p.sex] || p.sex,
+      p.age === null || p.age === undefined ? '' : p.age,
+      p.ageGroup || '',
+      p.ratingPoints,
+      p.change.label,
+    ]),
+  ];
+}
 
 const SEX_RU = { M: 'муж.', F: 'жен.' };
 const BOM = '﻿';
@@ -88,19 +106,32 @@ export default function mountRating(app, { db }) {
     }
 
     // По умолчанию — ровно то, что видно в таблице (с учётом фильтров).
-    const rows = [
-      ['Место', 'Игрок', 'Город', 'Пол', 'Возраст', 'Возрастная группа', 'Очки', 'Изменение'],
-      ...applyFilters(table, req.query).map((p) => [
-        p.rank,
-        p.playerName,
-        p.city,
-        SEX_RU[p.sex] || p.sex,
-        p.age === null || p.age === undefined ? '' : p.age,
-        p.ageGroup || '',
-        p.ratingPoints,
-        p.change.label,
-      ]),
-    ];
+    const rows = exportRows(table, req.query);
     res.send(BOM + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n');
+  });
+
+  // Excel (ТЗ 4.4): настоящий .xlsx тем же составом, что и таблица.
+  app.get('/rating.xlsx', (req, res) => {
+    const standings = currentStandings(db);
+    const table = standings ? (pickDiscipline(req.query) === 'double' ? standings.doubles : standings.players) : [];
+    res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="rating-${standings ? standings.asOf : 'empty'}.xlsx"`);
+    res.send(xlsxFromRows(standings ? exportRows(table, req.query) : [['Рейтинг ещё не рассчитан']], { sheet: 'Рейтинг' }));
+  });
+
+  // PDF (ТЗ 4.4): печатная версия без шапки/подвала — «Сохранить как PDF»
+  // в диалоге печати браузера; отдельной PDF-библиотеки не нужно.
+  app.get('/rating/print', (req, res) => {
+    const standings = currentStandings(db);
+    const discipline = pickDiscipline(req.query);
+    const table = standings ? (discipline === 'double' ? standings.doubles : standings.players) : [];
+    res.render('rating-print', {
+      title: 'Рейтинг игроков — ФТСО',
+      standings,
+      rows: standings ? exportRows(table, req.query) : [],
+      disciplineRu: DISCIPLINE_RU,
+      discipline,
+      statusText: standings ? statusLabel(standings.status) : null,
+    });
   });
 }

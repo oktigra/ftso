@@ -9,6 +9,12 @@
   // правило на все формы админки: 05.09.2026 владелец удалил сам себя одним
   // кликом. Текст — из data-confirm кнопки либо общий. Без JS форма уйдёт как
   // раньше — сервер и так проверяет права и CSRF.
+  // Печатная версия рейтинга: кнопка «Сохранить как PDF» — это window.print().
+  document.addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-print]') : null;
+    if (b) window.print();
+  });
+
   document.addEventListener('submit', function (e) {
     var btn = e.submitter;
     if (!btn || !btn.classList || !btn.classList.contains('btn--danger')) return;
