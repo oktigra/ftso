@@ -1,4 +1,5 @@
 import express from 'express';
+import { seoFor, SEO_DEFAULTS } from './lib/seo.mjs';
 import session from 'express-session';
 import helmet from 'helmet';
 import { randomBytes, createHash } from 'node:crypto';
@@ -193,6 +194,9 @@ export function createApp(config) {
     res.locals.user = currentUser(req);
     // Кнопка «Вход» в шапке: игрок или представитель уже в кабинете — «Кабинет».
     res.locals.cabinetSignedIn = Boolean(req.session && (req.session.player || req.session.guardian));
+    // SEO (ТЗ п. 5): правка из админки по адресу + заготовка раздела.
+    res.locals.seo = seoFor(db, req.path);
+    res.locals.seoDefault = SEO_DEFAULTS[req.path] || '';
     res.locals.sections = res.locals.user ? ROLE_SECTIONS[res.locals.user.role] || [] : [];
     next();
   });

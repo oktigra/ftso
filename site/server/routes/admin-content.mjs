@@ -10,6 +10,7 @@ import { safeRefererPath } from '../lib/safe-path.mjs';
 import { logAction } from '../lib/action-log.mjs';
 import { intAtLeast, str, ValidationError } from '../lib/validate.mjs';
 import { parseMultipart } from '../lib/multipart.mjs';
+import { SEO_PAGES, SEO_DEFAULTS, seoFor, saveSeo } from '../lib/seo.mjs';
 import { storeUpload, deleteUpload, uploadById, sendUpload } from '../lib/uploads.mjs';
 import {
   DIRECTORIES,
@@ -320,6 +321,31 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       deleteDirectoryRow(db, spec, id);
       logAction(db, req.session.user.id, `${spec.key}.delete`, id, null);
       flash(req, res, 'ok', 'Запись удалена.', `/admin/directories/${spec.key}`);
+    }),
+  );
+
+  // --- SEO (ТЗ п. 5): title/description разделов ---------------------------
+  app.get('/admin/seo', requireRole(...CONTENT_ROLES), (req, res) => {
+    res.render('admin/seo', {
+      title: 'SEO страниц — админка ФТСО',
+      pages: SEO_PAGES.map(([path, label]) => ({ path, label, current: seoFor(db, path), fallback: SEO_DEFAULTS[path] || '' })),
+    });
+  });
+
+  app.post(
+    '/admin/seo',
+    requireRole(...CONTENT_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const path = String(req.body.path || '');
+      if (!SEO_PAGES.some(([p]) => p === path)) throw new ValidationError('Неизвестная страница');
+      const data = {
+        title: str(req.body.title, 'Title', { max: 120, required: false }),
+        description: str(req.body.description, 'Description', { max: 300, required: false }),
+      };
+      saveSeo(db, path, data);
+      logAction(db, req.session.user.id, 'seo.update', null, { path, ...data });
+      flash(req, res, 'ok', `SEO для «${path}» сохранено.`, '/admin/seo');
     }),
   );
 

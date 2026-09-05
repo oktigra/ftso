@@ -3,8 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title><%= title %></title>
-<meta name="description" content="<%= typeof metaDescription !== 'undefined' && metaDescription ? metaDescription : 'Официальный сайт Федерации тенниса Смоленской области: календарь турниров, региональный рейтинг игроков, новости.' %>">
+<%
+/* SEO (ТЗ п. 5): правка секретаря (seo) > description маршрута (metaDescription) > заготовка раздела. */
+const seoTitle = (typeof seo !== 'undefined' && seo && seo.title) ? seo.title : title;
+const seoDesc = (typeof seo !== 'undefined' && seo && seo.description) ? seo.description
+  : (typeof metaDescription !== 'undefined' && metaDescription) ? metaDescription
+  : (typeof seoDefault !== 'undefined' && seoDefault) ? seoDefault
+  : 'Официальный сайт Федерации тенниса Смоленской области: календарь турниров, региональный рейтинг игроков, новости.';
+%>
+<title><%= seoTitle %></title>
+<meta name="description" content="<%= seoDesc %>">
 <%
 /* Канонический адрес — без query и без хвостового «/», один на страницу: копии
    с www и с параметрами фильтров рейтинга поисковик считает одной страницей.
@@ -14,8 +22,8 @@
 <link rel="canonical" href="<%= canonicalUrl %>">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="ФТСО — Федерация тенниса Смоленской области">
-<meta property="og:title" content="<%= title %>">
-<meta property="og:description" content="<%= typeof metaDescription !== 'undefined' && metaDescription ? metaDescription : 'Официальный сайт Федерации тенниса Смоленской области: календарь турниров, региональный рейтинг игроков, новости.' %>">
+<meta property="og:title" content="<%= seoTitle %>">
+<meta property="og:description" content="<%= seoDesc %>">
 <meta property="og:url" content="<%= canonicalUrl %>">
 <meta property="og:image" content="<%= siteUrl %>/static/img/og-ftso.png">
 <meta property="og:image:width" content="1200">

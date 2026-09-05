@@ -21,6 +21,7 @@ export default function mountPlayer(app, { db, config }) {
     if (!profile) return next(); // -> общий 404-обработчик
     res.render('player', {
       title: `${profile.fullName} — профиль игрока — ФТСО`,
+      metaDescription: `${profile.fullName}${profile.city ? ', ' + profile.city : ''} — результаты соревнований, рейтинговые очки и сыгранные матчи на сайте Федерации тенниса Смоленской области.`,
       profile,
       sexRu: SEX_RU,
       disciplineRu: DISCIPLINE_RU,

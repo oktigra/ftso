@@ -1,0 +1,28 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>SEO страниц</h1>
+  <%- include('_shell') %>
+
+  <div class="panel">
+    <p class="muted">Title и description для разделов сайта (ТЗ п. 5). Пусто — берётся заготовка. Новости, турниры и профили
+      игроков описываются сами из содержимого. Description — 1–2 фразы до 160 знаков, title — до 60.</p>
+    <% pages.forEach(function (p) { %>
+      <form method="post" action="/admin/seo" class="inline-form seo-row">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="path" value="<%= p.path %>">
+        <div class="field"><label><%= p.label %> <code><%= p.path %></code></label></div>
+        <div class="field field--wide"><label for="st-<%= p.path %>">Title</label>
+          <input id="st-<%= p.path %>" name="title" maxlength="120" value="<%= p.current && p.current.title ? p.current.title : '' %>" placeholder="по умолчанию — заголовок раздела"></div>
+        <div class="field field--wide"><label for="sd-<%= p.path %>">Description</label>
+          <input id="sd-<%= p.path %>" name="description" maxlength="300" value="<%= p.current && p.current.description ? p.current.description : '' %>" placeholder="<%= p.fallback %>"></div>
+        <div class="field"><button class="btn btn--secondary btn--small" type="submit">Сохранить</button></div>
+      </form>
+    <% }); %>
+  </div>
+</div>
+</main>
+
+<%- include('../partials/footer') %>

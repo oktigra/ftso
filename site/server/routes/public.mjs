@@ -13,6 +13,7 @@ import {
   ValidationError, CATEGORIES, TOURNAMENT_KINDS, TOURNAMENT_KIND_RU, TOURNAMENT_STATUSES, TOURNAMENT_STATUS_RU,
 } from '../lib/validate.mjs';
 import { DIRECTORIES, listDirectory, directoryFilterOptions } from '../lib/directories.mjs';
+import { descriptionFrom } from '../lib/seo.mjs';
 import {
   publishedNews,
   newsById,
@@ -76,7 +77,12 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
     // publishedOnly: черновик по прямой ссылке наружу не отдаём.
     const item = newsById(db, Number(req.params.id), { publishedOnly: true });
     if (!item) return next();
-    res.render('news-item', { title: `${item.title} — ФТСО`, item, attachments: newsAttachments(db, item.id) });
+    res.render('news-item', {
+      title: `${item.title} — ФТСО`,
+      metaDescription: descriptionFrom(item.summary || item.body),
+      item,
+      attachments: newsAttachments(db, item.id),
+    });
   });
 
   // --- турниры -------------------------------------------------------------
@@ -112,6 +118,11 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
     if (!tournament) return next(); // -> общий 404-обработчик
     res.status(200).render('tournament', {
       title: `${tournament.name} — ФТСО`,
+      metaDescription: descriptionFrom(
+        `${({ team: 'Командная встреча', championship: 'Первенство', other: 'Турнир' })[tournament.kind] || 'Турнир'} «${tournament.name}»` +
+        `${tournament.city ? ', ' + tournament.city : ''}, ${tournament.start_date ? tournament.start_date + ' — ' : ''}${tournament.end_date}, ` +
+        `категория ${tournament.category}${tournament.age_group ? ', ' + tournament.age_group : ''}. Участники, результаты и матчи — на сайте Федерации тенниса Смоленской области.`,
+      ),
       tournament,
       // Участники и матчи со ссылками на публичные профили /player/:id.
       participants: tournamentParticipants(db, tournament.id, LABELS),
