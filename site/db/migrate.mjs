@@ -172,6 +172,9 @@ function upgradePlayerAccounts(db) {
   return true;
 }
 
+import { DIRECTORIES } from '../server/lib/directories.mjs';
+import { applyDirectorySeed } from '../server/lib/directory-seed.mjs';
+
 export function migrate() {
   const db = getDb();
   // ПОРЯДОК ВАЖЕН И НЕ СЛУЧАЕН:
@@ -236,6 +239,13 @@ export function migrate() {
   // кортов и всплыло вариантом фильтра на витрине — чистим в NULL (примечание остаётся).
   db.prepare("UPDATE courts SET surface = NULL WHERE surface = 'уточнить'").run();
   db.prepare("UPDATE courts SET courts_count = NULL WHERE courts_count = 'уточнить'").run();
+  // Ред. 2 стартового списка (05.09.2026 23:00, уточнение браузерным агентом): ПУСТЫЕ поля
+  // уже загруженных записей дозаполняются, заполненное не трогается; новых строк не вставляет
+  // (это делает кнопка в админке). На чистой базе — пусто, поэтому тесты не затрагивает.
+  for (const key of ['courts', 'clubs']) {
+    const spec = DIRECTORIES[key];
+    if (db.prepare(`SELECT 1 FROM ${spec.table} LIMIT 1`).get()) applyDirectorySeed(db, spec, { insert: false });
+  }
   // ТЗ 4.5/4.6 «фото» у тренеров, кортов, клубов.
   for (const t of ['coaches', 'courts', 'clubs']) addColumnIfMissing(db, t, 'photo_upload_id', 'INTEGER REFERENCES uploads(id) ON DELETE SET NULL');
   addColumnIfMissing(db, 'users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
