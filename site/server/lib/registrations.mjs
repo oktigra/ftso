@@ -36,14 +36,53 @@ export function normalizeName(name) {
  * ВОЗМОЖНЫЕ СОВПАДЕНИЯ, а не автослияние: одинаковое ФИО — это подсказка
  * модератору, а не факт. Полных тёзок в областном теннисе достаточно, и
  * склеивать двух людей в одного нельзя — это исказит рейтинг обоим.
+ *
+ * С 05.09.2026 (решение владельца): тёзка с ДРУГОЙ датой рождения — не
+ * совпадение, подсказка не показывается. Совпадением остаётся тёзка с той
+ * же датой либо без даты у одной из сторон.
  */
-export function findNameMatches(db, fullName) {
+export function findNameMatches(db, fullName, birthDate = null) {
   const target = normalizeName(fullName);
   if (!target) return [];
   return db
-    .prepare('SELECT id, full_name, city, sex, age_group FROM players')
+    .prepare('SELECT id, full_name, city, sex, age_group, birth_date FROM players WHERE anonymized_at IS NULL')
     .all()
-    .filter((p) => normalizeName(p.full_name) === target);
+    .filter((p) => normalizeName(p.full_name) === target)
+    .filter((p) => !birthDate || !p.birth_date || p.birth_date === birthDate);
+}
+
+/**
+ * ДУБЛИ ИГРОКОВ — правила владельца 05.09.2026, стоп до секретаря:
+ *  · e-mail взрослого заявителя уже у кабинета игрока или у ждущей заявки —
+ *    дубль (адрес представителя не считается: родитель сам может играть, а
+ *    у двух детей один родитель);
+ *  · ФИО + дата рождения совпали с игроком или ждущей заявкой — дубль;
+ *  · полный тёзка с другой датой — НЕ дубль, регистрируется без предупреждений.
+ * Возвращает текст причины либо null. Чужих данных в тексте нет.
+ */
+export function findDuplicate(db, { full_name, birth_date = null, email = null, guardian = null, exceptRegistrationId = null }) {
+  const support = 'Если у вас есть вопросы — напишите обращение в поддержку через страницу «Контакты».';
+  if (email && !guardian) {
+    const e = String(email).trim().toLowerCase();
+    const acc = db.prepare('SELECT 1 AS ok FROM player_accounts WHERE lower(email) = ?').get(e);
+    const pend = db.prepare(
+      "SELECT 1 AS ok FROM registrations WHERE status = 'pending' AND guardian_email IS NULL AND lower(email) = ? AND id IS NOT ?",
+    ).get(e, exceptRegistrationId);
+    if (acc || pend) return `Такой адрес электронной почты уже зарегистрирован. ${support}`;
+  }
+  if (full_name && birth_date) {
+    const target = normalizeName(full_name);
+    const samePlayer = db
+      .prepare('SELECT id, full_name FROM players WHERE birth_date = ? AND anonymized_at IS NULL')
+      .all(birth_date)
+      .find((p) => normalizeName(p.full_name) === target);
+    const sameReg = db
+      .prepare("SELECT id, full_name FROM registrations WHERE status = 'pending' AND birth_date = ? AND id IS NOT ?")
+      .all(birth_date, exceptRegistrationId)
+      .find((r) => normalizeName(r.full_name) === target);
+    if (samePlayer || sameReg) return `Участник с такими ФИО и датой рождения уже зарегистрирован. ${support}`;
+  }
+  return null;
 }
 
 export function createRegistration(db, {
@@ -127,6 +166,11 @@ export function approveRegistration(db, registrationId, { playerId = null, userI
     if (reg.status !== 'pending') throw new Error('Заявка уже рассмотрена');
 
     let id = playerId;
+    // «Новым игроком» при живом двойнике (ФИО + дата) заводить нельзя — только привязка.
+    if (id === null) {
+      const twin = findNameMatches(db, reg.full_name, reg.birth_date).find((p) => p.birth_date && p.birth_date === reg.birth_date);
+      if (twin) throw new Error(`Игрок с такими ФИО и датой рождения уже есть (#${twin.id}) — одобрите с привязкой к нему`);
+    }
     if (id === null) {
       id = Number(
         db

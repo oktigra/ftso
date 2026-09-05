@@ -4,7 +4,7 @@
 // игрок. Прямой записи в players отсюда нет: попасть в players значит попасть
 // в открытый рейтинг, и решение об этом принимает человек, а не отправитель формы.
 import { registrationInput, ValidationError, splitName } from '../lib/validate.mjs';
-import { createRegistration, byToken } from '../lib/registrations.mjs';
+import { createRegistration, byToken, findDuplicate } from '../lib/registrations.mjs';
 import { queueMail, flushOutbox, mailSubmitted } from '../lib/mailer.mjs';
 import { LEGAL_VERSION_LABEL, OPERATOR } from '../lib/legal.mjs';
 
@@ -72,6 +72,11 @@ export default function mountRegister(app, { db, config, limitRegister }) {
           'Без согласия на обработку персональных данных заявку принять нельзя — это её правовое основание.',
         );
       }
+
+      // ДУБЛИ — стоп ДО секретаря (правила владельца 05.09.2026): занятая почта,
+      // ФИО + дата рождения. Тёзка с другой датой проходит молча.
+      const dup = findDuplicate(db, data);
+      if (dup) throw new ValidationError(dup);
 
       // Черновик держим до успеха: упадёт валидация — поля вернутся заполненными.
       req.session.registerDraft = {

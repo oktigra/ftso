@@ -1410,6 +1410,63 @@ await check('одобрение заводит игрока и уведомля�
   return 'одобрение заводит игрока с открытым профилем (без записи distribution); отказ с причиной виден заявителю, оба уведомления в очереди';
 });
 
+await check('дубли игроков: занятая почта и ФИО+дата — стоп до секретаря; тёзка с другой датой — без предупреждений; РНИ уникален', async () => {
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
+  const base = { city: 'Смоленск', sex: 'M', consent_processing: '1' };
+  const first = await submitRegistration({ ...base, full_name: 'Дублёв Иван Петрович', birth_date: '1991-02-03', email: 'dubl-one@example.com' });
+  eq(first.res.status, 302, 'первая заявка принята');
+  // 1. Та же почта, другой человек — стоп, заявки нет, отсылка в поддержку.
+  const sameMail = await submitRegistration({ ...base, full_name: 'Другой Человек Совсем', birth_date: '1985-06-07', email: 'dubl-one@example.com' });
+  eq(sameMail.res.status, 400, 'та же почта должна отбиваться');
+  assert(/адрес электронной почты уже зарегистрирован/i.test(sameMail.res.text) && /Контакты/.test(sameMail.res.text), 'нет сообщения про занятую почту и поддержку');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM registrations WHERE full_name = 'Другой Человек Совсем'").get().n, 0, 'заявка с занятой почтой не должна создаваться');
+  // 2. ФИО + дата рождения совпали (другая почта, ё/е и регистр) — стоп.
+  const sameMan = await submitRegistration({ ...base, full_name: 'дублев иван петрович', birth_date: '1991-02-03', email: 'dubl-two@example.com' });
+  eq(sameMan.res.status, 400, 'ФИО + дата должны отбиваться');
+  assert(/ФИО и датой рождения уже зарегистрирован/i.test(sameMan.res.text), 'нет сообщения про ФИО + дату');
+  // 3. Полный тёзка с ДРУГОЙ датой — проходит без предупреждений.
+  const twin = await submitRegistration({ ...base, full_name: 'Дублёв Иван Петрович', birth_date: '2001-02-03', email: 'dubl-three@example.com' });
+  eq(twin.res.status, 302, 'тёзка с другой датой должен регистрироваться');
+  const twinReg = db.prepare("SELECT id FROM registrations WHERE email = 'dubl-three@example.com'").get();
+  assert(twinReg, 'заявка тёзки не создана');
+  // Секретарю по тёзке с другой датой подсказка «Возможное совпадение» не показывается.
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const regsPage = await http('/admin/registrations', { jar });
+  const twinBlock = regsPage.text.slice(regsPage.text.indexOf('dubl-three@example.com'), regsPage.text.indexOf('dubl-three@example.com') + 3000);
+  // 4. Почта игрока с кабинетом тоже занята: одобряем первую заявку → аккаунт → повтор с той же почтой отбит.
+  const _csrf = tokenFrom(regsPage.text);
+  const firstReg = db.prepare("SELECT id FROM registrations WHERE email = 'dubl-one@example.com'").get();
+  eq((await http(`/admin/registrations/${firstReg.id}/approve`, { method: 'POST', form: { _csrf }, jar })).status, 302, 'одобрение первой');
+  assert(db.prepare("SELECT 1 FROM player_accounts WHERE email = 'dubl-one@example.com'").get(), 'кабинет не заведён');
+  const afterAcc = await submitRegistration({ ...base, full_name: 'Ещё Один Другой', birth_date: '1970-01-02', email: 'dubl-one@example.com' });
+  eq(afterAcc.res.status, 400, 'почта кабинета должна быть занята');
+  // Заявка тёзки одобряется «новым игроком» без стопа (даты разные).
+  eq((await http(`/admin/registrations/${twinReg.id}/approve`, { method: 'POST', form: { _csrf }, jar })).status, 302, 'одобрение тёзки');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM players WHERE full_name = 'Дублёв Иван Петрович'").get().n, 2, 'два тёзки с разными датами — два игрока');
+  // 5. Админка: создать ФИО + дата при живом игроке — стоп; РНИ дважды — стоп; индекс СУБД тоже держит.
+  const p1 = db.prepare("SELECT id FROM players WHERE full_name = 'Дублёв Иван Петрович' AND birth_date = '1991-02-03'").get();
+  const form = { _csrf, last_name: 'Дублёв', first_name: 'Иван', middle_name: 'Петрович', city: 'Вязьма', sex: 'M', birth_date: '1991-02-03' };
+  eq((await http('/admin/players', { method: 'POST', form, jar })).status, 302, 'ответ админки');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM players WHERE full_name = 'Дублёв Иван Петрович'").get().n, 2, 'админка завела дубль по ФИО + дате');
+  eq((await http('/admin/players', { method: 'POST', form: { ...form, birth_date: '1999-09-09', rni: 'RNI-777' }, jar })).status, 302, 'тёзка с другой датой из админки');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM players WHERE full_name = 'Дублёв Иван Петрович'").get().n, 3, 'тёзка с другой датой из админки должен создаваться');
+  eq((await http('/admin/players', { method: 'POST', form: { ...form, last_name: 'Рниев', birth_date: '1998-08-08', rni: 'RNI-777' }, jar })).status, 302, 'ответ на второй РНИ');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM players WHERE rni = 'RNI-777'").get().n, 1, 'РНИ выдан дважды');
+  let dbErr = '';
+  try { db.prepare("INSERT INTO players (full_name, city, sex, rni) VALUES ('Мимо Формы','Смоленск','M','RNI-777')").run(); } catch (e) { dbErr = e.message; }
+  assert(/UNIQUE/i.test(dbErr), 'индекс СУБД не держит уникальность РНИ');
+  // Правка: присвоить чужой РНИ — стоп.
+  eq((await http(`/admin/players/${p1.id}/update`, { method: 'POST', form: { ...form, rni: 'RNI-777' }, jar })).status, 302, 'ответ на правку');
+  eq(db.prepare('SELECT rni FROM players WHERE id = ?').get(p1.id).rni, null, 'чужой РНИ присвоен правкой');
+  // Уборка.
+  journal.withConsentErasure(db, () => {
+    db.prepare("DELETE FROM registrations WHERE email LIKE 'dubl-%@example.com'").run();
+    db.prepare("DELETE FROM players WHERE full_name IN ('Дублёв Иван Петрович','Рниев Иван Петрович')").run();
+  });
+  db.prepare("DELETE FROM write_attempts").run(); // тест сделал много POST — счётчики (и админский) обнуляем
+  return `почта ×2 → 400 (заявка и кабинет), ФИО+дата → 400, тёзка с другой датой → 302 и одобрен новым; админка: ФИО+дата стоп, тёзка ок, РНИ дважды стоп (+UNIQUE в СУБД), правка чужим РНИ стоп`;
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
@@ -3202,12 +3259,13 @@ await check('родитель, который сам играет: ОДИН вх
   const PARENT = 'Играев Роман Сергеевич';
   const PARENT_MAIL = 'playing-parent@example.com';
   const PARENT_PASS = 'ракетка-и-струны-2026';
-  await submitRegistration({
+  const parentSubmit = await submitRegistration({
     full_name: PARENT, city: 'Смоленск', sex: 'M', birth_date: '1988-03-12',
     email: PARENT_MAIL, consent_processing: '1', consent_distribution: '1',
   });
+  eq(parentSubmit.res.status, 302, 'заявка родителя');
   const reg = db.prepare('SELECT * FROM registrations WHERE email = ?').get(PARENT_MAIL);
-  await approveByAdmin(reg.id);
+  eq((await approveByAdmin(reg.id)).status, 302, 'одобрение заявки родителя');
   const invite = db
     .prepare("SELECT body FROM mail_outbox WHERE to_email = ? AND kind = 'cabinet.invite' ORDER BY id DESC LIMIT 1")
     .get(PARENT_MAIL);

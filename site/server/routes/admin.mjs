@@ -26,6 +26,7 @@ import {
   pendingRegistrations,
   decidedRegistrations,
   findNameMatches,
+  findDuplicate,
   approveRegistration,
   rejectRegistration,
   byId as registrationById,
@@ -167,6 +168,12 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // Публикация результатов — по факту участия (п. 5 ч. 1 ст. 6), поэтому
       // ни флага «публикуется», ни основания публикации у карточки нет.
       // Согласие по ст. 10.1 — только на фото, и оно даётся в кабинете.
+      // ДУБЛИ: ФИО + дата рождения и РНИ — стоп; тёзка с другой датой — можно.
+      const dup = findDuplicate(db, { full_name: data.full_name, birth_date: data.birth_date });
+      if (dup) throw new ValidationError(dup.replace(/ Если у вас.*$/, ''));
+      if (data.rni && db.prepare('SELECT id FROM players WHERE rni = ?').get(data.rni)) {
+        throw new ValidationError(`РНИ ${data.rni} уже у игрока #${db.prepare('SELECT id FROM players WHERE rni = ?').get(data.rni).id}`);
+      }
       const info = db
         .prepare('INSERT INTO players (full_name, city, sex, birth_date, rni) VALUES (?, ?, ?, ?, ?)')
         .run(data.full_name, data.city, data.sex, data.birth_date, data.rni);
@@ -183,8 +190,16 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     guard((req, res) => {
       const id = intAtLeast(req.params.id, 'id');
       const data = playerInput(req.body);
-      const before = db.prepare('SELECT id FROM players WHERE id = ?').get(id);
+      const before = db.prepare('SELECT id, birth_date FROM players WHERE id = ?').get(id);
       if (!before) throw new ValidationError('Игрок не найден');
+      // ДУБЛИ при правке: ФИО + дата (с учётом сохраняемой даты) и РНИ — не про себя.
+      const twin = findNameMatches(db, data.full_name, data.birth_date || before.birth_date)
+        .find((p) => p.id !== id && p.birth_date && p.birth_date === (data.birth_date || before.birth_date));
+      if (twin) throw new ValidationError(`Игрок с такими ФИО и датой рождения уже есть (#${twin.id})`);
+      if (data.rni) {
+        const rniOwner = db.prepare('SELECT id FROM players WHERE rni = ? AND id <> ?').get(data.rni, id);
+        if (rniOwner) throw new ValidationError(`РНИ ${data.rni} уже у игрока #${rniOwner.id}`);
+      }
       // COALESCE, а не присваивание: пустое поле формы значит «не менять».
       // Затереть дату рождения случайным сохранением карточки нельзя — по ней
       // работает снятие гейта представителя.
@@ -348,7 +363,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // ВОЗМОЖНОЕ СОВПАДЕНИЕ, а не автослияние: одинаковое ФИО показывается
       // модератору подсказкой, решение о привязке принимает человек.
       pending: pendingRegistrations(db).map((r) => {
-        const matches = findNameMatches(db, r.full_name);
+        const matches = findNameMatches(db, r.full_name, r.birth_date);
         const minor = Boolean(r.birth_date) && isMinor(r.birth_date);
         return {
           ...r,
