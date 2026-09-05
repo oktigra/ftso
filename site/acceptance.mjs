@@ -1847,6 +1847,28 @@ await check('фото баннера главной: загрузка в адм�
   return 'заглушка → фото на главной → замена чистит старое → снятие возвращает заглушку';
 });
 
+await check('тексты сайта (ТЗ п. 5): заголовок/подводки главной и «О Федерации» правятся в /admin/texts, HTML экранируется, пусто — заготовка', async () => {
+  assert(!/оплата участия/.test((await http('/')).text), 'на главной остался текст про оплату участия (не в объёме)');
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const adm = await http('/admin/texts', { jar });
+  eq(adm.status, 200, '/admin/texts');
+  const _csrf = tokenFrom(adm.text);
+  eq((await http('/admin/texts', { method: 'POST', form: { _csrf, key: 'home-title', value: 'Свой заголовок <b>жирный</b>' }, jar })).status, 302, 'сохранение заголовка');
+  const home = await http('/');
+  assert(/<h1>Свой заголовок &lt;b&gt;жирный&lt;\/b&gt;<\/h1>/.test(home.text), 'заголовок не подменён или HTML не экранирован');
+  eq((await http('/admin/texts', { method: 'POST', form: { _csrf, key: 'federation-about', value: 'Первый абзац.\n\nВторой абзац.' }, jar })).status, 302, 'сохранение «О Федерации»');
+  const fed = await http('/federation');
+  assert(/<p>Первый абзац\.<\/p>\s*<p>Второй абзац\.<\/p>/.test(fed.text), 'абзацы «О Федерации» не разбиты');
+  eq((await http('/admin/texts', { method: 'POST', form: { _csrf, key: 'nope', value: 'x' }, jar })).status, 302, 'ответ на чужой ключ');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM site_texts WHERE key = 'nope'").get().n, 0, 'чужой ключ не сохраняется');
+  eq((await http('/admin/texts', { method: 'POST', form: { _csrf, key: 'home-title', value: '   ' }, jar })).status, 302, 'очистка');
+  assert(/Теннис Смоленской области — в единой рейтинговой системе/.test((await http('/')).text), 'после очистки заготовка не вернулась');
+  db.prepare('DELETE FROM site_texts').run();
+  const { loadTexts } = await import('./server/lib/texts.mjs'); loadTexts(db);
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'заголовок и абзацы правятся, HTML экранирован, чужой ключ отбит, пусто → заготовка; «оплата участия» с главной убрана';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

@@ -11,6 +11,7 @@ import { logAction } from '../lib/action-log.mjs';
 import { intAtLeast, str, ValidationError } from '../lib/validate.mjs';
 import { parseMultipart } from '../lib/multipart.mjs';
 import { SEO_PAGES, SEO_DEFAULTS, seoFor, saveSeo } from '../lib/seo.mjs';
+import { SITE_TEXTS, saveText } from '../lib/texts.mjs';
 import { storeUpload, deleteUpload, uploadById, sendUpload } from '../lib/uploads.mjs';
 import {
   DIRECTORIES,
@@ -322,6 +323,27 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       deleteDirectoryRow(db, spec, id);
       logAction(db, req.session.user.id, `${spec.key}.delete`, id, null);
       flash(req, res, 'ok', 'Запись удалена.', `/admin/directories/${spec.key}`);
+    }),
+  );
+
+  // --- ТЕКСТЫ САЙТА (ТЗ п. 5 «управление страницами») ------------------------
+  app.get('/admin/texts', requireRole(...CONTENT_ROLES), (req, res) => {
+    res.render('admin/texts', {
+      title: 'Тексты сайта — админка ФТСО',
+      texts: SITE_TEXTS.map((t) => ({ ...t, value: db.prepare('SELECT value FROM site_texts WHERE key = ?').get(t.key)?.value || '' })),
+    });
+  });
+
+  app.post(
+    '/admin/texts',
+    requireRole(...CONTENT_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const key = String(req.body.key || '');
+      if (!SITE_TEXTS.some((t) => t.key === key)) throw new ValidationError('Неизвестный текст');
+      saveText(db, key, req.body.value);
+      logAction(db, req.session.user.id, 'site.text', null, { key });
+      flash(req, res, 'ok', 'Текст сохранён.', '/admin/texts');
     }),
   );
 

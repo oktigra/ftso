@@ -1,0 +1,31 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Тексты сайта</h1>
+  <%- include('_shell') %>
+
+  <div class="panel">
+    <p class="muted">Заголовки и подводки главной, текст «О Федерации». Обычный текст, абзацы — пустой строкой; HTML не работает.
+      Пустое поле — вернётся заготовка (показана серым).</p>
+    <% texts.forEach(function (t) { %>
+      <form method="post" action="/admin/texts" class="stacked-form seo-row">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="key" value="<%= t.key %>">
+        <div class="field">
+          <label for="tx-<%= t.key %>"><%= t.label %></label>
+          <% if (t.multiline) { %>
+            <textarea id="tx-<%= t.key %>" name="value" rows="<%= t.max > 1000 ? 8 : 3 %>" maxlength="<%= t.max %>" placeholder="<%= t.fallback %>"><%= t.value %></textarea>
+          <% } else { %>
+            <input id="tx-<%= t.key %>" name="value" maxlength="<%= t.max %>" value="<%= t.value %>" placeholder="<%= t.fallback %>">
+          <% } %>
+        </div>
+        <div class="inline-form"><button class="btn btn--secondary btn--small" type="submit">Сохранить</button></div>
+      </form>
+    <% }); %>
+  </div>
+</div>
+</main>
+
+<%- include('../partials/footer') %>
