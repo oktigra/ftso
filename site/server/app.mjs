@@ -145,6 +145,7 @@ export function createApp(config) {
     // как недостоверные сведения об операторе.
     res.locals.operator = OPERATOR;
     res.locals.maxUrl = config.maxUrl;
+    res.locals.rememberDays = config.rememberDays;
     // Метрика: номер счётчика и решение посетителя из cookie ftso.analytics
     // ('1' принял, '0' отказался, нет — баннер). Куки читаем сами: парсер не подключён.
     res.locals.metrikaId = config.metrikaId;

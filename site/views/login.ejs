@@ -25,7 +25,7 @@
       </div>
       <div class="check">
         <input type="checkbox" id="remember" name="remember" value="1">
-        <label for="remember">Сохранить данные для входа на этом устройстве (30 дней)</label>
+        <label for="remember">Сохранить данные для входа на этом устройстве (<%= typeof rememberDays !== 'undefined' ? rememberDays : 90 %> дней)</label>
       </div>
       <button class="btn btn--primary" type="submit">Войти</button>
     </form>

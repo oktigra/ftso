@@ -145,7 +145,7 @@ export function loadConfig({ requireSecrets = true } = {}) {
     // нет ни одного результата (см. devNoticeOn в app.mjs): «до наполнения».
     devNotice: process.env.DEV_NOTICE === '1',
     // «Сохранить данные для входа»: срок сессии с отметкой, дней (по умолчанию 30).
-    rememberDays: Number(process.env.REMEMBER_DAYS || 30),
+    rememberDays: Number(process.env.REMEMBER_DAYS || 90), // 90 — решение владельца 05.09.2026
     // ПИСЬМА САЙТА (решение владельца 04.09.2026: без писем — Яндекс 360 на бесплатном
     // тарифе блокирует SMTP). По умолчанию ВЫКЛ: восстановление пароля кабинета ведёт к
     // секретарю, а не в пустой почтовый ящик. SITE_MAIL=on — вернуть письма (когда будет тариф).
