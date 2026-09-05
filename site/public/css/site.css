@@ -540,6 +540,7 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .lightbox__nav--prev{left:1rem;} .lightbox__nav--next{right:1rem;}
 .lightbox__close:hover, .lightbox__nav:hover{background:rgba(255,255,255,.28);}
 .btn--max{margin-top:.5rem;}
+.new-player{flex-basis:100%;} .new-player summary{cursor:pointer; color:var(--primary); font-weight:600;} .new-player .inline-form{margin-top:.6rem;}
 .guide h2{margin-top:1.6rem; font-size:1.15rem;}
 .guide ul{padding-left:1.2rem;} .guide li{margin:.35rem 0; line-height:1.5;}
 /* Баннер согласия на аналитику (Метрика грузится только после «Принять») */

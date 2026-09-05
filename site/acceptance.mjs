@@ -1567,6 +1567,50 @@ await check('ТЗ п. 11: инструкция по администрирова
   return 'супер-админ — 11 разделов; tournament-admin — без «Пользователей» и «Новостей»; ссылка в меню есть';
 });
 
+await check('ускорение ввода: игрок по подсказке (текст/«#id»), новый игрок из формы результата, матч по тексту, пересчёт со страницы турнира', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Быстрый ввод', date('now','-1 day'), 'B')").run().lastInsertRowid);
+  const p1 = Number(db.prepare("INSERT INTO players (full_name, city, sex, birth_date) VALUES ('Быстров Игорь Петрович','Смоленск','M','1990-01-01')").run().lastInsertRowid);
+  const p2 = Number(db.prepare("INSERT INTO players (full_name, city, sex, birth_date) VALUES ('Быстров Игорь Петрович','Вязьма','M','1995-05-05')").run().lastInsertRowid);
+  const page = await http(`/admin/tournaments/${t}/results`, { jar });
+  const _csrf = tokenFrom(page.text);
+  assert(/<datalist id="players-list">/.test(page.text) && /name="player" list="players-list"/.test(page.text), 'нет поля с подсказкой');
+  assert(!/<select id="r-player"/.test(page.text), 'старый select игрока остался');
+  assert(/action="\/admin\/rating\/recompute"/.test(page.text), 'на странице результатов нет кнопки пересчёта');
+  const post = (form) => http(`/admin/tournaments/${t}/results`, { method: 'POST', form: { _csrf, ...form }, jar });
+  const n = () => db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(t).n;
+  // Тёзки: по одному ФИО — ошибка с #id; с городом в скобках — однозначно; «#id» — тоже.
+  eq((await post({ player: 'Быстров Игорь Петрович', place: '1' })).status, 302, 'ответ на неоднозначное ФИО');
+  eq(n(), 0, 'неоднозначное ФИО не должно записываться');
+  eq((await post({ player: 'быстров игорь петрович (Вязьма)', place: '1' })).status, 302, 'ФИО с городом');
+  eq(db.prepare('SELECT player_id FROM results WHERE tournament_id = ? AND place = 1').get(t).player_id, p2, 'по городу выбран не тот тёзка');
+  eq((await post({ player: `#${p1}`, place: '2' })).status, 302, '«#id»');
+  eq(db.prepare('SELECT player_id FROM results WHERE tournament_id = ? AND place = 2').get(t).player_id, p1, '«#id» не сработал');
+  // Незнакомый игрок без полей — отказ; с городом/полом/датой — заведён и результат записан.
+  eq((await post({ player: 'Новиков Пётр Ильич', place: '3' })).status, 302, 'ответ на незнакомого без полей');
+  eq(n(), 2, 'незнакомый без полей не должен записываться');
+  eq((await post({ player: 'Новиков Пётр Ильич', place: '3', new_city: 'Рославль', new_sex: 'M', new_birth_date: '2001-02-03' })).status, 302, 'новый игрок из формы');
+  const fresh = db.prepare("SELECT id, city, birth_date FROM players WHERE full_name = 'Новиков Пётр Ильич'").get();
+  assert(fresh && fresh.city === 'Рославль' && fresh.birth_date === '2001-02-03', 'новый игрок не заведён с полями');
+  eq(n(), 3, 'результат нового игрока не записан');
+  // Дубль через форму результата (ФИО + дата уже есть) — стоп.
+  eq((await post({ player: 'Быстров Игорь Петрович', place: '4', new_city: 'Где-то', new_sex: 'M', new_birth_date: '1990-01-01' })).status, 302, 'ответ на дубль');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM players WHERE full_name = 'Быстров Игорь Петрович'").get().n, 2, 'дубль заведён через форму результата');
+  // Матч по тексту.
+  const m = await http(`/admin/tournaments/${t}/matches`, { method: 'POST', form: { _csrf, winner: `#${p1}`, loser: 'Новиков Пётр Ильич', score: '6:2 6:3' }, jar });
+  eq(m.status, 302, 'матч по тексту');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ? AND winner_player_id = ? AND loser_player_id = ?').get(t, p1, fresh.id).n, 1, 'матч по тексту не записан');
+  // Пересчёт со страницы турнира возвращает на неё же.
+  // Пересчёт «слишком рано» — тоже редирект; нам важен адрес возврата, не результат.
+  const rc = await http('/admin/rating/recompute', { method: 'POST', form: { _csrf }, jar, headers: { referer: `${inst.base}/admin/tournaments/${t}/results` } });
+  eq(rc.status + ' ' + rc.location, `302 /admin/tournaments/${t}/results`, 'после пересчёта должны вернуть на страницу турнира');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
+  db.prepare("DELETE FROM players WHERE full_name IN ('Быстров Игорь Петрович','Новиков Пётр Ильич')").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  return 'подсказка вместо select; тёзки → «#id» или город в скобках; новый игрок заводится из формы (дубли — стоп); матч по тексту; пересчёт возвращает на турнир';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
