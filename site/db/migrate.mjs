@@ -222,6 +222,11 @@ export function migrate() {
 
   // --- публичный профиль, матчи со счётом, парный разряд (ТЗ ред. 6) ---------
   addColumnIfMissing(db, 'players', 'rni', 'TEXT');
+  // ТЗ п. 4.3 — фильтры календаря турниров (05.09.2026).
+  addColumnIfMissing(db, 'tournaments', 'city', 'TEXT');
+  addColumnIfMissing(db, 'tournaments', 'start_date', 'TEXT');
+  addColumnIfMissing(db, 'tournaments', 'kind', "TEXT NOT NULL DEFAULT 'other'");
+  addColumnIfMissing(db, 'tournaments', 'age_group', 'TEXT');
   addColumnIfMissing(db, 'users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'gallery_items', 'tournament_id', 'INTEGER REFERENCES tournaments(id) ON DELETE SET NULL');
   const resultsRebuilt = upgradeResults(db);

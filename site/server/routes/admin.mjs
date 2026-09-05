@@ -11,6 +11,7 @@ import {
   oneOf,
   SEXES,
   CATEGORIES,
+  TOURNAMENT_KIND_RU,
   ValidationError,
   splitName,
 } from '../lib/validate.mjs';
@@ -610,6 +611,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         )
         .all(),
       categories: CATEGORIES,
+      kindRu: TOURNAMENT_KIND_RU,
     });
   });
 
@@ -620,8 +622,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     guard((req, res) => {
       const data = tournamentInput(req.body);
       const info = db
-        .prepare('INSERT INTO tournaments (name, end_date, category) VALUES (?, ?, ?)')
-        .run(data.name, data.end_date, data.category);
+        .prepare('INSERT INTO tournaments (name, end_date, category, city, start_date, kind, age_group) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.age_group);
       logAction(db, req.session.user.id, 'tournament.create', info.lastInsertRowid, data);
       flash(req, res, 'ok', `Турнир «${data.name}» добавлен.`, '/admin/tournaments');
     }),
@@ -635,8 +637,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const id = intAtLeast(req.params.id, 'id');
       const data = tournamentInput(req.body);
       const info = db
-        .prepare('UPDATE tournaments SET name = ?, end_date = ?, category = ? WHERE id = ?')
-        .run(data.name, data.end_date, data.category, id);
+        .prepare('UPDATE tournaments SET name = ?, end_date = ?, category = ?, city = ?, start_date = ?, kind = ?, age_group = ? WHERE id = ?')
+        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.age_group, id);
       if (!info.changes) throw new ValidationError('Турнир не найден');
       logAction(db, req.session.user.id, 'tournament.update', id, data);
       flash(req, res, 'ok', 'Турнир обновлён.', '/admin/tournaments');

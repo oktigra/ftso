@@ -99,8 +99,8 @@ export function approveRequest(db, requestId, { userId = null } = {}) {
     if (req.status !== 'pending') throw new Error('Заявка уже рассмотрена');
     const tournamentId = Number(
       db
-        .prepare('INSERT INTO tournaments (name, end_date, category) VALUES (?, ?, ?)')
-        .run(req.name, req.end_date, req.category).lastInsertRowid,
+        .prepare('INSERT INTO tournaments (name, end_date, category, city) VALUES (?, ?, ?, ?)')
+        .run(req.name, req.end_date, req.category, req.city).lastInsertRowid,
     );
     db.prepare(
       "UPDATE tournament_requests SET status = 'approved', tournament_id = ?, decided_by = ?, decided_at = datetime('now') WHERE id = ?",

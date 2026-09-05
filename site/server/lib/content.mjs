@@ -40,14 +40,45 @@ export function allNews(db) {
 // --- турниры ---------------------------------------------------------------
 
 /** Публичный список турниров: свежие сверху, как в календаре. */
-export function tournamentList(db) {
-  return db
+export function tournamentStatus(t, today = new Date().toISOString().slice(0, 10)) {
+  if (t.end_date < today) return 'finished';
+  if (t.start_date && t.start_date <= today) return 'ongoing';
+  if (!t.start_date && t.end_date === today) return 'ongoing';
+  return 'upcoming';
+}
+
+/**
+ * Календарь турниров с фильтрами ТЗ п. 4.3: дата (год-месяц), город, категория,
+ * возраст, статус (вычисляется от дат), тип. Фильтры — в SQL, где это дёшево,
+ * статус — в JS (зависит от «сегодня»). Значения для селектов берутся из базы:
+ * города и возраста — только те, что реально есть.
+ */
+export function tournamentList(db, filters = {}) {
+  const where = [];
+  const args = [];
+  if (filters.month) { where.push("substr(t.end_date, 1, 7) = ?"); args.push(filters.month); }
+  if (filters.city) { where.push('t.city = ?'); args.push(filters.city); }
+  if (filters.category) { where.push('t.category = ?'); args.push(filters.category); }
+  if (filters.age) { where.push('t.age_group = ?'); args.push(filters.age); }
+  if (filters.kind) { where.push('t.kind = ?'); args.push(filters.kind); }
+  const rows = db
     .prepare(
-      `SELECT t.id, t.name, t.end_date, t.category,
+      `SELECT t.id, t.name, t.end_date, t.start_date, t.category, t.city, t.kind, t.age_group,
               (SELECT COUNT(*) FROM results r WHERE r.tournament_id = t.id) AS participants
-         FROM tournaments t ORDER BY t.end_date DESC, t.id DESC`,
+         FROM tournaments t ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+        ORDER BY t.end_date DESC, t.id DESC`,
     )
-    .all();
+    .all(...args)
+    .map((t) => ({ ...t, status: tournamentStatus(t) }));
+  return filters.status ? rows.filter((t) => t.status === filters.status) : rows;
+}
+
+export function tournamentFilterOptions(db) {
+  return {
+    cities: db.prepare("SELECT DISTINCT city FROM tournaments WHERE city IS NOT NULL AND city <> '' ORDER BY city").all().map((r) => r.city),
+    ages: db.prepare("SELECT DISTINCT age_group FROM tournaments WHERE age_group IS NOT NULL AND age_group <> '' ORDER BY age_group").all().map((r) => r.age_group),
+    months: db.prepare("SELECT DISTINCT substr(end_date, 1, 7) AS m FROM tournaments ORDER BY m DESC").all().map((r) => r.m),
+  };
 }
 
 /**

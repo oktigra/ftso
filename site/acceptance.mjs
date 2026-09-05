@@ -1467,6 +1467,37 @@ await check('дубли игроков: занятая почта и ФИО+да
   return `почта ×2 → 400 (заявка и кабинет), ФИО+дата → 400, тёзка с другой датой → 302 и одобрен новым; админка: ФИО+дата стоп, тёзка ок, РНИ дважды стоп (+UNIQUE в СУБД), правка чужим РНИ стоп`;
 });
 
+await check('турниры (ТЗ 4.3): поля город/начало/тип/возраст, статус от дат, фильтры на /tournaments', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/tournaments', { jar })).text);
+  const mk = (f) => http('/admin/tournaments', { method: 'POST', form: { _csrf, category: 'B', kind: 'other', ...f }, jar });
+  const d = (days) => new Date(Date.now() + days * 864e5).toISOString().slice(0, 10);
+  eq((await mk({ name: 'Фильтр Прошлый', end_date: d(-10), start_date: d(-12), city: 'Вязьма', kind: 'team', age_group: 'взрослые' })).status, 302, 'создание 1');
+  eq((await mk({ name: 'Фильтр Текущий', end_date: d(2), start_date: d(-1), city: 'Смоленск', kind: 'championship', age_group: 'до 12', category: 'A' })).status, 302, 'создание 2');
+  eq((await mk({ name: 'Фильтр Будущий', end_date: d(30), city: 'Смоленск', age_group: 'взрослые' })).status, 302, 'создание 3');
+  eq((await mk({ name: 'Фильтр Кривой', end_date: d(1), start_date: d(5) })).status, 302, 'ответ на начало позже конца');
+  assert(!db.prepare("SELECT 1 FROM tournaments WHERE name = 'Фильтр Кривой'").get(), 'турнир с началом позже конца не должен создаваться');
+  const names = (t) => [...t.matchAll(/<td class="t-name"><a href="\/tournaments\/\d+">([^<]+)<\/a>/g)].map((m) => m[1]).filter((n) => n.startsWith('Фильтр '));
+  const all = await http('/tournaments');
+  eq(all.status, 200, '/tournaments');
+  assert(/name="month"/.test(all.text) && /name="city"/.test(all.text) && /name="category"/.test(all.text) && /name="age"/.test(all.text) && /name="status"/.test(all.text) && /name="kind"/.test(all.text), 'на списке нет шести фильтров ТЗ 4.3');
+  eq(names(all.text).length, 3, 'без фильтров — все три');
+  eq(names((await http('/tournaments?status=finished')).text).join(','), 'Фильтр Прошлый', 'фильтр статус=завершён');
+  eq(names((await http('/tournaments?status=ongoing')).text).join(','), 'Фильтр Текущий', 'фильтр статус=идёт');
+  eq(names((await http('/tournaments?status=upcoming')).text).join(','), 'Фильтр Будущий', 'фильтр статус=предстоящий');
+  eq(names((await http('/tournaments?city=' + encodeURIComponent('Смоленск'))).text).length, 2, 'фильтр город');
+  eq(names((await http('/tournaments?category=A')).text).join(','), 'Фильтр Текущий', 'фильтр категория');
+  eq(names((await http('/tournaments?age=' + encodeURIComponent('взрослые'))).text).length, 2, 'фильтр возраст');
+  eq(names((await http('/tournaments?kind=team')).text).join(','), 'Фильтр Прошлый', 'фильтр тип');
+  eq(names((await http('/tournaments?month=' + d(30).slice(0, 7))).text).includes('Фильтр Будущий'), true, 'фильтр месяц');
+  eq(names((await http("/tournaments?status=' OR 1=1 --&kind=<b>")).text).length, 3, 'чужие значения фильтров сбрасываются в «все»');
+  const card = await http(`/tournaments/${db.prepare("SELECT id FROM tournaments WHERE name = 'Фильтр Текущий'").get().id}`);
+  assert(/Смоленск/.test(card.text) && /первенство/.test(card.text) && /до 12/.test(card.text), 'карточка не показывает город/тип/возраст');
+  db.prepare("DELETE FROM tournaments WHERE name LIKE 'Фильтр %'").run();
+  db.prepare("DELETE FROM write_attempts").run();
+  return 'три турнира, шесть фильтров работают по одному, статус считается от дат, мусор в фильтрах игнорируется, начало позже конца — отказ';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

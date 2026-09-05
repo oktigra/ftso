@@ -17,9 +17,19 @@
           <% categories.forEach(function (c) { %><option value="<%= c %>"><%= c %></option><% }); %>
         </select>
       </div>
+      <div class="field"><label for="t-start">Дата начала</label><input id="t-start" name="start_date" placeholder="ГГГГ-ММ-ДД" maxlength="10"></div>
+      <div class="field"><label for="t-city">Город</label><input id="t-city" name="city" maxlength="80"></div>
+      <div class="field"><label for="t-kind">Тип</label>
+        <select id="t-kind" name="kind">
+          <% Object.keys(kindRu).forEach(function (k) { %><option value="<%= k %>"<%= k === 'other' ? ' selected' : '' %>><%= kindRu[k] %></option><% }); %>
+        </select>
+      </div>
+      <div class="field"><label for="t-age">Возраст</label><input id="t-age" name="age_group" maxlength="40" placeholder="до 12, взрослые, 45+"></div>
       <button class="btn btn--primary" type="submit">Добавить</button>
     </form>
-    <p class="muted">Категория A — чемпионаты и первенства области (коэффициент ×2), B — остальные (×1).</p>
+    <p class="muted">Категория A — чемпионаты и первенства области (коэффициент ×2), B — остальные (×1).
+      Город, дата начала, тип и возраст — для фильтров календаря на сайте (ТЗ п. 4.3); статус
+      «предстоящий / идёт / завершён» считается от дат сам.</p>
   </div>
 
   <div class="panel">
@@ -31,13 +41,21 @@
     %>
     <div class="table-scroll">
       <table class="admin-table admin-table--edit">
-        <thead><tr><th>ID</th><th>Название</th><th>Завершение</th><th>Кат.</th><th>Записей</th><th>Действия</th></tr></thead>
+        <thead><tr><th>ID</th><th>Название</th><th>Начало</th><th>Завершение</th><th>Город</th><th>Тип</th><th>Возраст</th><th>Кат.</th><th>Записей</th><th>Действия</th></tr></thead>
         <tbody>
           <% tournaments.forEach(function (t) { %>
             <tr>
               <td><a href="/tournaments/<%= t.id %>"><%= t.id %></a></td>
               <td><input form="edit-tournament-<%= t.id %>" name="name" value="<%= t.name %>" maxlength="160" required></td>
+              <td><input form="edit-tournament-<%= t.id %>" name="start_date" value="<%= t.start_date || '' %>" maxlength="10" placeholder="ГГГГ-ММ-ДД"></td>
               <td><input form="edit-tournament-<%= t.id %>" name="end_date" value="<%= t.end_date %>" maxlength="10" required></td>
+              <td><input form="edit-tournament-<%= t.id %>" name="city" value="<%= t.city || '' %>" maxlength="80"></td>
+              <td>
+                <select form="edit-tournament-<%= t.id %>" name="kind">
+                  <% Object.keys(kindRu).forEach(function (k) { %><option value="<%= k %>"<%= t.kind === k ? ' selected' : '' %>><%= kindRu[k] %></option><% }); %>
+                </select>
+              </td>
+              <td><input form="edit-tournament-<%= t.id %>" name="age_group" value="<%= t.age_group || '' %>" maxlength="40"></td>
               <td>
                 <select form="edit-tournament-<%= t.id %>" name="category" required>
                   <% categories.forEach(function (c) { %>
