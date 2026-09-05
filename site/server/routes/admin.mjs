@@ -1,4 +1,6 @@
 import { requireRole, ROLES, ACTIVE_ROLES, rolesFor } from '../middleware/auth.mjs';
+import { parseMultipart } from '../lib/multipart.mjs';
+import { rowsFromXlsx, rowsFromCsv, protocolTextFromRows } from '../lib/xlsx.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
 import { logAction, recentActions } from '../lib/action-log.mjs';
@@ -692,6 +694,39 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     });
   };
   app.get('/admin/tournaments/:id/results', requireRole(...DATA_ROLES), (req, res, next) => renderResults(req, res, next));
+
+  // ИМПОРТ ИЗ ТАБЛИЦЫ (ускорение ввода, п. 2): xlsx/csv → строки «место игрок» →
+  // тот же предпросмотр, что у массового ввода. Файл не сохраняется: он нужен
+  // только чтобы заполнить текстовое поле; дальше секретарь жмёт «Сохранить всё».
+  app.post(
+    '/admin/tournaments/:id/results/import',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    async (req, res, next) => {
+      const tournamentId = Number(req.params.id);
+      const back = `/admin/tournaments/${tournamentId}/results`;
+      try {
+        if (!/^\d+$/.test(req.params.id) || !db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(tournamentId)) throw new ValidationError('Турнир не найден');
+        const { files } = await parseMultipart(req, { maxFiles: 1, maxFileBytes: 5 * 1024 * 1024 });
+        const file = files.find((f) => f.field === 'file');
+        if (!file) throw new ValidationError('Файл не выбран.');
+        const isZip = file.buffer.length > 4 && file.buffer[0] === 0x50 && file.buffer[1] === 0x4b;
+        let rows;
+        try {
+          rows = isZip ? rowsFromXlsx(file.buffer) : rowsFromCsv(file.buffer);
+        } catch (e) {
+          throw new ValidationError(`Не удалось прочитать таблицу: ${e.message}. Нужен .xlsx или .csv с колонками «Место» и «Игрок».`);
+        }
+        const text = protocolTextFromRows(rows);
+        if (!text) throw new ValidationError('В таблице не нашлось строк с местом и игроком.');
+        const bulkRows = checkBulkResults(db, tournamentId, text, { ValidationError });
+        return renderResults(req, res, next, { bulk: { text, rows: bulkRows, ok: bulkRows.length > 0 && bulkRows.every((r) => r.status === 'ok'), saved: false, fromFile: file.filename } });
+      } catch (err) {
+        if (err instanceof ValidationError) return flash(req, res, 'error', err.message, back);
+        return next(err);
+      }
+    },
+  );
 
   // МАССОВЫЙ ВВОД (ускорение ввода, п. 1): текст протокола → предпросмотр со сверкой →
   // «Сохранить всё» одной транзакцией. Пока в предпросмотре есть хоть одна не-ok строка,

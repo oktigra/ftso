@@ -1648,6 +1648,43 @@ await check('массовый ввод результатов: разбор пр
   return 'разбор ок; неизвестный → красная строка и нет кнопки; save с ошибкой не пишет; зелёный → 3 результата одной транзакцией; повтор → дубли';
 });
 
+await check('импорт результатов из таблицы: xlsx (sharedStrings и inlineStr) и csv → предпросмотр массового ввода', async () => {
+  const { xlsxFromRows, rowsFromXlsx, rowsFromCsv, protocolTextFromRows } = await import('./server/lib/xlsx.mjs');
+  // Читалка: своя писалка (inlineStr) и файл из openpyxl (sharedStrings, числовые сущности).
+  eq(protocolTextFromRows(rowsFromXlsx(xlsxFromRows([['Место', 'Игрок'], [1, 'Импортов Один'], ['3-4', 'Импортов Два, Импортов Три']]))), '1 Импортов Один\n3-4 Импортов Два, Импортов Три', 'чтение своего xlsx');
+  const { existsSync, readFileSync } = await import('node:fs');
+  if (existsSync('/tmp/proto.xlsx')) eq(protocolTextFromRows(rowsFromXlsx(readFileSync('/tmp/proto.xlsx'))), '1 Иванов Иван Иванович\n3-4 Петров Пётр', 'чтение xlsx из openpyxl');
+  eq(protocolTextFromRows(rowsFromCsv(Buffer.from('\ufeffМесто;ФИО\n1;"Импортов Один"\n2;Импортов Два\n'))), '1 Импортов Один\n2 Импортов Два', 'чтение csv с BOM и кавычками');
+  eq(protocolTextFromRows(rowsFromCsv(Buffer.from('1,Без заголовка\n2,Тоже\n'))), '1 Без заголовка\n2 Тоже', 'csv без заголовка — первые две колонки');
+  // Маршрут: файл → предпросмотр с той же сверкой; ничего не сохраняется, пока не нажали «Сохранить всё».
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Импорт таблицы', date('now','-1 day'), 'B')").run().lastInsertRowid);
+  db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Импортов Один', 'Смоленск', 'M')").run();
+  db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Импортов Два', 'Смоленск', 'M')").run();
+  const _csrf = tokenFrom((await http(`/admin/tournaments/${t}/results`, { jar })).text);
+  const buf = xlsxFromRows([['Место', 'Игрок'], [1, 'Импортов Один'], [2, 'Импортов Два'], [3, 'Импортов Никто']]);
+  const imp = await http(`/admin/tournaments/${t}/results/import`, {
+    method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'file', filename: 'протокол.xlsx', type: 'application/octet-stream', buffer: buf }] }, jar,
+  });
+  eq(imp.status, 200, 'импорт отдаёт предпросмотр');
+  assert(/прочитано строк: 3/.test(imp.text) && /bulk-missing/.test(imp.text) && !/value="save"/.test(imp.text), 'предпросмотр из файла: должно быть 3 строки, одна красная, без кнопки сохранения');
+  assert(/1 Импортов Один/.test(imp.text), 'текст протокола не перенесён в поле массового ввода');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(t).n, 0, 'импорт не должен ничего сохранять сам');
+  const bad = await http(`/admin/tournaments/${t}/results/import`, {
+    method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'file', filename: 'x.bin', type: 'application/octet-stream', buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0]) }] }, jar,
+  });
+  eq(bad.status, 302, 'битый zip — ошибка флешем, не 500');
+  const noCsrf = await http(`/admin/tournaments/${t}/results/import`, {
+    method: 'POST', multipart: { fields: { _csrf: 'нет' }, files: [{ field: 'file', filename: 'p.csv', type: 'text/csv', buffer: Buffer.from('1;Импортов Один') }] }, jar,
+  });
+  assert(noCsrf.status === 403 || noCsrf.status === 302, 'импорт без CSRF должен отбиваться');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(t).n, 0, 'после отбитых запросов в базе пусто');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
+  db.prepare("DELETE FROM players WHERE full_name LIKE 'Импортов %'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'xlsx (свой и openpyxl) и csv читаются; файл → предпросмотр с красной строкой, без сохранения; битый zip — ошибка, без CSRF — отказ';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
