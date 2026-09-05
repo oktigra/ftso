@@ -5,14 +5,14 @@
   <div class="container">
     <span class="eyebrow">Новости</span>
     <h1><%= item.title %></h1>
-    <p class="muted"><%= item.published_at || item.created_at.slice(0, 10) %></p>
+    <p class="muted"><%= item.published_at || item.created_at.slice(0, 10) %> · <%= item.author || 'Федерация тенниса Смоленской области' %></p>
   </div>
 </section>
 <section class="section-pad section-pad--tight">
   <div class="container">
     <div class="panel legal-body">
       <% if (item.cover_upload_id) { %>
-        <p><a class="link-more" href="/files/<%= item.cover_upload_id %>">Скачать иллюстрацию <span aria-hidden="true">→</span></a></p>
+        <figure class="news-cover"><img src="/news/<%= item.id %>/cover" alt="" loading="lazy"></figure>
       <% } %>
       <% if (item.summary) { %><p class="lead"><%= item.summary %></p><% } %>
       <%
@@ -22,6 +22,17 @@
       <% item.body.split(/\n{2,}/).forEach(function (para) { %>
         <p><%= para %></p>
       <% }); %>
+      <% if (attachments.length) { %>
+        <h2 class="news-attach-title">Материалы</h2>
+        <ul class="news-attachments">
+          <% attachments.forEach(function (a) { %>
+            <li>
+              <% if (a.url) { %><a href="<%= a.url %>" rel="noopener nofollow" target="_blank"><%= a.title %> ↗</a>
+              <% } else { %><a href="/files/<%= a.upload_id %>"><%= a.title %></a> <span class="muted">(<%= a.original_name %><%= a.size_bytes ? ', ' + Math.max(1, Math.round(a.size_bytes / 1024)) + ' КБ' : '' %>)</span><% } %>
+            </li>
+          <% }); %>
+        </ul>
+      <% } %>
       <p class="table-foot"><a class="link-more" href="/news">Все новости <span aria-hidden="true">→</span></a></p>
     </div>
   </div>

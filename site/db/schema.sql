@@ -410,10 +410,23 @@ CREATE TABLE IF NOT EXISTS news (
   is_published   INTEGER NOT NULL DEFAULT 0 CHECK (is_published IN (0,1)),
   published_at   TEXT,
   created_by     INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  author         TEXT,
   created_at     TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_news_published ON news (is_published, published_at DESC);
+
+-- ВЛОЖЕНИЯ К НОВОСТИ (ТЗ 4.2): документ/изображение (upload_id) либо ссылка (url).
+CREATE TABLE IF NOT EXISTS news_attachments (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  news_id    INTEGER NOT NULL REFERENCES news(id) ON DELETE CASCADE,
+  upload_id  INTEGER REFERENCES uploads(id) ON DELETE CASCADE,
+  url        TEXT,
+  title      TEXT NOT NULL CHECK (length(trim(title)) BETWEEN 1 AND 160),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  CHECK ((upload_id IS NOT NULL) <> (url IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_news_attachments_news ON news_attachments (news_id, id);
 
 -- ДОКУМЕНТЫ ТУРНИРА, привязанные к САМОМУ турниру (а не к заявке): заявка
 -- может быть вычищена по сроку хранения, а положение турнира в календаре

@@ -13,6 +13,7 @@
       <div class="field"><label for="n-summary">Короткое описание</label><input id="n-summary" name="summary" maxlength="500"></div>
       <div class="field"><label for="n-body">Текст</label><textarea id="n-body" name="body" rows="6" maxlength="20000" required></textarea></div>
       <div class="field"><label for="n-date">Дата публикации</label><input id="n-date" name="published_at" placeholder="ГГГГ-ММ-ДД"></div>
+      <div class="field"><label for="n-author">Автор</label><input id="n-author" name="author" maxlength="120" placeholder="пусто — Федерация"></div>
       <div class="field"><label for="n-pub">Публикация</label>
         <select id="n-pub" name="is_published">
           <option value="0" selected>черновик</option>
@@ -39,6 +40,8 @@
             <textarea id="b-<%= n.id %>" name="body" rows="4" maxlength="20000" required><%= n.body %></textarea></div>
           <div class="field"><label for="d-<%= n.id %>">Дата публикации</label>
             <input id="d-<%= n.id %>" name="published_at" placeholder="ГГГГ-ММ-ДД" value="<%= n.published_at || '' %>"></div>
+          <div class="field"><label for="a-<%= n.id %>">Автор</label>
+            <input id="a-<%= n.id %>" name="author" maxlength="120" value="<%= n.author || '' %>" placeholder="пусто — Федерация"></div>
           <div class="field"><label for="p-<%= n.id %>">Публикация</label>
             <select id="p-<%= n.id %>" name="is_published">
               <option value="0"<%= n.is_published ? '' : ' selected' %>>черновик</option>
@@ -53,6 +56,47 @@
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
           <button class="btn btn--danger btn--small" type="submit">Удалить</button>
         </form>
+        <%
+        /* ТЗ 4.2: обложка (изображение), вложения-файлы и ссылки. Отдельные формы —
+           multipart для файлов, обычная для ссылки. */
+        %>
+        <div class="news-extras">
+          <form method="post" action="/admin/news/<%= n.id %>/cover" class="inline-form" enctype="multipart/form-data">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <div class="field"><label for="cover-<%= n.id %>">Обложка<%= n.cover_upload_id ? ' (есть)' : '' %></label>
+              <input id="cover-<%= n.id %>" type="file" name="cover" accept="image/*"></div>
+            <button class="btn btn--secondary btn--small" type="submit">Загрузить обложку</button>
+          </form>
+          <% if (n.cover_upload_id) { %>
+            <form method="post" action="/admin/news/<%= n.id %>/cover/delete" class="inline-form">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+              <button class="btn btn--danger btn--small" type="submit" data-confirm="Снять обложку?">Снять обложку</button>
+            </form>
+          <% } %>
+          <form method="post" action="/admin/news/<%= n.id %>/attachments" class="inline-form" enctype="multipart/form-data">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <div class="field"><label for="af-<%= n.id %>">Файл (документ или изображение)</label><input id="af-<%= n.id %>" type="file" name="file"></div>
+            <div class="field"><label for="aft-<%= n.id %>">Название</label><input id="aft-<%= n.id %>" name="title" maxlength="160" placeholder="как показать"></div>
+            <button class="btn btn--secondary btn--small" type="submit">Прикрепить файл</button>
+          </form>
+          <form method="post" action="/admin/news/<%= n.id %>/attachments" class="inline-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <div class="field"><label for="al-<%= n.id %>">Ссылка</label><input id="al-<%= n.id %>" name="url" maxlength="500" placeholder="https://…"></div>
+            <div class="field"><label for="alt-<%= n.id %>">Название</label><input id="alt-<%= n.id %>" name="title" maxlength="160"></div>
+            <button class="btn btn--secondary btn--small" type="submit">Добавить ссылку</button>
+          </form>
+          <% if (n.attachments && n.attachments.length) { %>
+            <ul class="news-attachments">
+              <% n.attachments.forEach(function (a) { %>
+                <li><%= a.title %> <span class="muted"><%= a.url ? a.url : a.original_name %></span>
+                  <form method="post" action="/admin/news/<%= n.id %>/attachments/<%= a.id %>/delete" class="inline-form">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button class="btn btn--danger btn--small" type="submit" data-confirm="Удалить вложение «<%= a.title %>»?">Удалить</button>
+                  </form></li>
+              <% }); %>
+            </ul>
+          <% } %>
+        </div>
       </div>
     <% }); %>
   </div>

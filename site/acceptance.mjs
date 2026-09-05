@@ -1725,6 +1725,47 @@ await check('ТЗ 4.5/4.6 «фото»: у тренера/корта/клуба 
   return 'фото корта: 404 → загрузка (EXIF снят) → 200 и миниатюра → замена удаляет старый файл → снятие 404; PDF отбит; судьи без фото';
 });
 
+await check('ТЗ 4.2: автор, обложка-изображение, вложения (файл и ссылка) у новости; вложения черновика наружу не отдаются', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/news', { jar })).text);
+  eq((await http('/admin/news', { method: 'POST', form: { _csrf, title: 'Новость с материалами', body: 'Текст.', is_published: '1', published_at: '2026-09-05', author: 'Пресс-служба ФТСО' }, jar })).status, 302, 'создание');
+  const n = db.prepare("SELECT id, author FROM news WHERE title = 'Новость с материалами'").get();
+  eq(n.author, 'Пресс-служба ФТСО', 'автор не сохранён');
+  const sharpMod = (await import('sharp')).default;
+  const img = await sharpMod({ create: { width: 800, height: 450, channels: 3, background: '#c33' } }).withMetadata({ exif: { IFD0: { Copyright: 'NEWS-EXIF' } } }).jpeg().toBuffer();
+  eq((await http(`/admin/news/${n.id}/cover`, { method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'cover', filename: 'c.jpg', type: 'image/jpeg', buffer: img }] }, jar })).status, 302, 'обложка');
+  const coverRes = await http(`/news/${n.id}/cover`);
+  eq(coverRes.status, 200, 'обложка отдаётся');
+  assert(!Buffer.from(await (await fetch(inst.base + `/news/${n.id}/cover`)).arrayBuffer()).includes('NEWS-EXIF'), 'EXIF обложки не снят');
+  eq((await http(`/admin/news/${n.id}/attachments`, { method: 'POST', multipart: { fields: { _csrf, title: 'Положение' }, files: [{ field: 'file', filename: 'p.pdf', type: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF') }] }, jar })).status, 302, 'файл-вложение');
+  eq((await http(`/admin/news/${n.id}/attachments`, { method: 'POST', form: { _csrf, url: 'https://example.org/results', title: 'Результаты на сайте РТТ' }, jar })).status, 302, 'ссылка-вложение');
+  eq((await http(`/admin/news/${n.id}/attachments`, { method: 'POST', form: { _csrf, url: 'javascript:alert(1)', title: 'x' }, jar })).status, 302, 'ответ на плохую ссылку');
+  const atts = db.prepare('SELECT id, upload_id, url, title FROM news_attachments WHERE news_id = ? ORDER BY id').all(n.id);
+  eq(atts.length, 2, 'должно быть ровно два вложения (javascript: отбит)');
+  const page = await http(`/news/${n.id}`);
+  eq(page.status, 200, 'новость');
+  assert(/Пресс-служба ФТСО/.test(page.text), 'автор не показан');
+  assert(new RegExp(`<img src="/news/${n.id}/cover"`).test(page.text), 'обложка не показана картинкой');
+  assert(/Положение/.test(page.text) && new RegExp(`/files/${atts[0].upload_id}`).test(page.text), 'файл-вложение не показано');
+  assert(/https:\/\/example\.org\/results/.test(page.text) && /Результаты на сайте РТТ/.test(page.text), 'ссылка не показана');
+  eq((await http(`/files/${atts[0].upload_id}`)).status, 200, 'файл вложения скачивается');
+  assert(new RegExp(`<img src="/news/${n.id}/cover"`).test((await http('/news')).text), 'в списке новостей нет обложки');
+  // Черновик — ни обложки, ни файла наружу.
+  db.prepare('UPDATE news SET is_published = 0 WHERE id = ?').run(n.id);
+  eq((await http(`/news/${n.id}/cover`)).status, 404, 'обложка черновика отдаётся');
+  eq((await http(`/files/${atts[0].upload_id}`)).status, 404, 'файл черновика отдаётся');
+  db.prepare('UPDATE news SET is_published = 1 WHERE id = ?').run(n.id);
+  // Удаление вложения уносит файл; удаление новости — всё остальное.
+  eq((await http(`/admin/news/${n.id}/attachments/${atts[0].id}/delete`, { method: 'POST', form: { _csrf }, jar })).status, 302, 'удаление вложения');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM uploads WHERE id = ?').get(atts[0].upload_id).n, 0, 'файл вложения не удалён');
+  const coverId = db.prepare('SELECT cover_upload_id FROM news WHERE id = ?').get(n.id).cover_upload_id;
+  eq((await http(`/admin/news/${n.id}/delete`, { method: 'POST', form: { _csrf }, jar })).status, 302, 'удаление новости');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM uploads WHERE id = ?').get(coverId).n, 0, 'обложка не удалена вместе с новостью');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM news_attachments WHERE news_id = ?').get(n.id).n, 0, 'вложения не удалены каскадом');
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'автор показан; обложка картинкой (EXIF снят) в новости и в списке; файл и ссылка в «Материалах», javascript: отбит; черновик наружу ничего не отдаёт; удаление чистит файлы';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
