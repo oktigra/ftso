@@ -40,6 +40,9 @@
           <a href="mailto:<%= operator.email %>"><%= operator.email %></a><br>
           <a href="tel:<%= operator.phoneHref %>"><%= operator.phone %></a>
         </address>
+        <% if (maxUrl) { %>
+          <p class="footer-max"><a class="btn btn--secondary btn--small btn--max" href="<%= maxUrl %>" rel="noopener" target="_blank">Написать в MAX ↗</a></p>
+        <% } %>
       </div>
     </div>
     <div class="footer-bottom">

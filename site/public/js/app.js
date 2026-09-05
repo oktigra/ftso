@@ -9,6 +9,37 @@
   // правило на все формы админки: 05.09.2026 владелец удалил сам себя одним
   // кликом. Текст — из data-confirm кнопки либо общий. Без JS форма уйдёт как
   // раньше — сервер и так проверяет права и CSRF.
+  // ГАЛЕРЕЯ: полноэкранный просмотр на <dialog> (ТЗ 4.8). Клик по снимку —
+  // открыть, ←/→ или кнопки — листать, Esc/крестик/клик по фону — закрыть.
+  (function () {
+    var box = document.querySelector('[data-lightbox]');
+    var items = Array.prototype.slice.call(document.querySelectorAll('[data-gallery-item]'));
+    if (!box || !items.length || typeof box.showModal !== 'function') return;
+    var img = box.querySelector('.lightbox__img');
+    var cap = box.querySelector('.lightbox__caption');
+    var cur = 0;
+    function show(i) {
+      cur = (i + items.length) % items.length;
+      var a = items[cur];
+      img.src = a.getAttribute('href');
+      img.alt = a.getAttribute('data-caption') || '';
+      cap.textContent = a.getAttribute('data-caption') || '';
+      if (!box.open) box.showModal();
+    }
+    items.forEach(function (a, i) {
+      a.addEventListener('click', function (e) { e.preventDefault(); show(i); });
+    });
+    box.querySelector('[data-lightbox-prev]').addEventListener('click', function () { show(cur - 1); });
+    box.querySelector('[data-lightbox-next]').addEventListener('click', function () { show(cur + 1); });
+    box.querySelector('[data-lightbox-close]').addEventListener('click', function () { box.close(); });
+    box.addEventListener('click', function (e) { if (e.target === box) box.close(); });
+    box.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowLeft') show(cur - 1);
+      if (e.key === 'ArrowRight') show(cur + 1);
+    });
+    box.addEventListener('close', function () { img.src = ''; });
+  })();
+
   // Печатная версия рейтинга: кнопка «Сохранить как PDF» — это window.print().
   document.addEventListener('click', function (e) {
     var b = e.target && e.target.closest ? e.target.closest('[data-print]') : null;

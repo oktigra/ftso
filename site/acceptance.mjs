@@ -1527,6 +1527,30 @@ await check('турниры (ТЗ 4.3): поля город/начало/тип/
   return 'три турнира, шесть фильтров работают по одному, статус считается от дат, мусор в фильтрах игнорируется, начало позже конца — отказ';
 });
 
+await check('MAX (ТЗ 8, решение владельца): кнопка только при MAX_URL вида https://max.ru/…', async () => {
+  const { loadConfig } = await import('./server/lib/config.mjs');
+  const saved = process.env.MAX_URL;
+  try {
+    delete process.env.MAX_URL;
+    eq(loadConfig({ requireSecrets: false }).maxUrl, '', 'без MAX_URL — пусто');
+    process.env.MAX_URL = 'https://max.ru/ftso67';
+    eq(loadConfig({ requireSecrets: false }).maxUrl, 'https://max.ru/ftso67', 'корректный адрес принят');
+    process.env.MAX_URL = 'https://evil.example/ftso';
+    eq(loadConfig({ requireSecrets: false }).maxUrl, '', 'чужой домен должен отбрасываться');
+    process.env.MAX_URL = 'javascript:alert(1)';
+    eq(loadConfig({ requireSecrets: false }).maxUrl, '', 'javascript: должен отбрасываться');
+  } finally {
+    if (saved === undefined) delete process.env.MAX_URL; else process.env.MAX_URL = saved;
+  }
+  const home = await http('/');
+  const contacts = await http('/contacts');
+  const hasBtn = /Написать в MAX/.test(home.text);
+  eq(hasBtn, Boolean(config.maxUrl), 'кнопка в подвале должна быть ровно при заданном MAX_URL');
+  eq(/Написать в MAX/.test(contacts.text), Boolean(config.maxUrl), 'кнопка на /contacts должна быть ровно при заданном MAX_URL');
+  assert(!/vk\.com|t\.me|telegram|instagram|facebook/i.test(home.text), 'в подвале появились чужие соцсети — MAX единственный');
+  return `MAX_URL валидируется (только https://max.ru/…); сейчас в тесте ${config.maxUrl ? 'задан — кнопка есть' : 'не задан — кнопки нет'}; других соцсетей нет`;
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
@@ -4635,6 +4659,9 @@ await check('галерея: снимок с EXIF → без EXIF, привяз�
   const stored = readFileSync(resolve(UPLOAD_DIR, item.stored_name));
   assert(!(await sharpLib(stored).metadata()).exif, 'EXIF остался в снимке галереи — утекли бы геолокация и модель камеры');
   const page = await http('/gallery');
+  // ТЗ 4.8: полноэкранный просмотр — <dialog> и ссылки-обёртки на снимках; без JS ссылка открывает файл.
+  assert(/<dialog class="lightbox" data-lightbox/.test(page.text), 'на /gallery нет <dialog> для полноэкранного просмотра');
+  assert(new RegExp(`<a href="/gallery/${item.id}/image" class="gallery-link" data-gallery-item`).test(page.text), 'снимок не обёрнут ссылкой для просмотра');
   eq(page.status, 200, '/gallery');
   assert(page.text.includes(`<img src="/gallery/${item.id}/image"`), 'снимок не показан картинкой');
   assert(page.text.includes('Финал: общий план корта') && page.text.includes(t.name), 'на странице нет подписи или названия соревнования');

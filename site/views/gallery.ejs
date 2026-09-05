@@ -17,11 +17,17 @@
          профиль gallery пропускает только растровые изображения по сигнатуре
          байтов (SVG не проходит), отдача — с nosniff и mime из базы. */
       %>
-      <ul class="gallery-grid">
-        <% items.forEach(function (g) { %>
+      <%
+      /* Полноэкранный просмотр (ТЗ 4.8): <dialog> в app.js, листание ←/→, Esc.
+         Без JS ссылка открывает сам файл — это тоже полный экран. */
+      %>
+      <ul class="gallery-grid" data-gallery>
+        <% items.forEach(function (g, i) { %>
           <li>
             <figure>
-              <img src="/gallery/<%= g.id %>/image" alt="<%= g.title %>" loading="lazy">
+              <a href="/gallery/<%= g.id %>/image" class="gallery-link" data-gallery-item data-index="<%= i %>" data-caption="<%= g.title %><%= g.tournament_name ? ' — ' + g.tournament_name : '' %>">
+                <img src="/gallery/<%= g.id %>/image" alt="<%= g.title %>" loading="lazy">
+              </a>
               <figcaption>
                 <%= g.title %>
                 <% if (g.tournament_name) { %><span class="muted"> — <%= g.tournament_name %><%= g.tournament_date ? ", " + g.tournament_date : "" %></span><% } %>
@@ -30,6 +36,15 @@
           </li>
         <% }); %>
       </ul>
+      <dialog class="lightbox" data-lightbox aria-label="Просмотр фотографии">
+        <button class="lightbox__close" type="button" data-lightbox-close aria-label="Закрыть">×</button>
+        <button class="lightbox__nav lightbox__nav--prev" type="button" data-lightbox-prev aria-label="Предыдущая">‹</button>
+        <figure class="lightbox__figure">
+          <img class="lightbox__img" src="" alt="">
+          <figcaption class="lightbox__caption"></figcaption>
+        </figure>
+        <button class="lightbox__nav lightbox__nav--next" type="button" data-lightbox-next aria-label="Следующая">›</button>
+      </dialog>
     <% } %>
     <div class="panel notice gallery-legal">
       <p><strong>Репортажная съёмка соревнований.</strong> Снимки сделаны на открытых спортивных
