@@ -154,9 +154,14 @@ export function loadConfig({ requireSecrets = true } = {}) {
     maxUrl: process.env.MAX_URL === 'off' ? ''
       : /^https:\/\/max\.ru\/\S+$/.test(process.env.MAX_URL || '') ? process.env.MAX_URL
       : 'https://max.ru/channel_ftso',
-    // Яндекс.Метрика (решение владельца 05.09.2026). Номер счётчика — только цифры.
-    // Пусто — ни баннера согласия, ни скрипта, ни доменов Яндекса в CSP.
-    metrikaId: /^\d{5,12}$/.test(process.env.METRIKA_ID || '') ? process.env.METRIKA_ID : '',
+    // Яндекс.Метрика (решение владельца 05.09.2026). Счётчик 112305908 создан
+    // 05.09.2026 на аккаунте федерации info@ftso67.ru (владелец — федерация;
+    // вебвизор, автоцели, e-commerce, тег-менеджер выключены). Номер публичный —
+    // в коде умолчанием; METRIKA_ID в .env переопределяет, METRIKA_ID=off выключает
+    // (тогда ни баннера, ни скрипта, ни доменов Яндекса в CSP). В тестах — off.
+    metrikaId: process.env.METRIKA_ID === 'off' ? ''
+      : /^\d{5,12}$/.test(process.env.METRIKA_ID || '') ? process.env.METRIKA_ID
+      : '112305908',
     feedback: {
       // Обработанные обращения живут ещё год (срок исковой давности по спорам об ответе).
       retentionDays: Number(process.env.FEEDBACK_RETENTION_DAYS || 365),
