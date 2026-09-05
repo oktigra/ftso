@@ -136,6 +136,7 @@ export function createApp(config) {
     // «Контакты»): расхождение контактов оператора между страницами читается
     // как недостоверные сведения об операторе.
     res.locals.operator = OPERATOR;
+    res.locals.maxUrl = config.maxUrl;
     res.locals.currentPath = req.path;
     // Канонический адрес: боевой домен из конфига + путь без query и без «/» в конце.
     res.locals.siteUrl = config.siteUrl.replace(/\/$/, '');

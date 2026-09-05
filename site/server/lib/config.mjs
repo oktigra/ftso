@@ -146,6 +146,9 @@ export function loadConfig({ requireSecrets = true } = {}) {
     devNotice: process.env.DEV_NOTICE === '1',
     // «Сохранить данные для входа»: срок сессии с отметкой, дней (по умолчанию 30).
     rememberDays: Number(process.env.REMEMBER_DAYS || 30),
+    // Мессенджер MAX — единственная интеграция с соцсетями/мессенджерами
+    // (решение владельца 05.09.2026). Пусто — кнопки нет. Только https://max.ru/…
+    maxUrl: /^https:\/\/max\.ru\/\S+$/.test(process.env.MAX_URL || '') ? process.env.MAX_URL : '',
     feedback: {
       // Обработанные обращения живут ещё год (срок исковой давности по спорам об ответе).
       retentionDays: Number(process.env.FEEDBACK_RETENTION_DAYS || 365),

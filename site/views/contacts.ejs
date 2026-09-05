@@ -21,6 +21,7 @@
         <dt>Ответственный за организацию обработки персональных данных (ст. 22.1 152-ФЗ)</dt><dd><%= op.responsible.name %>, <%= op.responsible.title %></dd>
         <dt>Электронная почта</dt><dd><a href="mailto:<%= op.email %>"><%= op.email %></a></dd>
         <dt>Телефон</dt><dd><a href="tel:<%= op.phoneHref %>"><%= op.phone %></a></dd>
+        <% if (maxUrl) { %><dt>Мессенджер</dt><dd><a class="btn btn--secondary btn--small btn--max" href="<%= maxUrl %>" rel="noopener" target="_blank">Написать в MAX ↗</a></dd><% } %>
       </dl>
     </div>
     <div class="panel">
