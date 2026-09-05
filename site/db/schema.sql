@@ -416,6 +416,13 @@ CREATE TABLE IF NOT EXISTS news (
 );
 CREATE INDEX IF NOT EXISTS idx_news_published ON news (is_published, published_at DESC);
 
+-- ТЕКСТЫ САЙТА по ключу (заголовки/подводки главной, «О Федерации»), правятся в админке.
+CREATE TABLE IF NOT EXISTS site_texts (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- КАРТИНКИ САЙТА по ключу (фото баннера главной и т. п.), грузятся из админки.
 CREATE TABLE IF NOT EXISTS site_assets (
   key        TEXT PRIMARY KEY,

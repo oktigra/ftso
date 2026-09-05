@@ -13,6 +13,7 @@ import {
 } from '../lib/validate.mjs';
 import { DIRECTORIES, listDirectory, directoryFilterOptions } from '../lib/directories.mjs';
 import { descriptionFrom } from '../lib/seo.mjs';
+import { siteText, paragraphs } from '../lib/texts.mjs';
 import {
   publishedNews,
   newsById,
@@ -49,6 +50,12 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       tournaments: tournamentList(db).slice(0, 5),
       news: publishedNews(db, 3),
       heroUploadId: siteAsset(db, 'home-hero'),
+      texts: {
+        title: siteText(db, 'home-title'),
+        lead: siteText(db, 'home-lead'),
+        tournamentsLead: siteText(db, 'home-tournaments-lead'),
+        cabinetLead: siteText(db, 'home-cabinet-lead'),
+      },
       stats: homeStats(db, standings),
       nextEvent: homeNextEvent(db),
       rules: RATING_CONFIG,
@@ -174,6 +181,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
   app.get('/federation', (req, res) => {
     res.render('federation', {
       title: 'О Федерации — ФТСО',
+      about: paragraphs(siteText(db, 'federation-about')),
       op: OPERATOR,
       documents: federationDocuments(db).filter((d) => /устав|учредит/i.test(d.category)),
       publicDocuments: PUBLIC_DOCUMENTS,

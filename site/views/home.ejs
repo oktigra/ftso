@@ -14,8 +14,8 @@
   <div class="container hero-grid">
     <div class="hero-copy">
       <span class="eyebrow">Официальный сайт Федерации тенниса Смоленской области</span>
-      <h1>Теннис Смоленской области — в единой рейтинговой системе</h1>
-      <p class="lead">Календарь турниров, региональный рейтинг игроков и онлайн-регистрация через личный кабинет. Один портал для спортсменов, организаторов и болельщиков.</p>
+      <h1><%= texts.title %></h1>
+      <p class="lead"><%= texts.lead %></p>
       <div class="hero-cta">
         <a class="btn btn--primary" href="#tournaments">Ближайшие турниры</a>
         <a class="btn btn--secondary" href="#rating">Открыть рейтинг</a>
@@ -63,7 +63,7 @@
     <div class="section-head">
       <span class="eyebrow">Календарь сезона</span>
       <h2>Турниры Федерации</h2>
-      <p class="lead">Соревнования сезона 2025/26 по регламенту ФТСО. Категории A и B определяют рейтинговый коэффициент.</p>
+      <p class="lead"><%= texts.tournamentsLead %></p>
     </div>
     <div class="tourn-grid">
       <div>
@@ -89,10 +89,10 @@
       </div>
       <aside class="reg-card fx-card"><%- include('partials/court-card') %>
         <h3>Регистрация онлайн</h3>
-        <p class="reg-card-lead">Личный кабинет игрока — заявка и оплата участия в несколько шагов.</p>
+        <p class="reg-card-lead"><%= texts.cabinetLead %></p>
         <ul>
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>Личный кабинет игрока и история результатов</li>
-          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>Заявка и оплата участия онлайн</li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>Заявка на регистрацию и на проведение турнира онлайн</li>
           <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>Приём документов от секретарей турниров с модерацией перед публикацией</li>
         </ul>
         <a class="btn btn--primary" href="/cabinet">Личный кабинет</a>
