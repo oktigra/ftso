@@ -987,6 +987,35 @@ await check('CSV-экспорт с корректными заголовками
   return 'attachment + text/csv + BOM; есть и вариант экспорта движком';
 });
 
+await check('ТЗ 4.4: экспорт Excel (.xlsx — настоящий zip/OOXML) и печатная версия для PDF', async () => {
+  const buf = Buffer.from(await (await fetch(inst.base + '/rating.xlsx')).arrayBuffer());
+  const r = await http('/rating.xlsx');
+  eq(r.status, 200, 'GET /rating.xlsx');
+  assert(/spreadsheetml\.sheet/.test(r.headers.get('content-type')), 'Content-Type не xlsx');
+  assert(/attachment; filename="rating-[^"]+\.xlsx"/.test(r.headers.get('content-disposition')), 'нет attachment с именем файла');
+  eq(buf.slice(0, 2).toString('latin1'), 'PK', 'файл не начинается с сигнатуры zip');
+  // Внутри — лист с той же шапкой, что у CSV, и хотя бы одной строкой игрока.
+  const { inflateRawSync } = await import('node:zlib');
+  const names = []; let off = 0; let sheet = '';
+  while (buf.readUInt32LE(off) === 0x04034b50) {
+    const csize = buf.readUInt32LE(off + 18); const nlen = buf.readUInt16LE(off + 26); const elen = buf.readUInt16LE(off + 28);
+    const name = buf.slice(off + 30, off + 30 + nlen).toString('utf8'); names.push(name);
+    const data = buf.slice(off + 30 + nlen + elen, off + 30 + nlen + elen + csize);
+    if (name === 'xl/worksheets/sheet1.xml') sheet = inflateRawSync(data).toString('utf8');
+    off += 30 + nlen + elen + csize;
+  }
+  assert(names.includes('[Content_Types].xml') && names.includes('xl/workbook.xml'), `в zip нет обязательных частей: ${names.join(', ')}`);
+  assert(/<t[^>]*>Место<\/t>/.test(sheet) && /<t[^>]*>Очки<\/t>/.test(sheet), 'в листе нет шапки');
+  assert(/<row r="2">/.test(sheet), 'в листе нет ни одной строки игрока');
+  // Печатная версия: таблица есть, шапки/подвала сайта нет, кнопка печати есть.
+  const pr = await http('/rating/print');
+  eq(pr.status, 200, 'GET /rating/print');
+  assert(/class="print-table"/.test(pr.text) && /data-print/.test(pr.text), 'печатная версия без таблицы или кнопки');
+  assert(!/class="site-header"/.test(pr.text) && !/class="site-footer"/.test(pr.text), 'в печатной версии осталась шапка/подвал');
+  assert(/Выгрузить:/.test((await http('/rating')).text) && /rating\.xlsx/.test((await http('/rating')).text), 'на витрине нет ссылок выгрузки');
+  return `xlsx: zip с ${names.length} частями, лист с шапкой и строками; /rating/print без шапки сайта, с кнопкой печати`;
+});
+
 // ===========================================================================
 section('10. Схема, миграция, конфигурация');
 

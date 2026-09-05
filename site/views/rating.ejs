@@ -78,7 +78,10 @@
 
       <p class="rating-summary muted">
         Показано <%= players.length %> из <%= total %> игроков.
-        <a class="link-more" href="/rating.csv?<%= new URLSearchParams(filters).toString() %>">Выгрузить CSV <span aria-hidden="true">→</span></a>
+        Выгрузить:
+        <a class="link-more" href="/rating.xlsx?<%= new URLSearchParams(filters).toString() %>">Excel</a> ·
+        <a class="link-more" href="/rating/print?<%= new URLSearchParams(filters).toString() %>" target="_blank" rel="noopener">PDF (печать)</a> ·
+        <a class="link-more" href="/rating.csv?<%= new URLSearchParams(filters).toString() %>">CSV</a>
       </p>
 
       <% if (players.length === 0) { %>

@@ -1,0 +1,34 @@
+<%
+/* ПЕЧАТНАЯ ВЕРСИЯ РЕЙТИНГА (ТЗ 4.4, PDF): без шапки, подвала и фильтров —
+   только таблица и реквизиты. «Сохранить как PDF» делает браузер. Инлайн-стили
+   через nonce CSP; кнопка печати — тоже под nonce. */
+%>
+<%- include('partials/head') %>
+<main id="top" class="print-sheet">
+  <div class="container">
+    <p class="print-toolbar"><button class="btn btn--primary" type="button" data-print>Сохранить как PDF / напечатать</button>
+      <a class="btn btn--secondary" href="/rating">← к рейтингу</a></p>
+    <h1>Рейтинг игроков — Федерация тенниса Смоленской области</h1>
+    <p class="muted">
+      <% if (standings) { %>
+        Разряд: <%= disciplineRu[discipline] || discipline %> · актуальность: <%= standings.asOf %><%= statusText ? ' · ' + statusText : '' %> · ftso67.ru/rating
+      <% } else { %>Рейтинг ещё не рассчитан.<% } %>
+    </p>
+    <% if (rows.length > 1) { %>
+      <table class="print-table">
+        <thead><tr><% rows[0].forEach(function (h) { %><th><%= h %></th><% }); %></tr></thead>
+        <tbody>
+          <% rows.slice(1).forEach(function (r) { %>
+            <tr><% r.forEach(function (c) { %><td><%= c === '' || c === null || c === undefined ? '—' : c %></td><% }); %></tr>
+          <% }); %>
+        </tbody>
+      </table>
+    <% } else if (standings) { %>
+      <p class="muted">По выбранным фильтрам игроков нет.</p>
+    <% } %>
+    <p class="muted print-foot">Результаты соревнований публикуются по факту участия (п. 5 ч. 1 ст. 6 152-ФЗ). Сформировано <%= new Date().toISOString().slice(0, 10) %>.</p>
+  </div>
+</main>
+<script src="/static/js/app.js?v=<%= assetVersion %>" defer></script>
+</body>
+</html>
