@@ -4464,6 +4464,65 @@ section('18. Рубильник приёма ПДн, баннер разрабо
 
 // Отдельный экземпляр с ЗАКРЫТЫМ приёмом: основное приложение работает с
 // открытым, и переключать его на лету — значит ловить чужие эффекты.
+await check('Метрика (решение владельца): без METRIKA_ID — ни баннера, ни Яндекса в CSP; с номером — баннер, счётчик только после «Принять»', async () => {
+  const { loadConfig } = await import('./server/lib/config.mjs');
+  const saved = process.env.METRIKA_ID;
+  try {
+    process.env.METRIKA_ID = '12345678';
+    eq(loadConfig({ requireSecrets: false }).metrikaId, '12345678', 'номер счётчика принят');
+    process.env.METRIKA_ID = '<script>';
+    eq(loadConfig({ requireSecrets: false }).metrikaId, '', 'мусор вместо номера отброшен');
+    delete process.env.METRIKA_ID;
+    eq(loadConfig({ requireSecrets: false }).metrikaId, '', 'без переменной — пусто');
+  } finally {
+    if (saved === undefined) delete process.env.METRIKA_ID; else process.env.METRIKA_ID = saved;
+  }
+  // Основной инстанс тестов — без счётчика: ни баннера, ни Яндекса.
+  const plain = await http('/');
+  assert(!/data-cookie-bar/.test(plain.text) && !/mc\.yandex\.ru/.test(plain.text), 'без METRIKA_ID на странице есть баннер или Яндекс');
+  assert(!/mc\.yandex\.ru/.test(plain.headers.get('content-security-policy') || ''), 'без METRIKA_ID Яндекс попал в CSP');
+  // Инстанс со счётчиком.
+  const mApp = createApp({ ...config, metrikaId: '12345678' });
+  const mInst = await new Promise((res) => { const server = mApp.listen(0, '127.0.0.1', () => res({ server, base: `http://127.0.0.1:${server.address().port}` })); });
+  const mHttp = makeClient(mInst.base);
+  try {
+    const home = await mHttp('/');
+    assert(/data-cookie-bar data-metrika="12345678"/.test(home.text), 'баннер не показан');
+    assert(!/<script[^>]+mc\.yandex\.ru/.test(home.text), 'счётчик подключён статически, до согласия');
+    assert(/mc\.yandex\.ru/.test(home.headers.get('content-security-policy') || ''), 'Яндекс не разрешён в CSP при заданном счётчике');
+    assert(/data-cookie-settings/.test(home.text), 'нет «Настройки cookie» в подвале');
+    const declined = await mHttp('/', { headers: { cookie: 'ftso.analytics=0' } });
+    assert(/data-cookie-bar[^>]*hidden/.test(declined.text), 'после «Отклонить» баннер должен быть скрыт');
+    const accepted = await mHttp('/', { headers: { cookie: 'ftso.analytics=1' } });
+    assert(/data-cookie-bar[^>]*data-choice="1"[^>]*hidden/.test(accepted.text), 'после «Принять» баннер должен быть скрыт, выбор передан');
+    // Политика: разд. 8 описывает Метрику и как отозвать.
+    const pol = await mHttp('/privacy');
+    assert(/id="cookies"/.test(pol.text) && /Яндекс\.Метрика/.test(pol.text) && /Настройки cookie/.test(pol.text) && /вебвизор/i.test(pol.text), 'Политика разд. 8 не описывает Метрику/отзыв/вебвизор');
+    // Браузер: «Отклонить» → cookie 0, скрипта нет; «Принять» → cookie 1, тег на mc.yandex.ru появился.
+    const { chromium } = await import('playwright');
+    const browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-sandbox'] });
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    try {
+      await page.goto(mInst.base + '/', { waitUntil: 'domcontentloaded' });
+      await page.click('[data-cookie-decline]');
+      let cookies = await ctx.cookies();
+      eq((cookies.find((c) => c.name === 'ftso.analytics') || {}).value, '0', 'cookie после «Отклонить»');
+      eq(await page.evaluate(() => document.querySelectorAll('script[src*="mc.yandex.ru"]').length), 0, 'после «Отклонить» счётчик подключён');
+      await page.click('[data-cookie-settings]');
+      eq(await page.evaluate(() => document.querySelector('[data-cookie-bar]').hidden), false, '«Настройки cookie» не вернули баннер');
+      await page.click('[data-cookie-accept]');
+      cookies = await ctx.cookies();
+      eq((cookies.find((c) => c.name === 'ftso.analytics') || {}).value, '1', 'cookie после «Принять»');
+      eq(await page.evaluate(() => document.querySelectorAll('script[src*="mc.yandex.ru/metrika/tag.js"]').length), 1, 'после «Принять» тег счётчика не добавлен');
+      eq(await page.evaluate(() => document.querySelector('[data-cookie-bar]').hidden), true, 'после «Принять» баннер не скрыт');
+    } finally { await ctx.close(); await browser.close(); }
+  } finally {
+    await new Promise((r) => mInst.server.close(r));
+  }
+  return 'без номера — чисто; с номером — баннер, CSP c mc.yandex.ru, тег только после «Принять», «Отклонить» на год, Политика разд. 8';
+});
+
 const closedInst = await (async () => {
   const app = createApp({ ...config, intakeEnabled: false, devNotice: true }); // плашка включена явно: по умолчанию с 04.09 её нет
   return new Promise((res) => {
