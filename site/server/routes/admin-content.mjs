@@ -179,6 +179,47 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
     }),
   );
 
+  // ФОТО ЗАПИСИ СПРАВОЧНИКА (ТЗ 4.5/4.6): отдельная форма у строки — загрузка
+  // и снятие. Картинка пересобирается (EXIF снимается) профилем gallery.
+  app.post(
+    '/admin/directories/:key/:id/photo',
+    requireRole(...CONTENT_ROLES),
+    limitWrites,
+    guard(async (req, res, next) => {
+      const spec = directoryByKey(req.params.key);
+      if (!spec || !spec.photo) return next();
+      const id = intAtLeast(req.params.id, 'id');
+      const row = db.prepare(`SELECT id, photo_upload_id FROM ${spec.table} WHERE id = ?`).get(id);
+      if (!row) throw new ValidationError('Запись не найдена');
+      const { upload } = await oneFile(req, { profile: 'gallery', field: 'photo' });
+      db.transaction(() => {
+        db.prepare(`UPDATE ${spec.table} SET photo_upload_id = ? WHERE id = ?`).run(upload.id, id);
+        if (row.photo_upload_id) deleteUpload(db, row.photo_upload_id, config.upload.dir);
+      })();
+      logAction(db, req.session.user.id, `${spec.key}.photo`, id, { upload: upload.id });
+      flash(req, res, 'ok', 'Фото сохранено.', `/admin/directories/${spec.key}`);
+    }),
+  );
+
+  app.post(
+    '/admin/directories/:key/:id/photo/delete',
+    requireRole(...CONTENT_ROLES),
+    limitWrites,
+    guard((req, res, next) => {
+      const spec = directoryByKey(req.params.key);
+      if (!spec || !spec.photo) return next();
+      const id = intAtLeast(req.params.id, 'id');
+      const row = db.prepare(`SELECT photo_upload_id FROM ${spec.table} WHERE id = ?`).get(id);
+      if (!row || !row.photo_upload_id) throw new ValidationError('Фото нет');
+      db.transaction(() => {
+        db.prepare(`UPDATE ${spec.table} SET photo_upload_id = NULL WHERE id = ?`).run(id);
+        deleteUpload(db, row.photo_upload_id, config.upload.dir);
+      })();
+      logAction(db, req.session.user.id, `${spec.key}.photo.delete`, id, null);
+      flash(req, res, 'ok', 'Фото снято.', `/admin/directories/${spec.key}`);
+    }),
+  );
+
   app.post(
     '/admin/directories/:key/:id/delete',
     requireRole(...CONTENT_ROLES),

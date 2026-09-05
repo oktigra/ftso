@@ -1685,6 +1685,46 @@ await check('импорт результатов из таблицы: xlsx (shar
   return 'xlsx (свой и openpyxl) и csv читаются; файл → предпросмотр с красной строкой, без сохранения; битый zip — ошибка, без CSRF — отказ';
 });
 
+await check('ТЗ 4.5/4.6 «фото»: у тренера/корта/клуба загружается фото (EXIF снят), показывается на витрине, снимается; у судей — нет', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/directories/courts', { jar })).text);
+  eq((await http('/admin/directories/courts', { method: 'POST', form: { _csrf, name: 'Фотокорт', city: 'Смоленск' }, jar })).status, 302, 'корт');
+  const court = db.prepare("SELECT id FROM courts WHERE name = 'Фотокорт'").get();
+  assert(court, 'корт не создан');
+  eq((await http(`/courts/${court.id}/photo`)).status, 404, 'фото до загрузки');
+  const sharpMod = (await import('sharp')).default;
+  const jpg = await sharpMod({ create: { width: 640, height: 480, channels: 3, background: '#2a6f97' } })
+    .withMetadata({ exif: { IFD0: { Copyright: 'FTSO-EXIF-MARK' } } }).jpeg().toBuffer();
+  const up = await http(`/admin/directories/courts/${court.id}/photo`, {
+    method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'photo', filename: 'court.jpg', type: 'image/jpeg', buffer: jpg }] }, jar,
+  });
+  eq(up.status, 302, 'загрузка фото корта');
+  const pub = await http(`/courts/${court.id}/photo`);
+  eq(pub.status, 200, 'публичное фото корта');
+  const raw = Buffer.from(await (await fetch(inst.base + `/courts/${court.id}/photo`)).arrayBuffer());
+  assert(!raw.includes('FTSO-EXIF-MARK'), 'EXIF не снят с фото справочника');
+  assert(new RegExp(`<img src="/courts/${court.id}/photo"`).test((await http('/courts')).text), 'на витрине нет миниатюры');
+  assert(new RegExp(`photo-del-courts-${court.id}`).test((await http('/admin/directories/courts', { jar })).text), 'в админке нет кнопки «Снять»');
+  // Замена — старый файл удаляется.
+  const firstUpload = db.prepare('SELECT photo_upload_id FROM courts WHERE id = ?').get(court.id).photo_upload_id;
+  eq((await http(`/admin/directories/courts/${court.id}/photo`, {
+    method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'photo', filename: 'c2.jpg', type: 'image/jpeg', buffer: await sharpMod({ create: { width: 300, height: 300, channels: 3, background: '#000' } }).jpeg().toBuffer() }] }, jar,
+  })).status, 302, 'замена фото');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM uploads WHERE id = ?').get(firstUpload).n, 0, 'старое фото не удалено при замене');
+  // Снятие.
+  eq((await http(`/admin/directories/courts/${court.id}/photo/delete`, { method: 'POST', form: { _csrf }, jar })).status, 302, 'снятие');
+  eq((await http(`/courts/${court.id}/photo`)).status, 404, 'фото после снятия');
+  // Не картинка — отказ; у судей маршрута фото нет.
+  eq((await http(`/admin/directories/courts/${court.id}/photo`, {
+    method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'photo', filename: 'x.pdf', type: 'application/pdf', buffer: Buffer.from('%PDF-1.4 fake') }] }, jar,
+  })).status, 302, 'не картинка — ответ');
+  eq(db.prepare('SELECT photo_upload_id FROM courts WHERE id = ?').get(court.id).photo_upload_id, null, 'PDF не должен стать фото');
+  eq((await http('/referees/1/photo')).status, 404, 'у судей фото не предусмотрено');
+  db.prepare('DELETE FROM courts WHERE id = ?').run(court.id);
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'фото корта: 404 → загрузка (EXIF снят) → 200 и миниатюра → замена удаляет старый файл → снятие 404; PDF отбит; судьи без фото';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

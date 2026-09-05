@@ -40,11 +40,14 @@
         <table>
           <caption class="visually-hidden"><%= spec.title %></caption>
           <thead>
-            <tr><% spec.fields.forEach(function (f) { %><th scope="col"><%= f.label %></th><% }); %></tr>
+            <tr><% if (spec.photo) { %><th scope="col">Фото</th><% } %><% spec.fields.forEach(function (f) { %><th scope="col"><%= f.label %></th><% }); %></tr>
           </thead>
           <tbody>
             <% rows.forEach(function (row) { %>
               <tr>
+                <% if (spec.photo) { %>
+                  <td class="dir-photo"><% if (row.photo_upload_id) { %><img src="<%= spec.path %>/<%= row.id %>/photo" alt="" loading="lazy" width="72" height="72"><% } else { %><span class="muted">—</span><% } %></td>
+                <% } %>
                 <% spec.fields.forEach(function (f) { %>
                   <td>
                     <% if (f.name === 'map_url' && row[f.name]) { %>

@@ -443,6 +443,7 @@ CREATE TABLE IF NOT EXISTS coaches (
   specialization TEXT,
   qualification  TEXT,
   groups         TEXT,
+  photo_upload_id INTEGER REFERENCES uploads(id) ON DELETE SET NULL,
   basis         TEXT NOT NULL CHECK (length(trim(basis)) BETWEEN 1 AND 200),
   document_date TEXT NOT NULL,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -473,6 +474,7 @@ CREATE TABLE IF NOT EXISTS courts (
   season       TEXT,
   club         TEXT,
   contact      TEXT,
+  photo_upload_id INTEGER REFERENCES uploads(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -485,6 +487,7 @@ CREATE TABLE IF NOT EXISTS clubs (
   note       TEXT,
   city       TEXT,
   map_url    TEXT,
+  photo_upload_id INTEGER REFERENCES uploads(id) ON DELETE SET NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 

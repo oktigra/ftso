@@ -116,6 +116,15 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
 
   // --- справочники ---------------------------------------------------------
   for (const spec of Object.values(DIRECTORIES)) {
+    if (spec.photo) {
+      app.get(`${spec.path}/:id/photo`, (req, res, next) => {
+        if (!/^\d+$/.test(req.params.id)) return next();
+        const row = db.prepare(`SELECT photo_upload_id FROM ${spec.table} WHERE id = ?`).get(Number(req.params.id));
+        if (!row || !row.photo_upload_id) return next();
+        const upload = uploadById(db, row.photo_upload_id);
+        if (!upload || !sendUploadInline(req, res, upload, config.upload.dir)) return next();
+      });
+    }
     app.get(spec.path, (req, res) => {
       const filters = {};
       for (const f of spec.fields) if (f.filter) filters[f.name] = String(req.query[f.name] || '').trim().slice(0, f.max);

@@ -542,6 +542,8 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .btn--max{margin-top:.5rem;}
 .bulk-preview tr.bulk-ok td{background:rgba(16,120,80,.10);} .bulk-preview tr.bulk-missing td, .bulk-preview tr.bulk-ambiguous td, .bulk-preview tr.bulk-dup td, .bulk-preview tr.bulk-unparsed td{background:rgba(200,60,40,.12);}
 .new-player{flex-basis:100%;} .new-player summary{cursor:pointer; color:var(--primary); font-weight:600;} .new-player .inline-form{margin-top:.6rem;}
+.dir-photo img{display:block; object-fit:cover; border-radius:.6rem; background:var(--surface-2);}
+.dir-photo input[type=file]{max-width:11rem; font-size:.8rem;}
 .guide h2{margin-top:1.6rem; font-size:1.15rem;}
 .guide ul{padding-left:1.2rem;} .guide li{margin:.35rem 0; line-height:1.5;}
 /* Баннер согласия на аналитику (Метрика грузится только после «Принять») */

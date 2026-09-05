@@ -19,6 +19,7 @@ export const DIRECTORIES = {
     path: '/coaches',
     orderBy: 'full_name',
     personal: true,
+    photo: true, // ТЗ 4.5 «фото»
     // ТЗ п. 4.5: специализация, квалификация, категории, клуб, контакт; фильтр по городу или клубу.
     fields: [
       { name: 'full_name', label: 'ФИО', required: true, max: 120 },
@@ -52,6 +53,7 @@ export const DIRECTORIES = {
     path: '/courts',
     orderBy: 'name',
     personal: false,
+    photo: true, // ТЗ 4.6 «фото»
     // ТЗ п. 4.6: адрес, покрытие, количество кортов, сезонность, контакт, карта.
     fields: [
       { name: 'name', label: 'Название', required: true, max: 160 },
@@ -73,6 +75,7 @@ export const DIRECTORIES = {
     path: '/clubs',
     orderBy: 'name',
     personal: false,
+    photo: true,
     fields: [
       { name: 'name', label: 'Название', required: true, max: 160 },
       { name: 'city', label: 'Город', max: 80, filter: true },
