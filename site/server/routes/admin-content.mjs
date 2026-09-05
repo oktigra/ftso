@@ -12,6 +12,7 @@ import { intAtLeast, str, ValidationError } from '../lib/validate.mjs';
 import { parseMultipart } from '../lib/multipart.mjs';
 import { SEO_PAGES, SEO_DEFAULTS, seoFor, saveSeo } from '../lib/seo.mjs';
 import { SITE_TEXTS, saveText } from '../lib/texts.mjs';
+import { DIRECTORY_SEED, applyDirectorySeed } from '../lib/directory-seed.mjs';
 import { storeUpload, deleteUpload, uploadById, sendUpload } from '../lib/uploads.mjs';
 import {
   DIRECTORIES,
@@ -235,6 +236,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
     const spec = directoryByKey(req.params.key);
     if (!spec) return next();
     res.render('admin/directory', {
+      seedCount: (DIRECTORY_SEED[spec.key] || []).length,
       title: `${spec.title} — админка ФТСО`,
       spec,
       rows: listDirectory(db, spec),
@@ -268,6 +270,21 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       updateDirectoryRow(db, spec, id, data);
       logAction(db, req.session.user.id, `${spec.key}.update`, id, data);
       flash(req, res, 'ok', 'Запись обновлена.', `/admin/directories/${spec.key}`);
+    }),
+  );
+
+  // СТАРТОВЫЙ СПИСОК (корты и клубы области по открытым источникам, 05.09.2026):
+  // одна кнопка, повтор безвреден — уже существующие названия пропускаются.
+  app.post(
+    '/admin/directories/:key/seed',
+    requireRole(...CONTENT_ROLES),
+    limitWrites,
+    guard((req, res, next) => {
+      const spec = directoryByKey(req.params.key);
+      if (!spec || !DIRECTORY_SEED[spec.key]) return next();
+      const out = applyDirectorySeed(db, spec);
+      logAction(db, req.session.user.id, `${spec.key}.seed`, null, out);
+      flash(req, res, 'ok', `Стартовый список: добавлено ${out.added}, уже было ${out.skipped} из ${out.total}. Проверьте пометки «уточнить».`, `/admin/directories/${spec.key}`);
     }),
   );
 
