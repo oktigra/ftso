@@ -1826,6 +1826,27 @@ await check('главная: цифры и «ближайший турнир» �
   return `цифры по базе (игроков ${players}, турниров ${tours}); ближайший турнир — ссылка на карточку; без будущих — «скоро в календаре»`;
 });
 
+await check('фото баннера главной: загрузка в админке, показ на главной, замена удаляет старое, снятие возвращает заглушку', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/library', { jar })).text);
+  assert(/ph-label/.test((await http('/')).text), 'до загрузки на главной должна быть заглушка');
+  eq((await http('/site/hero')).status, 404, 'фото до загрузки');
+  const sharpMod = (await import('sharp')).default;
+  const mk = (bg) => sharpMod({ create: { width: 1200, height: 900, channels: 3, background: bg } }).jpeg().toBuffer();
+  eq((await http('/admin/library/hero', { method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'file', filename: 'hero.jpg', type: 'image/jpeg', buffer: await mk('#123') }] }, jar })).status, 302, 'загрузка');
+  const first = db.prepare("SELECT upload_id FROM site_assets WHERE key = 'home-hero'").get().upload_id;
+  eq((await http('/site/hero')).status, 200, 'фото отдаётся');
+  const home = await http('/');
+  assert(/class="photo__img" src="\/site\/hero/.test(home.text) && !/ph-label/.test(home.text), 'на главной не картинка, а заглушка');
+  eq((await http('/admin/library/hero', { method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'file', filename: 'hero2.jpg', type: 'image/jpeg', buffer: await mk('#321') }] }, jar })).status, 302, 'замена');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM uploads WHERE id = ?').get(first).n, 0, 'старое фото не удалено при замене');
+  eq((await http('/admin/library/hero/delete', { method: 'POST', form: { _csrf }, jar })).status, 302, 'снятие');
+  eq((await http('/site/hero')).status, 404, 'после снятия фото отдаётся');
+  assert(/ph-label/.test((await http('/')).text), 'после снятия нет заглушки');
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'заглушка → фото на главной → замена чистит старое → снятие возвращает заглушку';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

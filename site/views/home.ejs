@@ -32,8 +32,12 @@
          подставит, когда придёт модуль контента. */
       %>
       <div class="photo">
-        <div class="ph-stripes"></div>
-        <div class="ph-label"><span>фото · теннисный корт / матч · 4:3 · ~1200×900</span></div>
+        <% if (heroUploadId) { %>
+          <img class="photo__img" src="/site/hero?v=<%= heroUploadId %>" alt="" width="1200" height="900">
+        <% } else { %>
+          <div class="ph-stripes"></div>
+          <div class="ph-label"><span>фото · теннисный корт / матч · 4:3 · ~1200×900</span></div>
+        <% } %>
       </div>
       <div class="info-card fx-card"><%- include('partials/court-card') %>
         <% if (nextEvent) { %>

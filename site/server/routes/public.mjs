@@ -21,6 +21,7 @@ import {
   tournamentFilterOptions,
   homeStats,
   homeNextEvent,
+  siteAsset,
   tournamentParticipants,
   tournamentMatches,
   tournamentFiles,
@@ -47,6 +48,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       // Турниры и новости на главной теперь ЖИВЫЕ — из своих таблиц.
       tournaments: tournamentList(db).slice(0, 5),
       news: publishedNews(db, 3),
+      heroUploadId: siteAsset(db, 'home-hero'),
       stats: homeStats(db, standings),
       nextEvent: homeNextEvent(db),
       rules: RATING_CONFIG,
@@ -63,6 +65,14 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       q,
       section: sectionFor('/news'),
     });
+  });
+
+  // Фото баннера главной (загружается в админке, «Документы и галерея»).
+  app.get('/site/hero', (req, res, next) => {
+    const id = siteAsset(db, 'home-hero');
+    if (!id) return next();
+    const upload = uploadById(db, id);
+    if (!upload || !sendUploadInline(req, res, upload, config.upload.dir)) return next();
   });
 
   app.get('/news/:id/cover', (req, res, next) => {

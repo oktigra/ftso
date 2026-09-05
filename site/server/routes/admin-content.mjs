@@ -26,6 +26,7 @@ import {
   allNews,
   newsById,
   newsAttachments,
+  siteAsset,
   documentInput,
   galleryInput,
   federationDocuments,
@@ -350,9 +351,43 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
   );
 
   // --- документы Федерации и галерея --------------------------------------
+  // ФОТО БАННЕРА ГЛАВНОЙ: одна картинка по ключу home-hero, замена удаляет прежнюю.
+  app.post(
+    '/admin/library/hero',
+    requireRole(...CONTENT_ROLES),
+    limitWrites,
+    guard(async (req, res) => {
+      const { upload } = await oneFile(req, { profile: 'gallery', field: 'file' });
+      const prev = siteAsset(db, 'home-hero');
+      db.transaction(() => {
+        db.prepare("INSERT INTO site_assets (key, upload_id, updated_at) VALUES ('home-hero', ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET upload_id = excluded.upload_id, updated_at = excluded.updated_at").run(upload.id);
+        if (prev) deleteUpload(db, prev, config.upload.dir);
+      })();
+      logAction(db, req.session.user.id, 'site.hero', null, { upload: upload.id });
+      flash(req, res, 'ok', 'Фото баннера главной обновлено.', '/admin/library');
+    }),
+  );
+
+  app.post(
+    '/admin/library/hero/delete',
+    requireRole(...CONTENT_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const prev = siteAsset(db, 'home-hero');
+      if (!prev) throw new ValidationError('Фото баннера нет');
+      db.transaction(() => {
+        db.prepare("DELETE FROM site_assets WHERE key = 'home-hero'").run();
+        deleteUpload(db, prev, config.upload.dir);
+      })();
+      logAction(db, req.session.user.id, 'site.hero.delete', null, null);
+      flash(req, res, 'ok', 'Фото баннера снято — на главной заглушка.', '/admin/library');
+    }),
+  );
+
   app.get('/admin/library', requireRole(...CONTENT_ROLES), (req, res) => {
     res.render('admin/library', {
       title: 'Документы и галерея — админка ФТСО',
+      heroUploadId: siteAsset(db, 'home-hero'),
       documents: federationDocuments(db),
       gallery: galleryItems(db),
       tournaments: db.prepare('SELECT id, name, end_date FROM tournaments ORDER BY end_date DESC, id DESC').all(),
