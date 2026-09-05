@@ -24,6 +24,7 @@ import {
   newsInput,
   allNews,
   newsById,
+  newsAttachments,
   documentInput,
   galleryInput,
   federationDocuments,
@@ -74,7 +75,10 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
 
   // --- новости -------------------------------------------------------------
   app.get('/admin/news', requireRole(...NEWS_ROLES), (req, res) => {
-    res.render('admin/news', { title: 'Новости — админка ФТСО', news: allNews(db) });
+    res.render('admin/news', {
+      title: 'Новости — админка ФТСО',
+      news: allNews(db).map((n) => ({ ...n, attachments: newsAttachments(db, n.id) })),
+    });
   });
 
   app.post(
@@ -85,8 +89,8 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       const data = newsInput(req.body);
       const info = db
         .prepare(
-          `INSERT INTO news (title, summary, body, is_published, published_at, created_by)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO news (title, summary, body, is_published, published_at, created_by, author)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           data.title,
@@ -95,6 +99,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
           data.is_published,
           data.published_at,
           req.session.user.id,
+          data.author,
         );
       logAction(db, req.session.user.id, 'news.create', Number(info.lastInsertRowid), {
         title: data.title,
@@ -114,13 +119,94 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       const info = db
         .prepare(
           `UPDATE news SET title = ?, summary = ?, body = ?, is_published = ?,
-                           published_at = ?, updated_at = datetime('now')
+                           published_at = ?, author = ?, updated_at = datetime('now')
             WHERE id = ?`,
         )
-        .run(data.title, data.summary, data.body, data.is_published, data.published_at, id);
+        .run(data.title, data.summary, data.body, data.is_published, data.published_at, data.author, id);
       if (!info.changes) throw new ValidationError('Новость не найдена');
       logAction(db, req.session.user.id, 'news.update', id, { is_published: data.is_published });
       flash(req, res, 'ok', 'Новость обновлена.', '/admin/news');
+    }),
+  );
+
+  // ОБЛОЖКА НОВОСТИ (изображение, показывается в карточке и в самой новости).
+  app.post(
+    '/admin/news/:id/cover',
+    requireRole(...NEWS_ROLES),
+    limitWrites,
+    guard(async (req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const row = newsById(db, id);
+      if (!row) throw new ValidationError('Новость не найдена');
+      const { upload } = await oneFile(req, { profile: 'gallery', field: 'cover' });
+      db.transaction(() => {
+        db.prepare('UPDATE news SET cover_upload_id = ?, updated_at = datetime(\'now\') WHERE id = ?').run(upload.id, id);
+        if (row.cover_upload_id) deleteUpload(db, row.cover_upload_id, config.upload.dir);
+      })();
+      logAction(db, req.session.user.id, 'news.cover', id, { upload: upload.id });
+      flash(req, res, 'ok', 'Обложка сохранена.', '/admin/news');
+    }),
+  );
+
+  app.post(
+    '/admin/news/:id/cover/delete',
+    requireRole(...NEWS_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const row = newsById(db, id);
+      if (!row || !row.cover_upload_id) throw new ValidationError('Обложки нет');
+      db.transaction(() => {
+        db.prepare('UPDATE news SET cover_upload_id = NULL WHERE id = ?').run(id);
+        deleteUpload(db, row.cover_upload_id, config.upload.dir);
+      })();
+      logAction(db, req.session.user.id, 'news.cover.delete', id, null);
+      flash(req, res, 'ok', 'Обложка снята.', '/admin/news');
+    }),
+  );
+
+  // ВЛОЖЕНИЯ (ТЗ 4.2): документ или изображение файлом, либо ссылка.
+  app.post(
+    '/admin/news/:id/attachments',
+    requireRole(...NEWS_ROLES),
+    limitWrites,
+    guard(async (req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      if (!newsById(db, id)) throw new ValidationError('Новость не найдена');
+      let fields; let upload = null;
+      if (/^multipart\/form-data/i.test(req.headers['content-type'] || '')) {
+        ({ fields, upload } = await oneFile(req, { profile: 'tournament-doc', field: 'file', required: false }));
+      } else {
+        fields = req.body;
+      }
+      const url = str(fields.url, 'Ссылка', { max: 500, required: false });
+      if (url && !/^https?:\/\//i.test(url)) throw new ValidationError('Ссылка должна начинаться с http:// или https://');
+      if (!upload && !url) throw new ValidationError('Выберите файл или укажите ссылку');
+      if (upload && url) throw new ValidationError('Либо файл, либо ссылка — не оба сразу');
+      const title = str(fields.title, 'Название', { max: 160, required: false }) || (upload ? upload.original_name : url);
+      const info = db
+        .prepare('INSERT INTO news_attachments (news_id, upload_id, url, title) VALUES (?, ?, ?, ?)')
+        .run(id, upload ? upload.id : null, upload ? null : url, title);
+      logAction(db, req.session.user.id, 'news.attachment.add', id, { attachment: Number(info.lastInsertRowid), kind: upload ? 'file' : 'link' });
+      flash(req, res, 'ok', upload ? 'Файл прикреплён.' : 'Ссылка добавлена.', '/admin/news');
+    }),
+  );
+
+  app.post(
+    '/admin/news/:id/attachments/:aid/delete',
+    requireRole(...NEWS_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const aid = intAtLeast(req.params.aid, 'вложение');
+      const a = db.prepare('SELECT upload_id FROM news_attachments WHERE id = ? AND news_id = ?').get(aid, id);
+      if (!a) throw new ValidationError('Вложение не найдено');
+      db.transaction(() => {
+        db.prepare('DELETE FROM news_attachments WHERE id = ?').run(aid);
+        if (a.upload_id) deleteUpload(db, a.upload_id, config.upload.dir);
+      })();
+      logAction(db, req.session.user.id, 'news.attachment.delete', id, { attachment: aid });
+      flash(req, res, 'ok', 'Вложение удалено.', '/admin/news');
     }),
   );
 
@@ -132,6 +218,9 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       const id = intAtLeast(req.params.id, 'id');
       const row = newsById(db, id);
       if (row && row.cover_upload_id) deleteUpload(db, row.cover_upload_id, config.upload.dir);
+      for (const a of db.prepare('SELECT upload_id FROM news_attachments WHERE news_id = ? AND upload_id IS NOT NULL').all(id)) {
+        deleteUpload(db, a.upload_id, config.upload.dir);
+      }
       db.prepare('DELETE FROM news WHERE id = ?').run(id);
       logAction(db, req.session.user.id, 'news.delete', id, null);
       flash(req, res, 'ok', 'Новость удалена.', '/admin/news');

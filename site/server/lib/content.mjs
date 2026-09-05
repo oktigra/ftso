@@ -14,7 +14,20 @@ export function newsInput(body) {
     body: str(body.body, 'Текст', { max: 20000 }),
     is_published: oneOf(String(body.is_published ?? '0'), 'Публикация', ['0', '1']) === '1' ? 1 : 0,
     published_at: body.published_at ? isoDate(body.published_at, 'Дата публикации') : null,
+    // ТЗ 4.2 — автор материала; пусто = Федерация.
+    author: str(body.author, 'Автор', { max: 120, required: false }) || null,
   };
+}
+
+/** Вложения новости (ТЗ 4.2): файлы и ссылки, в порядке добавления. */
+export function newsAttachments(db, newsId) {
+  return db
+    .prepare(
+      `SELECT a.id, a.title, a.url, a.upload_id, u.kind, u.original_name, u.size_bytes
+         FROM news_attachments a LEFT JOIN uploads u ON u.id = a.upload_id
+        WHERE a.news_id = ? ORDER BY a.id`,
+    )
+    .all(newsId);
 }
 
 export function publishedNews(db, limit = 50, q = '') {
@@ -212,6 +225,7 @@ export function isPubliclyVisibleUpload(db, uploadId) {
          UNION ALL SELECT upload_id FROM federation_documents
          UNION ALL SELECT upload_id FROM gallery_items
          UNION ALL SELECT cover_upload_id AS upload_id FROM news WHERE is_published = 1
+         UNION ALL SELECT a.upload_id FROM news_attachments a JOIN news n ON n.id = a.news_id WHERE n.is_published = 1
        ) WHERE upload_id = ? LIMIT 1`,
     )
     .get(uploadId);

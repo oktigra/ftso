@@ -16,6 +16,7 @@ import { DIRECTORIES, listDirectory, directoryFilterOptions } from '../lib/direc
 import {
   publishedNews,
   newsById,
+  newsAttachments,
   tournamentList,
   tournamentFilterOptions,
   tournamentParticipants,
@@ -62,12 +63,20 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
     });
   });
 
+  app.get('/news/:id/cover', (req, res, next) => {
+    if (!/^\d+$/.test(req.params.id)) return next();
+    const item = newsById(db, Number(req.params.id), { publishedOnly: true });
+    if (!item || !item.cover_upload_id) return next();
+    const upload = uploadById(db, item.cover_upload_id);
+    if (!upload || !sendUploadInline(req, res, upload, config.upload.dir)) return next();
+  });
+
   app.get('/news/:id', (req, res, next) => {
     if (!/^\d+$/.test(req.params.id)) return next();
     // publishedOnly: черновик по прямой ссылке наружу не отдаём.
     const item = newsById(db, Number(req.params.id), { publishedOnly: true });
     if (!item) return next();
-    res.render('news-item', { title: `${item.title} — ФТСО`, item });
+    res.render('news-item', { title: `${item.title} — ФТСО`, item, attachments: newsAttachments(db, item.id) });
   });
 
   // --- турниры -------------------------------------------------------------
