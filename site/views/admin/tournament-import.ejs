@@ -1,0 +1,69 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Импорт турнира из текста</h1>
+  <%- include('_shell') %>
+
+  <% if (report && report.error) { %><div class="flash flash--error"><%= report.error %></div><% } %>
+  <% if (report && report.tournamentId) { %>
+    <div class="flash flash--ok">Турнир заведён черновиком (#<%= report.tournamentId %>): разделов <%= report.sections.length %>, новых игроков <%= report.players_created_count %>.
+      <a href="/admin/tournaments/<%= report.tournamentId %>/results">Открыть результаты</a> · <a href="/admin/tournaments">Список турниров</a></div>
+    <div class="panel">
+      <h2>Что сделано</h2>
+      <ul class="search-list">
+        <% report.sections.forEach(function (s) { %><li><%= s.title %> — <%= s.type === 'bracket' ? 'сетка' : s.type === 'group' ? 'группа' : 'пары' %>: матчей <%= s.matches %>, мест <%= s.places %></li><% }); %>
+      </ul>
+      <% if (report.players_created.length) { %>
+        <h3>Новые игроки — дозаполните пол, город и дату рождения в «Игроках»</h3>
+        <p><% report.players_created.forEach(function (p, i) { %><%= i ? ', ' : '' %><a href="/admin/players#player-<%= p.id %>"><%= p.name %></a> (#<%= p.id %>)<% }); %></p>
+      <% } %>
+      <% if (report.warnings.length) { %>
+        <h3>Внимание</h3>
+        <ul class="search-list"><% report.warnings.forEach(function (w) { %><li><%= w %></li><% }); %></ul>
+      <% } %>
+      <p class="muted">Турнир — черновик: проверьте, дозаполните недостающие матчи и опубликуйте. После публикации — «Пересчитать рейтинг».</p>
+    </div>
+  <% } %>
+
+  <div class="panel">
+    <p class="muted">Переписанный протокол простым текстом. Незнакомые фамилии заводятся как игроки (пол — по разделу, город — турнира, дата рождения — пустая). Ничего не пишется, пока весь текст не разобран.</p>
+    <form method="post" action="/admin/tournaments/import" class="stacked-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field">
+        <label for="imp-text">Текст протокола</label>
+        <textarea id="imp-text" name="text" rows="18" maxlength="60000" required placeholder="Турнир: Первенство области среди ветеранов
+Даты: 2026-09-02 — 2026-09-06
+Город: Смоленск | Категория: A | Судья: Н. Груздин
+
+Сетка: Мужчины 50+ | пол: M | возраст: 50+
+1/4: Антонов — X → Антонов
+1/4: Гапеев — Степаньков 6:1/6:2 → Степаньков
+1/2: Антонов — Степаньков 6:0/6:0 → Антонов
+Финал: Антонов — Шульц 6:0/6:2 → Антонов
+3 место: Степаньков — Костылев 5:7/6:3/10:6 → Костылев
+
+Группа: Женщины 45+ | пол: F
+Букатина — Адаева 6:3/6:4
+Третьякова — Лобанова не сыгран
+
+Пары: Мужские пары | пол: M
+Итог: 1 Ермаков/Пестов, 2 Акаев/Груздин, 3 Антонов/Строков"><%= text %></textarea>
+      </div>
+      <button class="btn btn--primary" type="submit">Завести турнир черновиком</button>
+    </form>
+    <details><summary>Правила текста</summary>
+      <ul>
+        <li><code>Турнир:</code>, <code>Даты:</code> (ГГГГ-ММ-ДД, одна или две через тире), <code>Город: … | Категория: A/B | Судья: …</code>.</li>
+        <li><code>Сетка: название | пол: M/F | возраст: …</code> — олимпийка; строки <code>1/8:</code>, <code>1/4:</code>, <code>1/2:</code>, <code>Финал:</code>, <code>3 место:</code>. Пара: <code>А — Б 6:3/6:1 → победитель</code>; <code>X</code> — свободен. Несыгранная пара оставляет сетку открытой.</li>
+        <li><code>Группа: название | пол: …</code> — круговая; строки <code>А — Б 6:3/6:4</code> (слева победитель, если нет «→»); <code>не сыгран</code> пропускается.</li>
+        <li><code>Пары: название | пол: …</code> — парный разряд, только <code>Итог: 1 А/Б, 2 В/Г, 3 Д/Е</code>.</li>
+        <li>Счёт: сеты через «/» или пробел, «7:6(5)», «6:4/5:2 отказ» (снялся проигравший), «неявка».</li>
+      </ul>
+    </details>
+  </div>
+</div>
+</main>
+
+<%- include('../partials/footer') %>
