@@ -2166,7 +2166,7 @@ await check('протокол секретаря: пустая сетка в PDF
   eq(pdfBuf.slice(0, 5).toString('latin1'), '%PDF-', 'PDF пустой сетки');
   const { unzip, rowsFromXlsx, xlsxFromRows } = await import('./server/lib/xlsx.mjs');
   const docXml = unzip(Buffer.from(await (await fetch(inst.base + `/tournaments/${t}/bracket.docx`)).arrayBuffer()))['word/document.xml'].toString('utf8');
-  assert(docXml.includes('счёт: ____________'), 'в Word пустой сетки нет места для счёта');
+  assert(docXml.includes('Счёт: ________________') && docXml.includes('Игрок 1: '), 'в Word пустой сетки нет места для счёта');
   // Протокол Excel: 3 пары группы + 2 пары 1/2 сетки = 5 строк с ключами.
   const xl = await http(`/tournaments/${t}/protocol.xlsx`);
   eq(xl.status, 200, 'protocol.xlsx');
