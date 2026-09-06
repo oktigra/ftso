@@ -47,7 +47,7 @@ export const FOOTER_PARTICIPANTS = [
   { href: '/register', title: 'Регистрация игрока' },
   { href: '/cabinet', title: 'Личный кабинет' },
   { href: '#', title: 'Заявка на турнир' },
-  { href: '#', title: 'Секретарям турниров' },
+  { href: '/organizers', title: 'Организаторам и секретарям' },
 ];
 
 // 152-ФЗ: эти две ссылки В объёме и ведут на РЕАЛЬНЫЕ страницы.
