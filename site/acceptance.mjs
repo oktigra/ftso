@@ -2531,6 +2531,38 @@ await check('стартовое наполнение: 4 документа PDF (
   return '4 PDF в «Регламенты»/«Бланки», скачиваются; 3 черновика новостей, на витрине не видны; повтор без дублей';
 });
 
+await check('миграция на живой базе: схема релиза #134 (239ecaf) с данными → текущая, без ошибок', async () => {
+  // Воспроизводим бой 06.09: база создана прошлым релизом, в ней корты/клубы/новости/матчи; затем
+  // migrate() текущего кода. Тесты на чистой базе такое не ловят (schema.sql уже с колонками).
+  const { execSync } = await import('node:child_process');
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const OLD_SHA = '239ecaf'; // последний релиз, который стоял на бою до поломки; при недоступности — пропуск с пометкой
+  let oldSchema;
+  try { oldSchema = execSync(`git show ${OLD_SHA}:site/db/schema.sql`, { cwd: process.cwd(), encoding: 'utf8', stdio: 'pipe' }); }
+  catch { return `коммит ${OLD_SHA} недоступен в клоне — проверка пропущена`; }
+  const dir = mkdtempSync(`${tmpdir()}/ftso-mig-`); const dbFile = `${dir}/old.sqlite`;
+  const Database = (await import('better-sqlite3')).default;
+  const old = new Database(dbFile); old.exec(oldSchema);
+  old.prepare("INSERT INTO courts (name, city, address, surface) VALUES ('Старый корт', 'Смоленск', 'ул. Старая, 1', 'хард')").run();
+  old.prepare("INSERT INTO clubs (name, city, address) VALUES ('Старый клуб', 'Смоленск', 'ул. Старая, 2')").run();
+  old.prepare("INSERT INTO news (title, body, is_published) VALUES ('Старая новость', 'Т', 1)").run();
+  const p1 = old.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Старый Игрок', 'Смоленск', 'M')").run().lastInsertRowid;
+  const p2 = old.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Старый Соперник', 'Смоленск', 'M')").run().lastInsertRowid;
+  const t = old.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Старый турнир', '2026-08-01', 'B')").run().lastInsertRowid;
+  old.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score) VALUES (?, ?, ?, ?)').run(t, p1, p2, '6:1 6:1');
+  old.close();
+  try { execSync('node db/migrate.mjs', { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env, DB_FILE: dbFile }, stdio: 'pipe' }); }
+  catch (e) { rmSync(dir, { recursive: true, force: true }); throw new Error(`migrate на базе ${OLD_SHA} упал: ${String(e.stderr || e.message).split('\n').find((l) => /Error|no such|no column/.test(l)) || e.message}`); }
+  const after = new Database(dbFile);
+  const cols = after.prepare('PRAGMA table_info(courts)').all().map((c) => c.name);
+  assert(cols.includes('hours') && cols.includes('prices'), `после миграции нет колонок: ${cols.join(',')}`);
+  eq(after.prepare("SELECT COUNT(*) AS n FROM courts WHERE name = 'Старый корт'").get().n, 1, 'данные кортов потеряны');
+  eq(after.prepare("SELECT stage FROM matches WHERE tournament_id = ?").get(t).stage, 'manual', 'старый матч должен получить этап manual');
+  after.close(); rmSync(dir, { recursive: true, force: true });
+  return `схема ${OLD_SHA} + данные → migrate без ошибок; hours/prices есть; данные и матчи целы`;
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
