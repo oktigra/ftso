@@ -68,6 +68,9 @@
         </form>
       </div>
     <% } %>
+    <% if (typeof partners !== 'undefined' && !currentPath.startsWith('/admin') && currentPath !== '/') { %>
+      <%- include('partners', { partnersCompact: true, partners, partnersTitle, partnersCta }) %>
+    <% } %>
     <div class="footer-bottom">
       <span>© <%= year %> РФСОО «Федерация тенниса Смоленской области»</span>
       <%

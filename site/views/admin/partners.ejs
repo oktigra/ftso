@@ -1,0 +1,59 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Партнёры и спонсоры</h1>
+  <%- include('_shell') %>
+
+  <div class="panel">
+    <p class="muted">Логотипы показываются полосой под первым экраном главной и в подвале остальных страниц. Формат — PNG или SVG, вписывается в рамку 180×72 (лучше прозрачный фон). Без логотипа партнёр не показывается. Порядок — по числу «Сортировка» (меньше — левее). Подпись полосы и текст приглашения правятся в «Текстах».</p>
+    <form method="post" action="/admin/partners" class="inline-form" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="p-name">Название</label><input id="p-name" name="name" maxlength="120" required></div>
+      <div class="field"><label for="p-url">Ссылка на сайт</label><input id="p-url" name="url" maxlength="300" placeholder="https://"></div>
+      <div class="field"><label for="p-sort">Сортировка</label><input id="p-sort" name="sort" inputmode="numeric" maxlength="4" value="100"></div>
+      <div class="field"><label for="p-logo">Логотип</label><input id="p-logo" type="file" name="logo" accept="image/*"></div>
+      <button class="btn btn--primary btn--small" type="submit">Добавить</button>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Список (<%= partnersList.length %>)</h2>
+    <% if (!partnersList.length) { %>
+      <p class="muted">Партнёров пока нет — на сайте видно только приглашение «Станьте партнёром или спонсором».</p>
+    <% } %>
+    <div class="table-scroll">
+      <table class="admin-table">
+        <thead><tr><th>Логотип</th><th>Название</th><th>Ссылка</th><th>Сорт.</th><th>Показывать</th><th>Действия</th></tr></thead>
+        <tbody>
+          <% partnersList.forEach(function (p) { %>
+            <tr>
+              <td class="dir-photo">
+                <% if (p.logo_upload_id) { %><img src="/partners/<%= p.id %>/logo?v=<%= p.logo_upload_id %>" alt="" width="120" height="48" style="object-fit:contain"><% } else { %><span class="muted">нет</span><% } %>
+                <input form="logo-<%= p.id %>" type="file" name="logo" accept="image/*" aria-label="Файл логотипа">
+                <button class="btn btn--secondary btn--small" type="submit" form="logo-<%= p.id %>">Загрузить</button>
+              </td>
+              <td><input form="edit-<%= p.id %>" name="name" value="<%= p.name %>" maxlength="120" required></td>
+              <td><input form="edit-<%= p.id %>" name="url" value="<%= p.url || '' %>" maxlength="300" placeholder="https://"></td>
+              <td><input form="edit-<%= p.id %>" name="sort" value="<%= p.sort %>" inputmode="numeric" maxlength="4" size="4"></td>
+              <td><label class="check"><input form="edit-<%= p.id %>" type="checkbox" name="is_active" value="1"<%= p.is_active ? ' checked' : '' %>><span>да</span></label></td>
+              <td class="inline-form">
+                <button class="btn btn--primary btn--small" type="submit" form="edit-<%= p.id %>">Сохранить</button>
+                <button class="btn btn--danger btn--small" type="submit" form="del-<%= p.id %>" data-confirm="Удалить партнёра «<%= p.name %>» вместе с логотипом?">Удалить</button>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+    <% partnersList.forEach(function (p) { %>
+      <form id="edit-<%= p.id %>" method="post" action="/admin/partners/<%= p.id %>/update" hidden><input type="hidden" name="_csrf" value="<%= csrfToken %>"></form>
+      <form id="logo-<%= p.id %>" method="post" action="/admin/partners/<%= p.id %>/logo" enctype="multipart/form-data" hidden><input type="hidden" name="_csrf" value="<%= csrfToken %>"></form>
+      <form id="del-<%= p.id %>" method="post" action="/admin/partners/<%= p.id %>/delete" hidden><input type="hidden" name="_csrf" value="<%= csrfToken %>"></form>
+    <% }); %>
+  </div>
+</div>
+</main>
+
+<%- include('../partials/footer') %>
