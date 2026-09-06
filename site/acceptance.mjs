@@ -5047,7 +5047,7 @@ try {
     const portal = await page.evaluate(() => {
       // Заявка участника на турнир и приём документов от секретарей — отдельные
       // пункты бэклога, их функционала в сборке нет.
-      const names = ['Заявка на турнир', 'Секретарям турниров'];
+      const names = ['Заявка на турнир'];
       const out = [];
       for (const a of document.querySelectorAll('a')) {
         const t = a.textContent.trim();
@@ -5060,7 +5060,11 @@ try {
     );
     await page.close();
 
-    assert(portal.length >= 2, `портальных ссылок найдено ${portal.length}, ожидалось не меньше 2`);
+    assert(portal.length >= 1, `портальных ссылок найдено ${portal.length}, ожидалось не меньше 1`);
+    const org = await http('/organizers');
+    eq(org.status, 200, 'страница «Организаторам»');
+    assert(/Заявить турнир в календарь/.test(org.text) && /<details>/.test(org.text) && /tournament-request/.test(org.text), 'на «Организаторам» нет шагов/FAQ/ссылки на заявку');
+    assert(/href="\/organizers"/.test((await http('/')).text), 'в подвале нет ссылки «Организаторам и секретарям»');
     for (const p of portal) eq(p.href, '#', `«${p.t}» должна оставаться заглушкой`);
     for (const l of legal) assert(l.href.startsWith('/'), `правовая ссылка «${l.t}» должна вести на реальную страницу, а не «${l.href}»`);
     for (const l of legal) {
