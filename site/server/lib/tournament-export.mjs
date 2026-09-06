@@ -53,8 +53,8 @@ export function sheetModel({ tournament, groups, brackets, results }) {
           b: p.b ? p.b.full_name : '—',
           aId: p.aId, bId: p.bId, k: p.k, r: r.r,
           winner: p.winner ? (p.winner === p.aId ? 'a' : 'b') : null,
-          score: p.winner ? (p.bye ? 'без игры' : (p.score || '')) : '',
-          pending: !p.winner && Boolean(p.aId && p.bId),
+          score: p.winner || p.void ? (p.bye ? 'без игры' : (p.score || '')) : '',
+          pending: !p.winner && !p.void && Boolean(p.aId && p.bId),
         })),
       })),
       champion: b.champion ? b.champion.full_name : null,
@@ -64,11 +64,11 @@ export function sheetModel({ tournament, groups, brackets, results }) {
     pending: [
       ...groups.flatMap((g) => g.members.flatMap((r, i) => g.members.slice(i + 1).map((c) => ({
         where: `Группа ${g.name}`, key: `g:${g.id}:${r.id}:${c.id}`, aId: r.id, a: r.full_name, bId: c.id, b: c.full_name,
-        score: g.cells[`${r.id}:${c.id}`] ? fromA(g.cells[`${r.id}:${c.id}`].score, g.cells[`${r.id}:${c.id}`].won) : '',
+        score: g.cells[`${r.id}:${c.id}`] ? (g.cells[`${r.id}:${c.id}`].void ? g.cells[`${r.id}:${c.id}`].shown : fromA(g.cells[`${r.id}:${c.id}`].score, g.cells[`${r.id}:${c.id}`].won)) : '',
       })))),
       ...brackets.flatMap((b) => b.rounds.flatMap((r) => r.pairs.filter((p) => p.aId && p.bId).map((p) => ({
         where: `Сетка «${b.name}», ${r.name}, пара ${p.k + 1}`, key: `b:${b.id}:${r.r}:${p.k}`, aId: p.aId, a: p.a.full_name, bId: p.bId, b: p.b.full_name,
-        score: p.winner ? (p.bye ? 'без игры' : fromA(p.scoreRaw || '', p.winner === p.aId)) : '',
+        score: p.void ? p.score : (p.winner ? (p.bye ? 'без игры' : fromA(p.scoreRaw || '', p.winner === p.aId)) : ''),
       })))),
     ],
     results: results.map((r) => [String(r.place), `${r.name}${r.discipline === 'double' ? ' (парный)' : ''}`, r.city || '']),
@@ -237,6 +237,8 @@ export function tournamentProtocolXlsx(model) {
   ];
   const rows = model.pending.map((m, i) => {
     const sets = m.score && !/неявка|отказ|wo/.test(m.score) ? m.score.split(' ') : [];
+    // отказ со счётом: сеты до отказа тоже раскладываем
+    if (/отказ \d$/.test(m.score || '')) { const pre = m.score.replace(/ отказ \d$/, '').split(' '); pre.forEach((x, i) => { sets[i] = x; }); }
     return [i + 1, m.where, `${m.a} (#${m.aId})`, `${m.b} (#${m.bId})`, sets[0] || '', sets[1] || '', sets[2] || '', m.score, '', protocolKeyLabel(m.key)];
   });
   if (!rows.length) rows.push(['', 'Пар для заполнения нет — посейте сетку или заполните группы', '', '', '', '', '', '', '', '']);

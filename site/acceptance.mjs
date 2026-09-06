@@ -2275,6 +2275,54 @@ await check('форма турнира: черновик / опубликова�
   return 'порядок полей; черновик/опубликовать; черновик скрыт в календаре, карточке, печати, PDF, sitemap и рейтинге; возраст из списка и вручную; снять с публикации';
 });
 
+await check('оба не явились / оба снялись: в группе — обоим поражение без матча, в сетке — пара закрыта, сопернику дальше bye; отмена снимает', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Двойная неявка', date('now','-1 day'), 'B')").run().lastInsertRowid);
+  const ids = ['Двойной Один', 'Двойной Два', 'Двойной Три', 'Двойной Четыре'].map((n) => Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES (?, 'Смоленск', 'M')").run(n).lastInsertRowid));
+  const _csrf = tokenFrom((await http(`/admin/tournaments/${t}/results`, { jar })).text);
+  const post = (path, form) => http(`/admin/tournaments/${t}${path}`, { method: 'POST', form: { _csrf, ...form }, jar });
+  // Группа из трёх: пара (1,2) — оба не явились; (1,3) и (2,3) — обычные.
+  eq((await post('/groups', { name: 'A', kind: 'single' })).status, 302, 'группа');
+  const gid = db.prepare('SELECT id FROM tournament_groups WHERE tournament_id = ?').get(t).id;
+  for (const id of ids.slice(0, 3)) eq((await post(`/groups/${gid}/members`, { player: `#${id}` })).status, 302, 'участник');
+  eq((await post(`/groups/${gid}/cell`, { a: ids[0], b: ids[1], score: 'неявка 1 и 2' })).status, 302, 'двойная неявка');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_voids WHERE tournament_id = ? AND stage = ?").get(t, `g:${gid}`).n, 1, 'несостоявшаяся встреча не записана');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t).n, 0, 'двойная неявка не должна создавать матч');
+  eq((await post(`/groups/${gid}/cell`, { a: ids[2], b: ids[0], score: '6:1 6:1' })).status, 302, '3-1');
+  eq((await post(`/groups/${gid}/cell`, { a: ids[2], b: ids[1], score: '6:2 6:2' })).status, 302, '3-2');
+  const { groupTable } = await import('./server/lib/groups.mjs');
+  const tb = groupTable(db, t, { id: gid, kind: 'single' });
+  assert(tb.complete, 'группа с несостоявшейся встречей должна считаться сыгранной');
+  eq(tb.order[0], ids[2], 'первое место — единственный с победами');
+  eq(tb.stats[ids[0]].wins + tb.stats[ids[1]].wins, 0, 'у не явившихся побед нет');
+  eq(tb.stats[ids[0]].played, 2, 'несостоявшаяся встреча считается сыгранной');
+  assert(/value="неявка 1 и 2"/.test((await http(`/admin/tournaments/${t}/results`, { jar })).text), 'клетка не показывает «неявка 1 и 2»');
+  // Перезапись клетки обычным счётом снимает несостоявшуюся встречу.
+  eq((await post(`/groups/${gid}/cell`, { a: ids[0], b: ids[1], score: '6:0 6:0' })).status, 302, 'перезапись');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_voids WHERE tournament_id = ? AND stage = ?").get(t, `g:${gid}`).n, 0, 'после перезаписи void должен уйти');
+  // Сетка на 4: пара 1 — оба снялись; пара 2 — обычная; финал — bye победителю пары 2.
+  eq((await post('/brackets', { name: 'Плей-офф', size: '4', kind: 'single' })).status, 302, 'сетка');
+  const bid = db.prepare('SELECT id FROM tournament_brackets WHERE tournament_id = ?').get(t).id;
+  for (let i = 0; i < 4; i++) eq((await post(`/brackets/${bid}/seed`, { position: String(i + 1), player: `#${ids[i]}` })).status, 302, 'посев');
+  eq((await post(`/brackets/${bid}/decide`, { r: '0', k: '0', score: 'отказ 1 и 2' })).status, 302, 'двойной отказ в паре 1');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM bracket_slots WHERE bracket_id = ? AND round = 1').get(bid).n, 0, 'после двойного отказа никто не должен пройти');
+  eq((await post(`/brackets/${bid}/decide`, { r: '0', k: '0', score: '6:1 6:1' })).status, 302, 'ответ на повтор по закрытой паре');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM bracket_slots WHERE bracket_id = ? AND round = 1').get(bid).n, 0, 'закрытая пара не должна принимать счёт');
+  eq((await post(`/brackets/${bid}/decide`, { r: '0', k: '1', score: '6:3 6:3' })).status, 302, 'пара 2');
+  eq((await post(`/brackets/${bid}/decide`, { r: '1', k: '0', score: 'bye' })).status, 302, 'финал — bye');
+  eq(db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = 2 AND position = 0').get(bid).player_id, ids[2], 'чемпион — победитель пары 2 через bye');
+  const adm = await http(`/admin/tournaments/${t}/results`, { jar });
+  assert(/отказ 1 и 2/.test(adm.text), 'сетка не показывает «отказ 1 и 2»');
+  assert(!/Игрок A/.test((await http(`/tournaments/${t}/protocol.xlsx`)).text), 'ok');
+  // Отмена закрытой пары — снова открыта.
+  eq((await post(`/brackets/${bid}/undo`, { r: '0', k: '0' })).status, 302, 'отмена');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_voids WHERE tournament_id = ? AND stage = ?").get(t, `b:${bid}:0:0`).n, 0, 'void сетки не снят отменой');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t);
+  db.prepare("DELETE FROM players WHERE full_name LIKE 'Двойной %'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'группа: «неявка 1 и 2» — без матча, обоим поражение, группа сыграна; сетка: «отказ 1 и 2» закрывает пару, сопернику дальше bye; отмена и перезапись снимают';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
