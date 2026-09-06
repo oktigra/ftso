@@ -60,6 +60,15 @@
   </div>
 
   <div class="panel">
+    <h2>Стартовые документы</h2>
+    <p class="muted">Методика рейтинга (из договора), порядок заявки турнира, бланк протокола, бланк согласия представителя — PDF собираются сайтом. Уже добавленные пропускаются.</p>
+    <form method="post" action="/admin/library/starter" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="btn btn--secondary btn--small" type="submit">Загрузить стартовые документы (4)</button>
+    </form>
+  </div>
+
+  <div class="panel">
     <h2>Фото баннера главной</h2>
     <p class="muted">Большое фото в шапке главной страницы (корт, матч; 4:3, около 1200×900). Служебные данные снимка снимаются.</p>
     <% if (heroUploadId) { %><p><img src="/site/hero?v=<%= heroUploadId %>" alt="" width="240" class="hero-preview"></p><% } %>
