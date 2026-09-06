@@ -563,6 +563,14 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .lightbox__close{top:1rem; right:1rem; transform:none; width:44px; height:44px; font-size:1.6rem;}
 .lightbox__nav--prev{left:1rem;} .lightbox__nav--next{right:1rem;}
 .lightbox__close:hover, .lightbox__nav:hover{background:rgba(255,255,255,.28);}
+/* График рейтинга в профиле — цвета темы */
+.chart-title{font-size:1rem; margin:1rem 0 .4rem;}
+.rating-chart{width:100%; max-width:640px; height:auto; display:block; margin-bottom:.6rem;}
+.rating-chart .rc-axis{stroke:var(--border); stroke-width:1;}
+.rating-chart .rc-line{fill:none; stroke:var(--primary); stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round;}
+.rating-chart .rc-dot{fill:var(--surface); stroke:var(--primary); stroke-width:2;}
+.rating-chart .rc-label{fill:var(--muted); font-size:11px; font-family:'Inter',sans-serif;}
+.rating-history{max-width:24rem;}
 .btn--account{padding:.45rem .55rem;}
 .avatar-initials{display:inline-grid; place-items:center; width:32px; height:32px; border-radius:999px; background:var(--primary); color:#fff; font-family:'Manrope',sans-serif; font-weight:800; font-size:.85rem; letter-spacing:.02em;}
 .btn--max{margin-top:.5rem;}

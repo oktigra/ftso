@@ -44,7 +44,7 @@
                     <td class="rank"><%= r.rank %></td>
                     <td class="pts"><%= r.ratingPoints %></td>
                     <td><%= r.totalInWindow %></td>
-                    <td><%= r.counted %></td>
+                    <td><% if (Array.isArray(r.counted)) { %><%= r.counted.length %><% if (r.counted.length) { %> <span class="muted">(<%= r.counted.map(function (e) { return e.name + ' — ' + e.points; }).join('; ') %>)</span><% } %><% } else { %><%= r.counted %><% } %></td>
                     <td class="chg chg--<%= r.change.kind %>"><%= r.change.label %></td>
                   <% } else { %>
                     <td colspan="5" class="muted">нет в рейтинге</td>
@@ -54,6 +54,40 @@
             </tbody>
           </table>
         </div>
+        <% if (history.best) { %>
+          <p class="rating-summary"><strong>Наивысшее место:</strong> <%= history.best.rank %> (<%= history.best.asOf %>)</p>
+        <% } %>
+        <% if (history.points.length > 1) { %>
+          <%
+          /* ГРАФИК РЕЙТИНГА (идея ФТР/TennisNET): место по месяцам, ось перевёрнута —
+             1-е место сверху. Инлайн-SVG в цветах темы (палитра не тронута). */
+          const pts = history.points;
+          const W = 640, H = 180, padL = 36, padR = 12, padT = 14, padB = 28;
+          const maxRank = Math.max(...pts.map((p) => p.rank), 2);
+          const x = (i) => padL + (pts.length === 1 ? 0 : i * (W - padL - padR) / (pts.length - 1));
+          const y = (r) => padT + (r - 1) * (H - padT - padB) / (maxRank - 1);
+          const path = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.rank).toFixed(1)}`).join(' ');
+          %>
+          <h3 class="chart-title">Место в рейтинге по месяцам (одиночный разряд)</h3>
+          <svg class="rating-chart" viewBox="0 0 <%= W %> <%= H %>" role="img" aria-label="График места в рейтинге по месяцам">
+            <line x1="<%= padL %>" y1="<%= padT %>" x2="<%= padL %>" y2="<%= H - padB %>" class="rc-axis"/>
+            <line x1="<%= padL %>" y1="<%= H - padB %>" x2="<%= W - padR %>" y2="<%= H - padB %>" class="rc-axis"/>
+            <text x="<%= padL - 6 %>" y="<%= padT + 4 %>" class="rc-label" text-anchor="end">1</text>
+            <text x="<%= padL - 6 %>" y="<%= H - padB + 4 %>" class="rc-label" text-anchor="end"><%= maxRank %></text>
+            <path d="<%= path %>" class="rc-line"/>
+            <% pts.forEach(function (p, i) { %>
+              <circle cx="<%= x(i).toFixed(1) %>" cy="<%= y(p.rank).toFixed(1) %>" r="4" class="rc-dot"><title><%= p.month %>: место <%= p.rank %>, очков <%= p.points %></title></circle>
+              <% if (i === 0 || i === pts.length - 1 || pts.length <= 8) { %><text x="<%= x(i).toFixed(1) %>" y="<%= H - padB + 16 %>" class="rc-label" text-anchor="middle"><%= p.month %></text><% } %>
+            <% }); %>
+          </svg>
+          <div class="table-scroll">
+            <table class="rating-table rating-history">
+              <caption class="visually-hidden">История места и очков по месяцам</caption>
+              <thead><tr><th scope="col">Месяц</th><th scope="col">Место</th><th scope="col">Очки</th></tr></thead>
+              <tbody><% pts.slice().reverse().forEach(function (p) { %><tr><td><%= p.month %></td><td class="rank"><%= p.rank %></td><td class="pts"><%= p.points %></td></tr><% }); %></tbody>
+            </table>
+          </div>
+        <% } %>
         <p class="rating-summary muted">
           <%= statusText %> · актуальность <%= profile.rating.asOf %> · обновлён <%= profile.rating.computedAt %> UTC.
           <% if (profile.slices.length) { %>
