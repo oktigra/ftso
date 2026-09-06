@@ -284,6 +284,8 @@ export function tournamentInput(body) {
     venue: str(body.venue, 'Место проведения', { max: 160, required: false }) || null,
     organizer: str(body.organizer, 'Организатор', { max: 160, required: false }) || null,
     organizer_contact: str(body.organizer_contact, 'Контакт организатора', { max: 160, required: false }) || null,
+    fee: str(body.fee, 'Взнос', { max: 80, required: false }) || null,
+    entry_deadline: str(body.entry_deadline, 'Срок подачи заявки', { max: 80, required: false }) || null,
     // Возраст: из списка либо «custom» + своё значение в age_group_custom.
     age_group: body.age_group === 'custom'
       ? (str(body.age_group_custom, 'Возраст (вручную)', { max: 40, required: false }) || null)

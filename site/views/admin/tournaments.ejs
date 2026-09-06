@@ -48,6 +48,8 @@
       <div class="field" data-age-custom hidden><label for="t-age-custom">Возраст вручную</label><input id="t-age-custom" name="age_group_custom" maxlength="40" placeholder="напр. 35–44"></div>
       <div class="field"><label for="t-org">Организатор</label><input id="t-org" name="organizer" maxlength="160" placeholder="ТК «Алпина»"></div>
       <div class="field"><label for="t-orgc">Контакт организатора</label><input id="t-orgc" name="organizer_contact" maxlength="160" placeholder="телефон, почта"></div>
+      <div class="field"><label for="t-fee">Взнос</label><input id="t-fee" name="fee" maxlength="80" placeholder="500 ₽ с игрока"></div>
+      <div class="field"><label for="t-dl">Заявки до</label><input id="t-dl" name="entry_deadline" maxlength="80" placeholder="10.09.2026, 20:00"></div>
       <div class="field">
         <button class="btn btn--secondary" type="submit" name="action" value="draft">Сохранить черновик</button>
       </div>
@@ -83,7 +85,7 @@
                   <% categories.forEach(function (c) { %><option value="<%= c %>"<%= t.category === c ? ' selected' : '' %>><%= c %></option><% }); %>
                 </select>
               </td>
-              <td><span class="ro"><%= t.city || '—' %><%= t.venue ? ', ' + t.venue : '' %></span><input class="ed" form="edit-tournament-<%= t.id %>" name="city" value="<%= t.city || '' %>" maxlength="80" placeholder="город"><input class="ed" form="edit-tournament-<%= t.id %>" name="venue" value="<%= t.venue || '' %>" maxlength="160" list="venues-list" placeholder="место"><input class="ed" form="edit-tournament-<%= t.id %>" name="organizer" value="<%= t.organizer || '' %>" maxlength="160" placeholder="организатор"><input class="ed" form="edit-tournament-<%= t.id %>" name="organizer_contact" value="<%= t.organizer_contact || '' %>" maxlength="160" placeholder="контакт"></td>
+              <td><span class="ro"><%= t.city || '—' %><%= t.venue ? ', ' + t.venue : '' %></span><input class="ed" form="edit-tournament-<%= t.id %>" name="city" value="<%= t.city || '' %>" maxlength="80" placeholder="город"><input class="ed" form="edit-tournament-<%= t.id %>" name="venue" value="<%= t.venue || '' %>" maxlength="160" list="venues-list" placeholder="место"><input class="ed" form="edit-tournament-<%= t.id %>" name="organizer" value="<%= t.organizer || '' %>" maxlength="160" placeholder="организатор"><input class="ed" form="edit-tournament-<%= t.id %>" name="organizer_contact" value="<%= t.organizer_contact || '' %>" maxlength="160" placeholder="контакт"><input class="ed" form="edit-tournament-<%= t.id %>" name="fee" value="<%= t.fee || '' %>" maxlength="80" placeholder="взнос"><input class="ed" form="edit-tournament-<%= t.id %>" name="entry_deadline" value="<%= t.entry_deadline || '' %>" maxlength="80" placeholder="заявки до"></td>
               <td><span class="ro"><%= kindRu[t.kind] || '—' %></span>
                 <select class="ed" form="edit-tournament-<%= t.id %>" name="kind">
                   <% Object.keys(kindRu).forEach(function (k) { %><option value="<%= k %>"<%= t.kind === k ? ' selected' : '' %>><%= kindRu[k] %></option><% }); %>

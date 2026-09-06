@@ -582,6 +582,7 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 /* График рейтинга в профиле — цвета темы */
 .nav-search{padding:.4rem .6rem .2rem; border-top:1px solid var(--border); margin-top:.3rem;}
 .nav-search form{display:flex; gap:.4rem;} .nav-search input{flex:1; min-width:0; font:inherit; font-size:.9rem; padding:.4rem .6rem; border:1px solid var(--border); border-radius:.6rem; background:var(--input-bg); color:var(--text);}
+.dir-intro p{margin:.4rem 0; max-width:60rem;}
 .search-list{padding-left:1.1rem;} .search-list li{margin:.3rem 0;}
 .panel details{padding:.5rem 0; border-top:1px solid var(--border);} .panel details:first-of-type{border-top:0;}
 .panel summary{cursor:pointer; font-weight:600;} .panel details p{margin:.5rem 0 .2rem;}

@@ -693,8 +693,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // без action (старые формы, тесты) — опубликован, как было до 06.09.2026.
       const published = req.body.action === 'draft' ? 0 : 1;
       const info = db
-        .prepare('INSERT INTO tournaments (name, end_date, category, city, start_date, kind, age_group, sex, venue, organizer, organizer_contact, is_published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.age_group, data.sex, data.venue, data.organizer, data.organizer_contact, published);
+        .prepare('INSERT INTO tournaments (name, end_date, category, city, start_date, kind, age_group, sex, venue, organizer, organizer_contact, fee, entry_deadline, is_published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.age_group, data.sex, data.venue, data.organizer, data.organizer_contact, data.fee, data.entry_deadline, published);
       logAction(db, actorId(req), 'tournament.create', info.lastInsertRowid, data);
       if (published) postInBackground(db, config, actorId(req), 'tournament.publish', tournamentPost(db, req, Number(info.lastInsertRowid), '🎾 Турнир в календаре:'));
       flash(req, res, 'ok', published ? `Турнир «${data.name}» опубликован.` : `Черновик «${data.name}» сохранён — виден только в админке.`, '/admin/tournaments');
@@ -711,8 +711,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // action: draft — сохранить черновиком, publish — сохранить и опубликовать, иначе — не менять статус.
       const pub = req.body.action === 'publish' ? 1 : req.body.action === 'draft' ? 0 : null;
       const info = db
-        .prepare('UPDATE tournaments SET name = ?, end_date = ?, category = ?, city = ?, start_date = ?, kind = ?, age_group = ?, sex = ?, venue = ?, organizer = ?, organizer_contact = ?, is_published = COALESCE(?, is_published) WHERE id = ?')
-        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.age_group, data.sex, data.venue, data.organizer, data.organizer_contact, pub, id);
+        .prepare('UPDATE tournaments SET name = ?, end_date = ?, category = ?, city = ?, start_date = ?, kind = ?, age_group = ?, sex = ?, venue = ?, organizer = ?, organizer_contact = ?, fee = ?, entry_deadline = ?, is_published = COALESCE(?, is_published) WHERE id = ?')
+        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.age_group, data.sex, data.venue, data.organizer, data.organizer_contact, data.fee, data.entry_deadline, pub, id);
       if (!info.changes) throw new ValidationError('Турнир не найден');
       logAction(db, actorId(req), 'tournament.update', id, data);
       flash(req, res, 'ok', 'Турнир обновлён.', '/admin/tournaments');

@@ -72,6 +72,9 @@ CREATE TABLE IF NOT EXISTS tournaments (
   venue      TEXT,
   organizer  TEXT,
   organizer_contact TEXT,
+  -- Взнос и срок подачи заявки (06.09.2026) — свободный текст, показываются на карточке.
+  fee        TEXT,
+  entry_deadline TEXT,
   -- ЧЕРНОВИК / ОПУБЛИКОВАН (06.09.2026): черновик виден только в админке — ни в календаре,
   -- ни на витрине, ни в sitemap, ни в рейтинге.
   is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0,1))
