@@ -14,6 +14,7 @@ import {
 import { DIRECTORIES, listDirectory, directoryFilterOptions } from '../lib/directories.mjs';
 import { descriptionFrom } from '../lib/seo.mjs';
 import { siteSearch } from '../lib/search.mjs';
+import { FAQ } from '../lib/faq.mjs';
 import { siteText, paragraphs } from '../lib/texts.mjs';
 import { listGroups, scoreFor } from '../lib/groups.mjs';
 import { listBrackets } from '../lib/brackets.mjs';
@@ -130,6 +131,15 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
   app.get('/search', (req, res) => {
     const q = String(req.query.q || '').trim().slice(0, 80);
     res.render('search', { title: q ? `«${q}» — поиск — ФТСО` : 'Поиск по сайту — ФТСО', metaDescription: 'Поиск по турнирам, игрокам, новостям, тренерам, кортам и клубам Федерации тенниса Смоленской области.', result: siteSearch(db, q), section: null });
+  });
+
+  app.get('/faq', (req, res) => {
+    res.render('faq', {
+      title: 'Вопросы и ответы — ФТСО',
+      metaDescription: 'Как попасть в рейтинг, зарегистрировать ребёнка, заявить турнир и где взять бланк протокола — короткие ответы Федерации тенниса Смоленской области.',
+      faq: FAQ,
+      section: null,
+    });
   });
 
   app.get('/organizers', (req, res) => {

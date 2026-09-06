@@ -52,6 +52,8 @@
        форма, что на /contacts (маршрут /contacts/feedback, honeypot, согласие, лимит).
        Не показывается в админке и на самой странице /contacts (там она уже есть). */
     %>
+    <% const noFooterFaq = ['/admin', '/cabinet', '/judge', '/faq'].some(function (p) { return currentPath.startsWith(p); }); %>
+    <% if (typeof faq !== 'undefined' && !noFooterFaq) { %><%- include('faq', { faq, faqShort: true }) %><% } %>
     <% const noFooterForm = ['/admin', '/contacts', '/cabinet', '/judge', '/register', '/tournament-request', '/login'].some(function (p) { return currentPath.startsWith(p); }); %>
     <% if (typeof intakeEnabled !== 'undefined' && intakeEnabled && !noFooterForm) { %>
       <div class="footer-feedback" id="feedback">

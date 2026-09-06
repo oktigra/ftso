@@ -2761,6 +2761,25 @@ await check('логотип ФТСО (ТЗ дизайна): знак 80×37 ин
   return 'шапка: инлайн-знак 80×37 с мячом и подписью; подвал и «О Федерации»: основной знак с ореолом; favicon и OG 1200×630 из нового знака';
 });
 
+await check('вопросы и ответы: блок в подвале публичных страниц (4 пункта + ссылка), страница /faq со всеми и разметкой FAQPage, в админке и кабинете нет', async () => {
+  const { FAQ } = await import('./server/lib/faq.mjs');
+  const home = await http('/');
+  assert(/class="footer-faq"/.test(home.text) && /Как попасть в рейтинг Федерации\?/.test(home.text), 'в подвале нет блока вопросов');
+  eq((home.text.match(/class="faq-item"/g) || []).length, 4, 'в подвале должно быть четыре вопроса');
+  assert(/href="\/faq">Все вопросы/.test(home.text), 'нет ссылки на все вопросы');
+  const faq = await http('/faq');
+  eq(faq.status, 200, '/faq');
+  eq((faq.text.match(/class="faq-item"/g) || []).length, FAQ.length, 'на /faq должны быть все вопросы');
+  assert(!/class="footer-faq"[\s\S]*class="footer-faq"/.test(faq.text), 'на /faq блок не должен дублироваться в подвале');
+  assert(/"@type":"FAQPage"/.test(faq.text) && new RegExp(`"name":"${FAQ[0].q.replace('?', '\\?')}"`).test(faq.text), 'нет разметки FAQPage');
+  assert(/href="\/organizers">«Организаторам»/.test(faq.text) && /href="mailto:info@ftso67\.ru"/.test(faq.text), 'ссылки внутри ответов не подставились');
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  assert(!/class="footer-faq"/.test((await http('/admin', { jar })).text), 'блок вопросов просочился в админку');
+  assert(/\/faq</.test((await http('/sitemap.xml')).text), '/faq нет в sitemap');
+  assert(/href="\/faq"/.test(home.text), 'нет ссылки «Вопросы и ответы» в меню/подвале');
+  return `в подвале 4 из ${FAQ.length}, страница /faq с FAQPage и живыми ссылками, в админке нет`;
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

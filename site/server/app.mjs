@@ -1,6 +1,7 @@
 import express from 'express';
 import { seoFor, SEO_DEFAULTS } from './lib/seo.mjs';
 import { activePartners } from './lib/partners.mjs';
+import { FAQ } from './lib/faq.mjs';
 import { siteText } from './lib/texts.mjs';
 import session from 'express-session';
 import helmet from 'helmet';
@@ -246,6 +247,7 @@ export function createApp(config) {
     // SEO (ТЗ п. 5): правка из админки по адресу + заготовка раздела.
     // Партнёры — в подвал на всех публичных страницах и в полосу главной.
     res.locals.partners = req.path.startsWith('/admin') ? [] : activePartners(db);
+    res.locals.faq = FAQ;
     res.locals.partnersTitle = siteText(db, 'partners-title');
     res.locals.partnersCta = siteText(db, 'partners-cta');
     res.locals.seo = seoFor(db, req.path);
