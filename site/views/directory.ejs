@@ -9,6 +9,7 @@
   <div class="container">
     <span class="eyebrow">Раздел сайта</span>
     <h1><%= spec.title %></h1>
+    <% if (typeof intro !== 'undefined' && intro && intro.length) { %><div class="lead dir-intro"><% intro.forEach(function (p) { %><p><%= p %></p><% }); %></div><% } %>
   </div>
 </section>
 <section class="section-pad section-pad--tight">
@@ -34,7 +35,7 @@
       </form>
     <% } %>
     <% if (!rows.length) { %>
-      <div class="panel notice"><%= anyFilter ? 'По выбранным фильтрам записей нет.' : 'Раздел пока не наполнен.' %></div>
+      <div class="panel notice"><%= anyFilter ? 'По выбранным фильтрам записей нет.' : 'Записей пока нет — реестр формируется.' %></div>
     <% } else { %>
       <div class="table-scroll">
         <table>

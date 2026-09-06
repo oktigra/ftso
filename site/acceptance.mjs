@@ -2520,7 +2520,7 @@ await check('стартовое наполнение: 4 документа PDF (
   const c2 = tokenFrom((await http('/admin/news', { jar })).text);
   eq((await http('/admin/news/starter', { method: 'POST', form: { _csrf: c2 }, jar })).status, 302, 'новости');
   eq(db.prepare('SELECT COUNT(*) AS n FROM news WHERE is_published = 0 AND title LIKE ?').get('Открыт официальный сайт%').n, 1, 'стартовая новость должна быть черновиком');
-  eq(db.prepare('SELECT COUNT(*) AS n FROM news').get().n, nb + 3, 'добавлено 3 новости');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM news').get().n, nb + 4, 'добавлено 4 новости');
   assert(!/Открыт официальный сайт/.test((await http('/news')).text), 'черновик виден на витрине');
   db.prepare("DELETE FROM news WHERE title IN (SELECT title FROM news WHERE is_published = 0 AND created_at >= datetime('now','-1 minute')) AND is_published = 0").run();
   for (const t of ['Методика расчёта регионального рейтинга ФТСО', 'Порядок заявления турнира и передачи результатов в рейтинг', 'Протокол турнира (бланк для заполнения)', 'Согласие законного представителя (бланк, бумажная форма)']) {
@@ -2528,7 +2528,7 @@ await check('стартовое наполнение: 4 документа PDF (
     if (row) { db.prepare('DELETE FROM federation_documents WHERE id = ?').run(row.id); db.prepare('DELETE FROM uploads WHERE id = ?').run(row.upload_id); }
   }
   db.prepare('DELETE FROM write_attempts').run();
-  return '4 PDF в «Регламенты»/«Бланки», скачиваются; 3 черновика новостей, на витрине не видны; повтор без дублей';
+  return '4 PDF в «Регламенты»/«Бланки», скачиваются; 4 черновика новостей, на витрине не видны; повтор без дублей';
 });
 
 await check('миграция на живой базе: схема релиза #134 (239ecaf) с данными → текущая, без ошибок', async () => {
@@ -2640,6 +2640,31 @@ await check('турнир: место проведения (из справоч�
   eq([ti.venue, ti.organizer, ti.organizer_contact].join('|'), 'корты «Кристалл»|ФТСО|Главный судья: Н. Груздин', 'импорт не перенёс место/организатора');
   db.prepare("DELETE FROM tournaments WHERE name IN ('Турнир с местом', 'Импорт с местом')").run(); db.prepare("DELETE FROM players WHERE full_name LIKE 'Местов %'").run(); db.prepare('DELETE FROM write_attempts').run();
   return 'место/организатор/контакт сохраняются, видны на карточке, подсказка кортов, импорт переносит';
+});
+
+await check('подводки справочников (правятся в «Текстах») и поля турнира «взнос» / «заявки до»', async () => {
+  for (const [path, phrase] of [['/coaches', 'пометкой «Тренеры»'], ['/referees', 'пометкой «Судьи»'], ['/courts', 'Теннисные корты Смоленской области'], ['/clubs', 'Теннисные клубы Смоленской области']]) {
+    const r = await http(path);
+    assert(r.text.includes(phrase), `на ${path} нет подводки («${phrase}»)`);
+    assert(!/Раздел пока не наполнен/.test(r.text), `на ${path} осталось «Раздел пока не наполнен»`);
+  }
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const tx = await http('/admin/texts', { jar });
+  assert(/name="key" value="coaches-intro"/.test(tx.text) && /name="key" value="referees-intro"/.test(tx.text), 'подводки не правятся в «Текстах»');
+  const _csrf = tokenFrom(tx.text);
+  eq((await http('/admin/texts', { method: 'POST', form: { _csrf, key: 'referees-intro', value: 'Своя подводка судей.' }, jar })).status, 302, 'правка подводки');
+  assert(/Своя подводка судей\./.test((await http('/referees')).text), 'подводка не подменилась');
+  db.prepare("DELETE FROM site_texts WHERE key = 'referees-intro'").run();
+  const { loadTexts } = await import('./server/lib/texts.mjs'); loadTexts(db);
+  // Взнос и срок подачи заявки.
+  const c2 = tokenFrom((await http('/admin/tournaments', { jar })).text);
+  eq((await http('/admin/tournaments', { method: 'POST', form: { _csrf: c2, name: 'Турнир со взносом', end_date: '2026-09-30', category: 'B', kind: 'other', fee: '500 ₽ с игрока', entry_deadline: '28.09.2026, 20:00', action: 'publish' }, jar })).status, 302, 'создание');
+  const t = db.prepare("SELECT id, fee, entry_deadline FROM tournaments WHERE name = 'Турнир со взносом'").get();
+  eq([t.fee, t.entry_deadline].join('|'), '500 ₽ с игрока|28.09.2026, 20:00', 'поля не сохранились');
+  const card = (await http(`/tournaments/${t.id}`)).text;
+  assert(/Взнос: 500 ₽ с игрока · Заявки до: 28\.09\.2026, 20:00/.test(card), 'на карточке нет взноса/срока');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t.id); db.prepare('DELETE FROM write_attempts').run();
+  return 'подводки четырёх справочников из «Текстов» (правятся и сбрасываются); взнос и срок заявки сохраняются и видны на карточке';
 });
 
 await check('rate-limit на /register срабатывает', async () => {

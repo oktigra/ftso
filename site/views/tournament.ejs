@@ -20,6 +20,9 @@
     <% if (tournament.organizer || tournament.organizer_contact) { %>
       <p class="muted">Организатор: <%= tournament.organizer || '' %><%= tournament.organizer && tournament.organizer_contact ? ' · ' : '' %><%= tournament.organizer_contact || '' %></p>
     <% } %>
+    <% if (tournament.fee || tournament.entry_deadline) { %>
+      <p class="muted"><%= tournament.fee ? 'Взнос: ' + tournament.fee : '' %><%= tournament.fee && tournament.entry_deadline ? ' · ' : '' %><%= tournament.entry_deadline ? 'Заявки до: ' + tournament.entry_deadline : '' %></p>
+    <% } %>
   </div>
 </section>
 
