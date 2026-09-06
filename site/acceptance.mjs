@@ -2485,6 +2485,24 @@ await check('автопост в MAX: без токена выключен и м
   return 'без настроек молчит; с токеном шлёт markdown+кнопку на platform-api2.max.ru; ошибки не роняют; журнал; страница только супер-админу';
 });
 
+await check('форма обратной связи внизу каждой публичной страницы: есть на / и /rating, нет в админке и на /contacts (там своя); отправка из подвала принимается', async () => {
+  const home = await http('/');
+  assert(/class="footer-feedback" id="feedback"/.test(home.text) && /action="\/contacts\/feedback"/.test(home.text) && /name="consent_processing"/.test(home.text), 'в подвале главной нет формы');
+  assert(/footer-feedback/.test((await http('/rating')).text), 'в подвале /rating нет формы');
+  eq(((await http('/contacts')).text.match(/action="\/contacts\/feedback"/g) || []).length, 1, 'на /contacts форма должна быть одна — своя');
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  assert(!/footer-feedback/.test((await http('/admin', { jar })).text), 'форма просочилась в админку');
+  const jar2 = new Jar();
+  const page = await http('/', { jar: jar2 });
+  const before = db.prepare('SELECT COUNT(*) AS n FROM feedback_messages').get().n;
+  const r = await http('/contacts/feedback', { method: 'POST', form: { _csrf: tokenFrom(page.text), name: 'Подвальный', email: 'footer@example.com', message: 'Сообщение из подвала сайта', consent_processing: '1' }, jar: jar2 });
+  eq(r.status + ' ' + r.location, '302 /contacts?sent=1', 'отправка из подвала');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM feedback_messages').get().n, before + 1, 'обращение не записано');
+  db.prepare("DELETE FROM feedback_messages WHERE email = 'footer@example.com'").run();
+  assert(!/footer-feedback/.test((await http('/register')).text), 'на /register подвальная форма мешает форме регистрации');
+  return 'форма в подвале на публичных страницах, не в админке, одна на /contacts; отправка записывает обращение';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
