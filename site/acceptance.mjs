@@ -1893,11 +1893,17 @@ await check('сетка, слой 1 — круговая группа: клет�
   eq((await cell(A, B, '6:3 6:4')).status, 302, 'A-B'); eq((await cell(A, V, '6:2 6:2')).status, 302, 'A-V'); eq((await cell(A, G, 'wo')).status, 302, 'A-G wo');
   eq((await cell(V, B, '3:6 6:7(5)')).status, 302, 'V-B (проигрыш строки)'); eq((await cell(B, G, '6:4 4:6 10:8')).status, 302, 'B-G');
   eq((await cell(V, G, '6:0 6:0')).status, 302, 'V-G');
+  // Русские формы: «неявка 2», «отказ 2» — принимаются, хранятся от победителя, показываются от строки.
+  eq((await cell(V, G, '6:0 2:1 отказ 2')).status, 302, 'отказ');
+  eq(db.prepare('SELECT score FROM matches WHERE tournament_id = ? AND winner_player_id = ? AND loser_player_id = ?').get(t, V, G).score, '6:0 2:1 отк.', 'хранимый счёт при отказе');
+  const view0 = await http(`/admin/tournaments/${t}/results`, { jar });
+  assert(/value="6:0 2:1 отказ 2"/.test(view0.text) && /value="0:6 1:2 отказ 1"/.test(view0.text), 'клетки отказа должны показываться с обеих сторон');
+  eq((await cell(V, G, '6:0 6:0')).status, 302, 'V-G обратно');
   const m = db.prepare('SELECT winner_player_id AS w, loser_player_id AS l, score FROM matches WHERE tournament_id = ? ORDER BY id').all(t);
   eq(m.length, 6, 'матчей записано');
   const vb = m.find((x) => (x.w === B && x.l === V));
   assert(vb && vb.score === '6:3 7:6(5)', `счёт с точки зрения строки-проигравшего должен перевернуться к победителю: ${vb && vb.score}`);
-  assert(m.find((x) => x.w === A && x.l === G && x.score === 'w/o'), 'wo не записан');
+  assert(m.find((x) => x.w === A && x.l === G && x.score === 'неявка'), 'wo/неявка не записана');
   const view = await http(`/admin/tournaments/${t}/results`, { jar });
   assert(/group-win/.test(view.text) && /group-loss/.test(view.text), 'клетки не подсвечены');
   const { groupTable } = await import('./server/lib/groups.mjs');
@@ -1948,7 +1954,7 @@ await check('сетка, слой 2 — олимпийка на 8: посев, b
   const r1 = db.prepare('SELECT position, player_id FROM bracket_slots WHERE bracket_id = ? AND round = 1 ORDER BY position').all(bid);
   eq(r1.map((x) => x.player_id).join(','), [ids[0], ids[3], ids[5], ids[6]].join(','), 'состав 1/2');
   assert(db.prepare("SELECT 1 FROM matches WHERE tournament_id = ? AND winner_player_id = ? AND loser_player_id = ? AND score = '6:2 7:6(3)'").get(t, ids[5], ids[4]), 'счёт пары 2 не перевёрнут к победителю');
-  assert(db.prepare("SELECT 1 FROM matches WHERE tournament_id = ? AND winner_player_id = ? AND loser_player_id = ? AND score = 'w/o'").get(t, ids[3], ids[2]), '-wo не записан');
+  assert(db.prepare("SELECT 1 FROM matches WHERE tournament_id = ? AND winner_player_id = ? AND loser_player_id = ? AND score = 'неявка'").get(t, ids[3], ids[2]), '-wo/неявка 1 не записана');
   // 1/2: 1 бьёт 4; 6 бьёт 7. Финал: 1 бьёт 6. Затем отмена полуфинала (1,4) снимает и финал.
   eq((await post(`/${bid}/decide`, { r: '1', k: '0', score: '6:1 6:1' })).status, 302, '1/2 пара 0');
   eq((await post(`/${bid}/decide`, { r: '1', k: '1', score: '7:5 7:5' })).status, 302, '1/2 пара 1');
@@ -2202,7 +2208,7 @@ await check('протокол секретаря: пустая сетка в PDF
   const rows2 = rows2all.filter((r) => /^(сетка|группа) /.test(r[9] || ''));
   eq(rows2.length, 5, 'в новом протоколе — 3 пары группы и 2 пары 1/2 (сыгранная со счётом, несыгранная — пустая)');
   assert(rows2.filter((r) => /Группа/.test(r[1])).every((r) => r[7] === '6:2 6:2' && r[4] === '6:2' && r[5] === '6:2'), 'счёт группы в новом протоколе не показан (итог и сеты)');
-  eq(rows2.find((r) => /пара 1$/.test(r[1]))[7], '-wo', 'сыгранная пара сетки показана счётом от Игрока 1 («-wo»)');
+  eq(rows2.find((r) => /пара 1$/.test(r[1]))[7], 'неявка 1', 'сыгранная пара сетки показана счётом от Игрока 1 («неявка 1»)');
   eq(rows2.find((r) => /пара 2$/.test(r[1]))[7], '', 'несыгранная пара — пустой счёт');
   // Чужой файл без ключей — отказ.
   const bad = await http(`/admin/tournaments/${t}/protocol/import`, { method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'file', filename: 'x.xlsx', type: 'application/octet-stream', buffer: xlsxFromRows([['Место', 'Игрок'], [1, 'Кто-то']]) }] }, jar });

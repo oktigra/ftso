@@ -3,7 +3,7 @@
 // в общую matches (счёт с точки зрения ВЕРХНЕГО игрока пары, победитель — по сетам).
 // Места: победитель 1, финалист 2, проигравшие полуфинала 3, четвертьфинала 5, далее 9, 17.
 import { ValidationError } from './validate.mjs';
-import { parseScore } from './groups.mjs';
+import { parseScore, scoreFor } from './groups.mjs';
 
 export const BRACKET_SIZES = [4, 8, 16, 32];
 export const roundsOf = (size) => Math.log2(size);
@@ -34,9 +34,9 @@ export function bracketView(db, tournamentId, b) {
     for (let k = 0; k < n / 2; k++) {
       const a = at.get(`${r}:${2 * k}`) || null; const c = at.get(`${r}:${2 * k + 1}`) || null;
       const next = at.get(`${r + 1}:${k}`) || null;
-      let score = null;
-      if (next && a && c) score = scoreOf(next, next === a ? c : a);
-      pairs.push({ k, a: a && names.get(a), b: c && names.get(c), aId: a, bId: c, winner: next, score, bye: Boolean(next && (!a || !c)) });
+      let score = null; let scoreRaw = null;
+      if (next && a && c) { scoreRaw = scoreOf(next, next === a ? c : a); score = scoreFor(scoreRaw, true); }
+      pairs.push({ k, a: a && names.get(a), b: c && names.get(c), aId: a, bId: c, winner: next, score, scoreRaw, bye: Boolean(next && (!a || !c)) });
     }
     rounds.push({ r, name: roundName(b.size, r), pairs });
   }
@@ -88,10 +88,9 @@ export function decide(db, tournamentId, bid, r, k, rawScore) {
     }
     if (!a || !c) throw new ValidationError('В паре не хватает игрока: посейте второго или отметьте «bye»');
     const parsed = parseScore(s);
-    if (!parsed) throw new ValidationError('Введите счёт с точки зрения верхнего игрока («6:3 6:4», «wo», «-wo») или «bye»');
+    if (!parsed) throw new ValidationError('Введите счёт с точки зрения верхнего игрока («6:3 6:4», «неявка 2», «6:3 2:1 отказ 2») или «bye»');
     const w = parsed.rowWon ? a : c; const l = parsed.rowWon ? c : a;
-    const flip = (set) => { const m = /^(\d{1,2})[:\-](\d{1,2})(\(\d+\))?$/.exec(set); return `${m[2]}:${m[1]}${m[3] || ''}`; };
-    const score = parsed.score === 'w/o' ? 'w/o' : (parsed.rowWon ? parsed.score.replace(/-/g, ':') : parsed.score.split(' ').map(flip).join(' '));
+    const score = parsed.score; // уже от победителя: «6:4 6:4», «неявка», «6:3 2:1 отк.»
     db.prepare('DELETE FROM matches WHERE tournament_id = ? AND stage = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))').run(tournamentId, `b:${b.id}`, a, c, c, a);
     db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage) VALUES (?, ?, ?, ?, ?, ?)').run(tournamentId, w, l, score, b.kind, `b:${b.id}`);
     db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, ?, ?, ?)').run(b.id, r + 1, k, w);

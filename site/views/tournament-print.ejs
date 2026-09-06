@@ -28,7 +28,7 @@
               <td><%= i + 1 %></td><td><%= r.anonymized_at ? 'Игрок удалён' : r.full_name %></td>
               <% g.members.forEach(function (c) { %>
                 <% if (r.id === c.id) { %><td class="group-self">—</td><% } else { const cell = g.cells[r.id + ':' + c.id]; %>
-                  <td><%= cell ? (cell.won ? cell.score : cell.score.split(' ').map(function (s) { var m = /^(\d+)[:\-](\d+)(\(\d+\))?$/.exec(s); return m ? m[2] + ':' + m[1] + (m[3] || '') : s; }).join(' ')) : '' %></td>
+                  <td><%= cell ? cell.shown : '' %></td>
                 <% } %>
               <% }); %>
               <td><%= g.stats[r.id].wins %></td><td><strong><%= g.stats[r.id].played ? g.stats[r.id].place : '—' %></strong></td>

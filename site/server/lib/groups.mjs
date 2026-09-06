@@ -5,24 +5,68 @@
 // Места в группе: победы → личная встреча (двое) → разница сетов → разница геймов.
 import { ValidationError } from './validate.mjs';
 
-/** Разбор счёта: возвращает { rowWon, sets:[a,b], games:[a,b] } либо бросает. «wo» — строка выиграла без игры, «-wo» — проиграла. */
+/**
+ * РАЗБОР СЧЁТА с точки зрения игрока СТРОКИ (Игрока 1). Принято в российских турнирах:
+ *  · сеты через пробел: «6:3 6:4», тай-брейк в скобках «7:6(5)», чемпионский тай-брейк «10:8»;
+ *  · «неявка 2» — Игрок 2 не явился (выиграл 1), «неявка 1» — не явился Игрок 1;
+ *    просто «неявка» = «неявка 2»; латинские «w/o», «wo» — то же, «-wo» = «неявка 1»;
+ *  · «6:3 2:1 отказ 2» — Игрок 2 снялся при счёте (выиграл 1); «отк.» / «снялся» — то же;
+ *    «отказ» без номера = «отказ 2».
+ * Возвращает { rowWon, sets, games, score } — score в записи для хранения ОТ ПОБЕДИТЕЛЯ:
+ * «неявка» либо «6:3 2:1 отк.» (сеты уже с точки зрения победителя).
+ */
 export function parseScore(raw) {
   const s = String(raw || '').trim().replace(/\s+/g, ' ');
   if (!s) return null;
-  if (/^wo$/i.test(s) || /^w\/o$/i.test(s)) return { rowWon: true, sets: [1, 0], games: [0, 0], score: 'w/o' };
-  if (/^-wo$/i.test(s) || /^-w\/o$/i.test(s)) return { rowWon: false, sets: [0, 1], games: [0, 0], score: 'w/o' };
-  const parts = s.split(' ');
+  const low = s.toLowerCase();
+  // неявка
+  let m = /^(?:-)?(?:неявка|w\/o|wo)(?:\s*(1|2))?$/.exec(low);
+  if (m) {
+    const who = m[1] ? Number(m[1]) : (low.startsWith('-') ? 1 : 2); // кто НЕ явился
+    return { rowWon: who === 2, sets: who === 2 ? [1, 0] : [0, 1], games: [0, 0], score: 'неявка', special: 'wo' };
+  }
+  // отказ: сеты + «отказ N» / «отк. N» / «снялся N»
+  const parts = low.split(' ');
+  let retired = null;
+  const last = parts[parts.length - 1]; const prev = parts[parts.length - 2];
+  if (/^(1|2)$/.test(last) && /^(отказ|отк\.?|снялся|ret\.?)$/.test(prev || '')) { retired = Number(last); parts.splice(-2, 2); }
+  else if (/^(отказ|отк\.?|снялся|ret\.?)$/.test(last)) { retired = 2; parts.pop(); }
   let a = 0; let b = 0; let ga = 0; let gb = 0;
   for (const p of parts) {
-    const m = /^(\d{1,2})[:\-](\d{1,2})(?:\(\d+\))?$/.exec(p);
-    if (!m) throw new ValidationError(`Счёт «${raw}» не разобран: пишите по сетам, например «6:3 3:6 10:8»`);
-    const x = Number(m[1]); const y = Number(m[2]);
-    if (x === y) throw new ValidationError(`Сет «${p}» без победителя`);
-    if (x > y) a++; else b++;
+    const mm = /^(\d{1,2})[:\-](\d{1,2})(?:\((\d+)\))?$/.exec(p);
+    if (!mm) throw new ValidationError(`Счёт «${raw}» не разобран: пишите по сетам, например «6:3 3:6 10:8»; неявка — «неявка 2»; снялся — «6:3 2:1 отказ 2»`);
+    const x = Number(mm[1]); const y = Number(mm[2]);
+    if (x === y && retired === null) throw new ValidationError(`Сет «${p}» без победителя`);
+    if (x > y) a++; else if (y > x) b++;
     ga += x; gb += y;
   }
+  const setsTxt = parts.map((p) => p.replace('-', ':')).join(' ');
+  if (retired !== null) {
+    const rowWon = retired === 2;
+    const flip = (set) => { const mm = /^(\d{1,2})[:\-](\d{1,2})(\(\d+\))?$/.exec(set); return `${mm[2]}:${mm[1]}${mm[3] || ''}`; };
+    const fromWinner = rowWon ? setsTxt : parts.map(flip).join(' ');
+    return { rowWon, sets: rowWon ? [Math.max(a, b), Math.min(a, b)] : [Math.min(a, b), Math.max(a, b)], games: [ga, gb], score: `${fromWinner} отк.`.trim(), special: 'ret' };
+  }
   if (a === b) throw new ValidationError(`Счёт «${raw}»: сеты поровну — победитель не определён`);
-  return { rowWon: a > b, sets: [a, b], games: [ga, gb], score: parts.join(' ') };
+  const rowWon = a > b;
+  const flip = (set) => { const mm = /^(\d{1,2})[:\-](\d{1,2})(\(\d+\))?$/.exec(set); return `${mm[2]}:${mm[1]}${mm[3] || ''}`; };
+  return { rowWon, sets: [a, b], games: [ga, gb], score: rowWon ? setsTxt : parts.map(flip).join(' ') };
+}
+
+/**
+ * ПОКАЗ СЧЁТА с точки зрения игрока (won — он победитель): хранимый счёт всегда от
+ * победителя. «неявка» → «неявка 2»/«неявка 1»; «6:3 2:1 отк.» → «6:3 2:1 отказ 2» /
+ * «3:6 1:2 отказ 1»; обычный — сеты переворачиваются у проигравшего.
+ */
+export function scoreFor(stored, won) {
+  const s = String(stored || '').trim();
+  if (!s) return '';
+  if (s === 'неявка' || s === 'w/o') return won ? 'неявка 2' : 'неявка 1';
+  const ret = / отк\.$/.test(s);
+  const sets = (ret ? s.replace(/ отк\.$/, '') : s).split(' ');
+  const flip = (set) => { const mm = /^(\d{1,2})[:\-](\d{1,2})(\(\d+\))?$/.exec(set); return mm ? `${mm[2]}:${mm[1]}${mm[3] || ''}` : set; };
+  const txt = won ? sets.join(' ') : sets.map(flip).join(' ');
+  return ret ? `${txt} отказ ${won ? 2 : 1}` : txt;
 }
 
 export function listGroups(db, tournamentId) {
@@ -55,8 +99,8 @@ export function groupTable(db, tournamentId, group) {
     try { parsed = parseScore(m.score); } catch { parsed = null; }
     const sets = parsed ? parsed.sets : [1, 0];
     const games = parsed ? parsed.games : [0, 0];
-    cell.set(`${m.w}:${m.l}`, { won: true, score: m.score || '', sets, games });
-    cell.set(`${m.l}:${m.w}`, { won: false, score: m.score || '', sets: [sets[1], sets[0]], games: [games[1], games[0]] });
+    cell.set(`${m.w}:${m.l}`, { won: true, score: m.score || '', shown: scoreFor(m.score, true), sets, games });
+    cell.set(`${m.l}:${m.w}`, { won: false, score: m.score || '', shown: scoreFor(m.score, false), sets: [sets[1], sets[0]], games: [games[1], games[0]] });
   }
   const stats = members.map((p) => {
     let wins = 0; let played = 0; let setsFor = 0; let setsAgainst = 0; let gamesFor = 0; let gamesAgainst = 0;
@@ -99,10 +143,8 @@ export function setCell(db, tournamentId, group, rowId, colId, rawScore) {
     del.run(tournamentId, `g:${group.id}`, rowId, colId, colId, rowId);
     if (!parsed) return { cleared: true };
     const w = parsed.rowWon ? rowId : colId; const l = parsed.rowWon ? colId : rowId;
-    // Счёт хранится с точки зрения ПОБЕДИТЕЛЯ — так он читается в профилях и протоколе.
-    // Переворот сета «6:7(5)» → «7:6(5)»: тай-брейк в скобках остаётся при сете.
-    const flip = (set) => { const m = /^(\d{1,2})[:\-](\d{1,2})(\(\d+\))?$/.exec(set); return `${m[2]}:${m[1]}${m[3] || ''}`; };
-    const score = parsed.score === 'w/o' ? 'w/o' : (parsed.rowWon ? parsed.score.replace(/-/g, ':') : parsed.score.split(' ').map(flip).join(' '));
+    // Счёт хранится с точки зрения ПОБЕДИТЕЛЯ (parseScore уже перевернул сеты).
+    const score = parsed.score;
     db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage) VALUES (?, ?, ?, ?, ?, ?)').run(tournamentId, w, l, score, group.kind, `g:${group.id}`);
     return { winner: w, loser: l, score };
   })();
