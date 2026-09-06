@@ -551,6 +551,8 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .lightbox__close{top:1rem; right:1rem; transform:none; width:44px; height:44px; font-size:1.6rem;}
 .lightbox__nav--prev{left:1rem;} .lightbox__nav--next{right:1rem;}
 .lightbox__close:hover, .lightbox__nav:hover{background:rgba(255,255,255,.28);}
+.btn--account{padding:.45rem .55rem;}
+.avatar-initials{display:inline-grid; place-items:center; width:32px; height:32px; border-radius:999px; background:var(--primary); color:#fff; font-family:'Manrope',sans-serif; font-weight:800; font-size:.85rem; letter-spacing:.02em;}
 .btn--max{margin-top:.5rem;}
 .bracket{display:flex; gap:1rem; overflow-x:auto; padding:.5rem 0; align-items:stretch;}
 .bracket__round{display:flex; flex-direction:column; justify-content:space-around; gap:.6rem; min-width:15rem;}

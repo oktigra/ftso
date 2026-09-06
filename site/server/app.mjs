@@ -44,6 +44,26 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * Запрос — LIMIT 1 по таблице, микросекунды; кэша нарочно нет, чтобы плашка
  * ушла тем же запросом, что показал первый результат.
  */
+/** Инициалы: первые буквы двух первых слов ФИО («Коротков Олег Александрович» → «КО»). */
+export function initialsOf(fullName) {
+  return String(fullName || '').trim().split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join('') || '?';
+}
+
+/** Кому показывать инициалы: игрок → кабинет, представитель → кабинет, сотрудник админки → админка. */
+function headerAccount(db, req) {
+  const s = req.session || {};
+  if (s.player && s.player.playerId) {
+    const p = db.prepare('SELECT full_name FROM players WHERE id = ?').get(s.player.playerId);
+    if (p) return { href: '/cabinet', initials: initialsOf(p.full_name), title: p.full_name };
+  }
+  if (s.guardian && s.guardian.guardianId) {
+    const g = db.prepare('SELECT full_name FROM guardians WHERE id = ?').get(s.guardian.guardianId);
+    if (g) return { href: '/cabinet', initials: initialsOf(g.full_name), title: `${g.full_name} (представитель)` };
+  }
+  if (s.user && s.user.username) return { href: '/admin', initials: initialsOf(s.user.username), title: `${s.user.username} · админка` };
+  return null;
+}
+
 /** Домены Метрики для CSP: скрипт — .ru, хит визита и cookie-sync — .com. */
 export const METRIKA_HOSTS = ['https://mc.yandex.ru', 'https://mc.yandex.com'];
 
@@ -201,6 +221,9 @@ export function createApp(config) {
     res.locals.user = currentUser(req);
     // Кнопка «Вход» в шапке: игрок или представитель уже в кабинете — «Кабинет».
     res.locals.cabinetSignedIn = Boolean(req.session && (req.session.player || req.session.guardian));
+    // КНОПКА АККАУНТА В ШАПКЕ (решение владельца 06.09.2026): вошёл — инициалы
+    // (первые буквы фамилии и имени) вместо «Вход»; не вошёл — «Вход».
+    res.locals.headerAccount = headerAccount(db, req);
     // SEO (ТЗ п. 5): правка из админки по адресу + заготовка раздела.
     res.locals.seo = seoFor(db, req.path);
     res.locals.seoDefault = SEO_DEFAULTS[req.path] || '';

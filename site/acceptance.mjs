@@ -4938,12 +4938,22 @@ try {
       const li = await http('/cabinet/login', { method: 'POST', form: { _csrf: tokenFrom(lp.text), email: 'timofey@example.com', password: 'своя-жизнь-2026-корт' }, jar });
       eq(li.status, 302, 'вход в кабинет для проверки шапки');
       const home = await http('/', { jar });
-      const m = home.text.match(/<a class="btn btn--secondary btn--login" href="([^"]+)">[\s\S]*?<span class="btn-label">([^<]+)</);
-      assert(m, 'после входа кнопки в шапке нет');
-      eq(m[1] + ' ' + m[2].trim(), '/cabinet Кабинет', 'после входа кнопка должна стать «Кабинет» → /cabinet');
+      const m = home.text.match(/<a class="btn btn--secondary btn--login btn--account" href="([^"]+)" title="([^"]+)"[^>]*>[\s\S]*?<span class="avatar-initials"[^>]*>([^<]+)</);
+      assert(m, 'после входа в шапке нет кнопки с инициалами');
+      const fullName = db.prepare("SELECT p.full_name FROM players p JOIN player_accounts a ON a.player_id = p.id WHERE a.email = 'timofey@example.com'").get().full_name;
+      const [last, first] = fullName.split(' ');
+      eq(m[1] + ' ' + m[3].trim(), `/cabinet ${last[0]}${first[0]}`, 'после входа — инициалы фамилии и имени, ссылка на кабинет');
+      eq(m[2], fullName, 'подсказка — полное имя');
+      assert(!/btn-label">Вход</.test(home.text), 'после входа осталась надпись «Вход»');
       resetCabinetLimit();
     }
-    // Кабинет без входа отдаёт 403 со страницей «нужен вход» — это рабочая
+    // Сотрудник админки видит свои инициалы со ссылкой на /admin.
+  {
+    const { jar: aj } = await login(ADMIN.user, ADMIN.pass);
+    const h = (await http('/', { jar: aj })).text;
+    assert(new RegExp(`btn--account" href="/admin" title="${ADMIN.user} · админка"`).test(h), 'у сотрудника админки нет инициалов → /admin');
+  }
+  // Кабинет без входа отдаёт 403 со страницей «нужен вход» — это рабочая
     // страница, а не заглушка: пустой ответ здесь был бы неотличим от «#».
     const cabinet = await http('/cabinet');
     eq(cabinet.status, 403, 'кабинет без входа');
