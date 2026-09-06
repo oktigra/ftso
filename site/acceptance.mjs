@@ -2231,6 +2231,14 @@ await check('форма турнира: черновик / опубликова�
   eq((await http(`/tournaments/${draft.id}`)).status, 404, 'карточка черновика');
   eq((await http(`/tournaments/${draft.id}/print`)).status, 404, 'печать черновика');
   eq((await http(`/tournaments/${draft.id}/bracket.pdf`)).status, 404, 'PDF черновика');
+  eq((await http(`/tournaments/${draft.id}/protocol.xlsx`)).status, 404, 'протокол черновика на витрине');
+  // Админские адреса: секретарь качает сетку и протокол черновика; гостю — на вход.
+  for (const f of ['bracket.pdf', 'bracket.docx', 'protocol.xlsx', 'print']) {
+    eq((await http(`/admin/tournaments/${draft.id}/${f}`, { jar })).status, 200, `админка: ${f} черновика`);
+    eq((await http(`/admin/tournaments/${draft.id}/${f}`)).status, 302, `гость на админском ${f} должен уйти на вход`);
+  }
+  const resultsPage = (await http(`/admin/tournaments/${draft.id}/results`, { jar })).text;
+  assert(new RegExp(`/admin/tournaments/${draft.id}/protocol.xlsx`).test(resultsPage) && !new RegExp(`href="/tournaments/${draft.id}/protocol.xlsx"`).test(resultsPage), 'ссылки в админке должны вести на админские адреса');
   eq((await http(`/tournaments/${pub.id}`)).status, 200, 'карточка опубликованного');
   const sm = (await http('/sitemap.xml')).text;
   assert(!sm.includes(`/tournaments/${draft.id}<`) && sm.includes(`/tournaments/${pub.id}<`), 'sitemap: черновик попал или опубликованный пропал');
