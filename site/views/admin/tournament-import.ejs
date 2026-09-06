@@ -8,7 +8,7 @@
 
   <% if (report && report.error) { %><div class="flash flash--error"><%= report.error %></div><% } %>
   <% if (report && report.tournamentId) { %>
-    <div class="flash flash--ok">Турнир заведён черновиком (#<%= report.tournamentId %>): разделов <%= report.sections.length %>, новых игроков <%= report.players_created_count %>.
+    <div class="flash flash--ok">Турнир заведён черновиком (#<%= report.tournamentId %>): разделов <%= report.sections.length %>, новых записей игроков <%= report.players_created_count %> (только результаты — без кабинета и контактов; основание публикации — участие в соревнованиях).
       <a href="/admin/tournaments/<%= report.tournamentId %>/results">Открыть результаты</a> · <a href="/admin/tournaments">Список турниров</a></div>
     <div class="panel">
       <h2>Что сделано</h2>
@@ -16,7 +16,8 @@
         <% report.sections.forEach(function (s) { %><li><%= s.title %> — <%= s.type === 'bracket' ? 'сетка' : s.type === 'group' ? 'группа' : 'пары' %>: матчей <%= s.matches %>, мест <%= s.places %></li><% }); %>
       </ul>
       <% if (report.players_created.length) { %>
-        <h3>Новые игроки — дозаполните пол, город и дату рождения в «Игроках»</h3>
+        <h3>Новые записи игроков — дозаполните имя, пол, город и дату рождения в «Игроках»</h3>
+        <p class="muted">Кабинет у них не создаётся: вход появится, когда человек сам зарегистрируется на сайте (секретарь увидит совпадение и привяжет к этой записи) или получит «Ссылку в кабинет» из «Игроков».</p>
         <p><% report.players_created.forEach(function (p, i) { %><%= i ? ', ' : '' %><a href="/admin/players#player-<%= p.id %>"><%= p.name %></a> (#<%= p.id %>)<% }); %></p>
       <% } %>
       <% if (report.warnings.length) { %>
@@ -28,7 +29,7 @@
   <% } %>
 
   <div class="panel">
-    <p class="muted">Переписанный протокол простым текстом. Незнакомые фамилии заводятся как игроки (пол — по разделу, город — турнира, дата рождения — пустая). Ничего не пишется, пока весь текст не разобран.</p>
+    <p class="muted">Переписанный протокол простым текстом. Незнакомые фамилии заводятся как записи игроков — результаты и место в рейтинге, без кабинета и контактов (пол — по разделу, город — турнира, дата рождения — пустая). Ничего не пишется, пока весь текст не разобран.</p>
     <form method="post" action="/admin/tournaments/import" class="stacked-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="field">
