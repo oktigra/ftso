@@ -675,11 +675,11 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     requireRole(...DATA_ROLES),
     limitWrites,
     guard((req, res) => {
-      const mode = ['on', 'off', 'auto'].includes(req.body.mode) ? req.body.mode : 'auto';
+      // Только вручную: «висит» либо «снята». Автоматики нет — решение владельца 06.09.2026.
+      const mode = req.body.mode === 'off' ? 'off' : 'on';
       db.prepare("INSERT INTO site_settings (key, value, updated_at) VALUES ('dev_notice', ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at").run(mode);
       logAction(db, actorId(req), 'site.dev_notice', null, { mode });
-      const what = { on: 'показывается всегда', off: 'выключена', auto: 'автоматически — до первого результата опубликованного турнира' }[mode];
-      flash(req, res, 'ok', `Плашка на сайте: ${what}.`, '/admin');
+      flash(req, res, 'ok', mode === 'off' ? 'Плашка снята — на сайте её больше нет.' : 'Плашка показывается на всех публичных страницах.', '/admin');
     }),
   );
 

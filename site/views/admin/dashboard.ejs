@@ -9,19 +9,17 @@
   <div class="admin-grid">
   <div class="panel">
     <h2>Плашка «идёт наполнение» на сайте</h2>
-    <p class="muted">Сейчас на сайте: <strong><%= devNoticeAdmin.shown ? 'показывается' : 'не показывается' %></strong><%= devNoticeAdmin.forced ? ' (принудительно через DEV_NOTICE в .env)' : '' %>.
-      Режим «автоматически» снимает плашку, когда появится первый результат <strong>опубликованного</strong> турнира; черновики и тестовые турниры её не гасят.
-      Текст плашки — на публичных страницах, в админке она не показывается.</p>
+    <p class="muted">Сейчас на сайте: <strong><%= devNoticeAdmin.shown ? 'показывается' : 'снята' %></strong><%= devNoticeAdmin.forced ? ' (принудительно через DEV_NOTICE в .env — снять можно только там)' : '' %>.
+      Плашка висит, пока её не снимут здесь: сама она не исчезает ни от наполнения, ни от результатов. В админке не показывается.</p>
     <form method="post" action="/admin/dev-notice" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <div class="field"><label for="dn-mode">Режим</label>
-        <select id="dn-mode" name="mode">
-          <option value="auto"<%= devNoticeAdmin.mode === 'auto' ? ' selected' : '' %>>автоматически</option>
-          <option value="on"<%= devNoticeAdmin.mode === 'on' ? ' selected' : '' %>>показывать всегда</option>
-          <option value="off"<%= devNoticeAdmin.mode === 'off' ? ' selected' : '' %>>выключить</option>
-        </select></div>
-      <button class="btn btn--secondary btn--small" type="submit">Сохранить</button>
-    </form>
+      <% if (devNoticeAdmin.mode === 'on') { %>
+        <input type="hidden" name="mode" value="off">
+        <button class="btn btn--primary btn--small" type="submit" data-confirm="Снять плашку с сайта? Вернуть можно здесь же.">Снять плашку</button>
+      <% } else { %>
+        <input type="hidden" name="mode" value="on">
+        <button class="btn btn--secondary btn--small" type="submit">Вернуть плашку</button>
+      <% } %>
   </div>
 
     <div class="panel"><b><%= counts.players %></b><div class="muted">игроков</div></div>
