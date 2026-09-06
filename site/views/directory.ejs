@@ -51,7 +51,9 @@
                 <% } %>
                 <% spec.fields.forEach(function (f) { %>
                   <td>
-                    <% if (f.name === 'map_url' && row[f.name]) { %>
+                    <% if (f.player) { %>
+                      <% if (row.player) { %><a href="/player/<%= row.player.id %>">профиль игрока <span aria-hidden="true">→</span></a><% } else { %>—<% } %>
+                    <% } else if (f.name === 'map_url' && row[f.name]) { %>
                       <a href="<%= row[f.name] %>" rel="nofollow noopener" target="_blank">на карте ↗</a>
                     <% } else if (f.name === 'address' && row[f.name] && !row.map_url) { %>
                       <%= row[f.name] %> · <a href="https://yandex.ru/maps/?text=<%= encodeURIComponent(row[f.name]) %>" rel="nofollow noopener" target="_blank">на карте ↗</a>

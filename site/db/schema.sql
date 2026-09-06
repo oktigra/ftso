@@ -555,6 +555,11 @@ CREATE TABLE IF NOT EXISTS coaches (
   groups         TEXT,
   hours          TEXT,
   prices         TEXT,
+  -- СВЯЗЬ С ЗАПИСЬЮ ИГРОКА (06.09.2026): тренер часто и сам играет. Записи РАЗНЫЕ —
+  -- у них разные основания публикации (карточка тренера по согласию, результаты по
+  -- факту участия), здесь только ссылка «это тот же человек». Обезличивание игрока
+  -- по ст. 21 снимает связь (ON DELETE SET NULL) — карточка тренера остаётся.
+  player_id      INTEGER REFERENCES players(id) ON DELETE SET NULL,
   photo_upload_id INTEGER REFERENCES uploads(id) ON DELETE SET NULL,
   basis         TEXT NOT NULL CHECK (length(trim(basis)) BETWEEN 1 AND 200),
   document_date TEXT NOT NULL,

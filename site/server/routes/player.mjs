@@ -19,12 +19,15 @@ export default function mountPlayer(app, { db, config }) {
     if (!/^\d+$/.test(req.params.id)) return next();
     const profile = playerProfile(db, Number(req.params.id));
     const history = profile && !profile.anonymized ? playerRatingHistory(db, Number(req.params.id), 'single') : { points: [], best: null };
+    // Тренер и игрок — разные записи с разными основаниями публикации; здесь только метка связи.
+    const coach = profile && !profile.anonymized ? db.prepare('SELECT id, club, city FROM coaches WHERE player_id = ?').get(Number(req.params.id)) : null;
     if (!profile) return next(); // -> общий 404-обработчик
     res.render('player', {
       title: `${profile.fullName} — профиль игрока — ФТСО`,
       metaDescription: `${profile.fullName}${profile.city ? ', ' + profile.city : ''} — результаты соревнований, рейтинговые очки и сыгранные матчи на сайте Федерации тенниса Смоленской области.`,
       profile,
       history,
+      coach,
       sexRu: SEX_RU,
       disciplineRu: DISCIPLINE_RU,
       statusText: profile.rating ? statusLabel(profile.rating.status) : null,

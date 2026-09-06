@@ -309,6 +309,7 @@ export function migrate() {
   // ТЗ 4.5/4.6 «фото» у тренеров, кортов, клубов.
   for (const t of ['coaches', 'courts', 'clubs']) addColumnIfMissing(db, t, 'photo_upload_id', 'INTEGER REFERENCES uploads(id) ON DELETE SET NULL');
   for (const t of ['coaches', 'courts', 'clubs']) { addColumnIfMissing(db, t, 'hours', 'TEXT'); addColumnIfMissing(db, t, 'prices', 'TEXT'); } // режим работы, цены (06.09.2026)
+  addColumnIfMissing(db, 'coaches', 'player_id', 'INTEGER REFERENCES players(id) ON DELETE SET NULL'); // тренер = игрок (06.09.2026)
   // ДОЗАПОЛНЕНИЕ СТАРТОВОГО СПИСКА — строго ПОСЛЕ всех колонок справочников (06.09.2026: на бою
   // миграция падала «no column named hours», потому что дозаполнение шло раньше колонки).
   // Ред. 2 стартового списка (05.09.2026 23:00, уточнение браузерным агентом): ПУСТЫЕ поля

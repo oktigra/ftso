@@ -17,6 +17,7 @@
         <div class="rating-meta">
           <span class="tag"><%= profile.city %></span>
           <% if (profile.rni) { %><span class="tag">РНИ <%= profile.rni %></span><% } %>
+      <% if (typeof coach !== 'undefined' && coach) { %><a class="tag" href="/coaches">Тренер<%= coach.club ? ' · ' + coach.club : '' %> →</a><% } %>
           <span class="tag"><%= sexRu[profile.sex] || profile.sex %></span>
           <span class="tag">возраст: <%= profile.ageLabel %></span>
         </div>
