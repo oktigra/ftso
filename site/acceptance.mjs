@@ -2503,6 +2503,34 @@ await check('форма обратной связи внизу каждой пу
   return 'форма в подвале на публичных страницах, не в админке, одна на /contacts; отправка записывает обращение';
 });
 
+await check('стартовое наполнение: 4 документа PDF (собраны сайтом) в библиотеку, 3 новости черновиками; повтор без дублей', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/library', { jar })).text);
+  const before = db.prepare('SELECT COUNT(*) AS n FROM federation_documents').get().n;
+  eq((await http('/admin/library/starter', { method: 'POST', form: { _csrf }, jar })).status, 302, 'документы');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM federation_documents').get().n, before + 4, 'добавлено 4 документа');
+  eq((await http('/admin/library/starter', { method: 'POST', form: { _csrf }, jar })).status, 302, 'повтор');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM federation_documents').get().n, before + 4, 'повтор дублирует');
+  const docs = (await http('/documents')).text;
+  assert(/Методика расчёта регионального рейтинга/.test(docs) && /Бланки/.test(docs), 'документов нет на витрине');
+  const up = db.prepare("SELECT u.id FROM federation_documents d JOIN uploads u ON u.id = d.upload_id WHERE d.title LIKE 'Методика%'").get().id;
+  const pdf = Buffer.from(await (await fetch(inst.base + `/files/${up}`)).arrayBuffer());
+  eq(pdf.slice(0, 5).toString('latin1'), '%PDF-', 'документ не PDF');
+  const nb = db.prepare('SELECT COUNT(*) AS n FROM news').get().n;
+  const c2 = tokenFrom((await http('/admin/news', { jar })).text);
+  eq((await http('/admin/news/starter', { method: 'POST', form: { _csrf: c2 }, jar })).status, 302, 'новости');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM news WHERE is_published = 0 AND title LIKE ?').get('Открыт официальный сайт%').n, 1, 'стартовая новость должна быть черновиком');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM news').get().n, nb + 3, 'добавлено 3 новости');
+  assert(!/Открыт официальный сайт/.test((await http('/news')).text), 'черновик виден на витрине');
+  db.prepare("DELETE FROM news WHERE title IN (SELECT title FROM news WHERE is_published = 0 AND created_at >= datetime('now','-1 minute')) AND is_published = 0").run();
+  for (const t of ['Методика расчёта регионального рейтинга ФТСО', 'Порядок заявления турнира и передачи результатов в рейтинг', 'Протокол турнира (бланк для заполнения)', 'Согласие законного представителя (бланк, бумажная форма)']) {
+    const row = db.prepare('SELECT id, upload_id FROM federation_documents WHERE title = ?').get(t);
+    if (row) { db.prepare('DELETE FROM federation_documents WHERE id = ?').run(row.id); db.prepare('DELETE FROM uploads WHERE id = ?').run(row.upload_id); }
+  }
+  db.prepare('DELETE FROM write_attempts').run();
+  return '4 PDF в «Регламенты»/«Бланки», скачиваются; 3 черновика новостей, на витрине не видны; повтор без дублей';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

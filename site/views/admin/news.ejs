@@ -7,6 +7,11 @@
 
   <div class="panel form-panel">
     <h2>Добавить новость</h2>
+    <form method="post" action="/admin/news/starter" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="btn btn--secondary btn--small" type="submit">Добавить стартовые новости — 3 черновика</button>
+      <span class="muted">об открытии сайта, о рейтинге, о календаре; прочтите, поправьте и опубликуйте</span>
+    </form>
     <form method="post" action="/admin/news" class="stacked-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="field"><label for="n-title">Заголовок</label><input id="n-title" name="title" maxlength="200" required></div>

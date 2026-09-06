@@ -13,6 +13,7 @@ import { parseMultipart } from '../lib/multipart.mjs';
 import { SEO_PAGES, SEO_DEFAULTS, seoFor, saveSeo } from '../lib/seo.mjs';
 import { SITE_TEXTS, saveText } from '../lib/texts.mjs';
 import { postInBackground, postToMax, maxWhoAmI, maxFindChats, maxEnabled } from '../lib/max-post.mjs';
+import { applyStarterDocuments, applyStarterNews, STARTER_DOCUMENTS, STARTER_NEWS } from '../lib/starter-content.mjs';
 import { DIRECTORY_SEED, applyDirectorySeed } from '../lib/directory-seed.mjs';
 import { storeUpload, deleteUpload, uploadById, sendUpload } from '../lib/uploads.mjs';
 import {
@@ -413,6 +414,28 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
   );
 
   // --- документы Федерации и галерея --------------------------------------
+  // СТАРТОВЫЕ ДОКУМЕНТЫ И НОВОСТИ (06.09.2026): одна кнопка, повтор безвреден.
+  app.post(
+    '/admin/library/starter',
+    requireRole(...CONTENT_ROLES),
+    limitWrites,
+    guard(async (req, res) => {
+      const out = await applyStarterDocuments(db, config, req.session.user.id);
+      logAction(db, req.session.user.id, 'documents.starter', null, out);
+      flash(req, res, 'ok', `Стартовые документы: добавлено ${out.added}, уже было ${out.skipped} из ${out.total}.`, '/admin/library');
+    }),
+  );
+  app.post(
+    '/admin/news/starter',
+    requireRole(...NEWS_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const out = applyStarterNews(db, req.session.user.id);
+      logAction(db, req.session.user.id, 'news.starter', null, out);
+      flash(req, res, 'ok', `Стартовые новости (черновики): добавлено ${out.added}, уже было ${out.skipped} из ${out.total}. Прочтите, поправьте и опубликуйте.`, '/admin/news');
+    }),
+  );
+
   // ФОТО БАННЕРА ГЛАВНОЙ: одна картинка по ключу home-hero, замена удаляет прежнюю.
   app.post(
     '/admin/library/hero',
