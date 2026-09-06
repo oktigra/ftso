@@ -21,6 +21,7 @@
   <% if (sections.includes('vault')) { %>
     <a href="/admin/vault"<%= currentPath.indexOf('/admin/vault') === 0 ? ' aria-current="page"' : '' %>>Закрытые документы</a>
     <a href="/admin/users"<%= currentPath === '/admin/users' ? ' aria-current="page"' : '' %>>Пользователи</a>
+    <a href="/admin/max"<%= currentPath === '/admin/max' ? ' aria-current="page"' : '' %>>MAX</a>
   <% } %>
   <form method="post" action="/logout">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">

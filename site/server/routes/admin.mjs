@@ -7,6 +7,7 @@ import { listBrackets, seed, unseed, decide, undo, bracketPlaces, BRACKET_SIZES,
 import { rowsFromXlsx as protoRowsFromXlsx } from '../lib/xlsx.mjs';
 import { mountTournamentSheets } from '../lib/tournament-sheet-routes.mjs';
 import { protocolKeyFromLabel } from '../lib/tournament-export.mjs';
+import { postInBackground } from '../lib/max-post.mjs';
 import { ERASED_LABEL } from '../lib/rating-service.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
@@ -95,6 +96,15 @@ const flash = (req, res, kind, text, back, secret = null) => {
   req.session.flash = secret ? { kind, text, secret } : { kind, text };
   req.session.save(() => res.redirect(back));
 };
+
+/** Пост о турнире в MAX: название, даты, город, категория + кнопка на страницу. */
+function tournamentPost(db, req, id, prefix) {
+  const t = db.prepare('SELECT id, name, start_date, end_date, city, category, age_group FROM tournaments WHERE id = ?').get(id);
+  if (!t) return null;
+  const when = t.start_date && t.start_date !== t.end_date ? `${t.start_date} — ${t.end_date}` : t.end_date;
+  const text = `${prefix} **${t.name}**\n${when}${t.city ? ' · ' + t.city : ''} · категория ${t.category}${t.age_group ? ' · ' + t.age_group : ''}`;
+  return { text, url: `${req.protocol}://${req.get('host')}/tournaments/${t.id}` };
+}
 
 /** Кто действует: сотрудник (id) либо судья по временной ссылке (null; в журнале — ссылка). */
 const actorId = (req) => (req.session && req.session.user ? req.session.user.id : null);
@@ -645,6 +655,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const info = db.prepare('UPDATE tournaments SET is_published = ? WHERE id = ?').run(on, id);
       if (!info.changes) throw new ValidationError('Турнир не найден');
       logAction(db, actorId(req), on ? 'tournament.publish' : 'tournament.unpublish', id, null);
+      if (on) postInBackground(db, config, actorId(req), 'tournament.publish', tournamentPost(db, req, id, '🎾 Турнир в календаре:'));
       flash(req, res, 'ok', on ? 'Турнир опубликован — виден в календаре и на сайте.' : 'Турнир снят с публикации — черновик, виден только здесь.', '/admin/tournaments');
     }),
   );
@@ -662,6 +673,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         .prepare('INSERT INTO tournaments (name, end_date, category, city, start_date, kind, age_group, sex, is_published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.age_group, data.sex, published);
       logAction(db, actorId(req), 'tournament.create', info.lastInsertRowid, data);
+      if (published) postInBackground(db, config, actorId(req), 'tournament.publish', tournamentPost(db, req, Number(info.lastInsertRowid), '🎾 Турнир в календаре:'));
       flash(req, res, 'ok', published ? `Турнир «${data.name}» опубликован.` : `Черновик «${data.name}» сохранён — виден только в админке.`, '/admin/tournaments');
     }),
   );
@@ -884,6 +896,11 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
   bracketRoute('/admin/tournaments/:id/brackets/:bid/places', (req, tid) => {
     const n = bracketPlaces(db, tid, intAtLeast(req.params.bid, 'Сетка'));
     logAction(db, actorId(req), 'bracket.places', tid, { bracket: Number(req.params.bid), count: n });
+    if (db.prepare('SELECT is_published FROM tournaments WHERE id = ?').get(tid)?.is_published) {
+      const top = db.prepare('SELECT r.place, p.full_name FROM results r JOIN players p ON p.id = r.player_id WHERE r.tournament_id = ? AND r.place <= 3 ORDER BY r.place, p.full_name').all(tid);
+      const post = tournamentPost(db, req, tid, '🏆 Итоги:');
+      if (post && top.length) postInBackground(db, config, actorId(req), 'results', { ...post, text: `${post.text}\n${top.map((r) => `${r.place}. ${r.full_name}`).join('\n')}`, button: 'Сетка и результаты' });
+    }
     return `Места по сетке записаны в результаты: ${n}. Внесли всё — пересчитайте рейтинг.`;
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/seed-from-groups', (req, tid) => {

@@ -1,0 +1,29 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Автопост в канал MAX</h1>
+  <%- include('_shell') %>
+
+  <div class="panel">
+    <p>Состояние: <strong><%= maxOn ? 'включён' : 'выключен' %></strong> · токен бота: <%= hasToken ? 'есть' : 'нет' %> · канал: <%= chatId || 'не задан' %></p>
+    <p class="muted">Сайт публикует в канал федерации пост при публикации турнира, новости и записи итогов (места 1–3). Настройка — в <code>.env</code> на сервере: <code>MAX_BOT_TOKEN</code> (бот создаётся в MAX у @MasterBot, затем добавляется в канал администратором с правом «write») и <code>MAX_CHAT_ID</code> (найти кнопкой ниже после добавления бота в канал), затем перезапуск сайта.</p>
+    <div class="inline-form">
+      <form method="post" action="/admin/max/check"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn--secondary btn--small" type="submit"<%= hasToken ? '' : ' disabled' %>>Проверить бота и найти канал</button></form>
+      <form method="post" action="/admin/max/test"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn--primary btn--small" type="submit"<%= maxOn ? '' : ' disabled' %>>Отправить тестовый пост</button></form>
+    </div>
+    <% if (result) { %>
+      <h2>Проверка</h2>
+      <p>Бот: <%= result.who.ok ? `${result.who.name} (@${result.who.username})` : 'ошибка — ' + result.who.error %></p>
+      <% if (result.chats.ok) { %>
+        <% if (!result.chats.chats.length) { %><p class="muted">Событий с каналами не найдено: добавьте бота в канал (он получит событие bot_added) и нажмите ещё раз.</p><% } else { %>
+          <ul class="search-list"><% result.chats.chats.forEach(function (c) { %><li><code><%= c.chatId %></code> — <%= c.title %> → впишите в <code>MAX_CHAT_ID</code></li><% }); %></ul>
+        <% } %>
+      <% } else { %><p class="muted">Каналы: ошибка — <%= result.chats.error %></p><% } %>
+    <% } %>
+  </div>
+</div>
+</main>
+
+<%- include('../partials/footer') %>
