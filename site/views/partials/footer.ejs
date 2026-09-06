@@ -45,6 +45,29 @@
         <% } %>
       </div>
     </div>
+    <%
+    /* ФОРМА ОБРАТНОЙ СВЯЗИ ВНИЗУ КАЖДОЙ СТРАНИЦЫ (решение владельца 06.09.2026): та же
+       форма, что на /contacts (маршрут /contacts/feedback, honeypot, согласие, лимит).
+       Не показывается в админке и на самой странице /contacts (там она уже есть). */
+    %>
+    <% const noFooterForm = ['/admin', '/contacts', '/cabinet', '/judge', '/register', '/tournament-request', '/login'].some(function (p) { return currentPath.startsWith(p); }); %>
+    <% if (typeof intakeEnabled !== 'undefined' && intakeEnabled && !noFooterForm) { %>
+      <div class="footer-feedback" id="feedback">
+        <h4>Написать в Федерацию</h4>
+        <form method="post" action="/contacts/feedback" class="footer-feedback__form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <div class="hp-field" aria-hidden="true"><label for="ff-website">Сайт</label><input id="ff-website" name="website" tabindex="-1" autocomplete="off"></div>
+          <div class="field"><label for="ff-name">Как к вам обращаться</label><input id="ff-name" name="name" maxlength="120" required autocomplete="name"></div>
+          <div class="field"><label for="ff-email">E-mail для ответа</label><input id="ff-email" name="email" type="email" maxlength="200" required autocomplete="email"></div>
+          <div class="field field--wide"><label for="ff-message">Сообщение</label><textarea id="ff-message" name="message" rows="3" minlength="5" maxlength="2000" required></textarea></div>
+          <label class="check">
+            <input type="checkbox" name="consent_processing" value="1" required>
+            <span>Даю согласие на обработку указанных данных (имя, e-mail, текст) для ответа на обращение и ознакомлен с <a href="/privacy">Политикой обработки персональных данных</a>.</span>
+          </label>
+          <button class="btn btn--primary" type="submit">Отправить</button>
+        </form>
+      </div>
+    <% } %>
     <div class="footer-bottom">
       <span>© <%= year %> РФСОО «Федерация тенниса Смоленской области»</span>
       <%
