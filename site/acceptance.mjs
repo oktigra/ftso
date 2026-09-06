@@ -2328,6 +2328,19 @@ await check('оба не явились / оба снялись: в группе
   return 'группа: «неявка 1 и 2» — без матча, обоим поражение, группа сыграна; сетка: «отказ 1 и 2» закрывает пару, сопернику дальше bye; отмена и перезапись снимают';
 });
 
+await check('профиль игрока: наивысшее место и график/таблица рейтинга по месяцам из снимков', async () => {
+  const { playerRatingHistory } = await import('./server/lib/rating-service.mjs');
+  const st = currentStandings(db);
+  const top = st.players[0].playerId;
+  const h = playerRatingHistory(db, top, 'single');
+  assert(h.best && h.best.rank >= 1 && h.points.length >= 1, 'история пуста для лидера рейтинга');
+  const page = await http(`/player/${top}`);
+  eq(page.status, 200, 'профиль');
+  assert(/Наивысшее место:<\/strong> \d+/.test(page.text), 'нет «Наивысшее место»');
+  if (h.points.length > 1) assert(/class="rating-chart"/.test(page.text) && /class="rating-history"/.test(page.text), 'нет графика/таблицы истории');
+  return `наивысшее место ${h.best.rank}, точек истории ${h.points.length}${h.points.length > 1 ? ', график и таблица на месте' : ' (график появится со второго месяца)'}`;
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

@@ -7,7 +7,7 @@
 //
 // Фотография — /player/:id/photo: то же изображение, что в кабинете, встроенно
 // и без кэша (см. sendUploadInline). Удалена в кабинете -> 404 здесь сразу.
-import { playerProfile, statusLabel, DISCIPLINE_RU } from '../lib/rating-service.mjs';
+import { playerRatingHistory, playerProfile, statusLabel, DISCIPLINE_RU } from '../lib/rating-service.mjs';
 import { uploadById, sendUploadInline } from '../lib/uploads.mjs';
 import { AGE_SLICES } from '../lib/age.mjs';
 import { SECTIONS } from '../lib/nav.mjs';
@@ -18,11 +18,13 @@ export default function mountPlayer(app, { db, config }) {
   app.get('/player/:id', (req, res, next) => {
     if (!/^\d+$/.test(req.params.id)) return next();
     const profile = playerProfile(db, Number(req.params.id));
+    const history = profile && !profile.anonymized ? playerRatingHistory(db, Number(req.params.id), 'single') : { points: [], best: null };
     if (!profile) return next(); // -> общий 404-обработчик
     res.render('player', {
       title: `${profile.fullName} — профиль игрока — ФТСО`,
       metaDescription: `${profile.fullName}${profile.city ? ', ' + profile.city : ''} — результаты соревнований, рейтинговые очки и сыгранные матчи на сайте Федерации тенниса Смоленской области.`,
       profile,
+      history,
       sexRu: SEX_RU,
       disciplineRu: DISCIPLINE_RU,
       statusText: profile.rating ? statusLabel(profile.rating.status) : null,

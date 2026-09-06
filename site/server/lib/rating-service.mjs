@@ -352,6 +352,26 @@ export const STATUS_RU = {
   final: 'Основной',
 };
 
+/**
+ * ИСТОРИЯ РЕЙТИНГА ИГРОКА (идея ФТР/TennisNET, 06.09.2026): по сохранённым снимкам —
+ * место и очки помесячно (последний снимок месяца) и наивысшее место за всю историю
+ * снимков. Снимков хранится keepSnapshots (24), этого хватает на два года помесячно.
+ */
+export function playerRatingHistory(db, playerId, discipline = 'single') {
+  const snaps = lastSnapshots(db, 240).reverse(); // от старых к новым
+  const byMonth = new Map();
+  let best = null;
+  for (const s of snaps) {
+    const list = discipline === 'double' ? (s.data.doubles || []) : (s.data.players || []);
+    const p = list.find((x) => x.playerId === playerId);
+    if (!p) continue;
+    const month = String(s.data.asOf || s.computedAt).slice(0, 7);
+    byMonth.set(month, { month, asOf: s.data.asOf, rank: p.rank, points: p.ratingPoints });
+    if (best === null || p.rank < best.rank) best = { rank: p.rank, asOf: s.data.asOf };
+  }
+  return { points: [...byMonth.values()].sort((a, b) => a.month.localeCompare(b.month)), best };
+}
+
 export function statusLabel(status) {
   return STATUS_RU[status] || status;
 }
