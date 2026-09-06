@@ -100,9 +100,9 @@ body, .site-header, section, footer, .card, .btn, .badge, .status, .stat, .photo
 .brand-sub{display:block; font-family:'Inter',sans-serif; font-weight:400; font-size:6.5px; line-height:1.25; letter-spacing:0; color:#4f6b60; white-space:nowrap;}
 :root[data-theme="dark"] .brand-name{color:#fff;} :root[data-theme="dark"] .brand-sub{color:#b9c9c2;}
 /* Мяч (решение владельца 06.09.2026 — компромисс вместо разовой анимации из ТЗ):
-   цикл 18 с — пролёт туда-обратно ~5 с, затем ~13 с покоя в центре. Не мельтешит в шапке,
+   цикл 15 с — пролёт туда-обратно ~5 с, затем 10 с покоя в центре. Не мельтешит в шапке,
    но живёт. По наведению — пролёт сразу. При prefers-reduced-motion стоит в центре. */
-.ftso-ball{transform:translate(240px,111px); animation:ftsoBallCycle 18s cubic-bezier(.4,.05,.6,.95) infinite;}
+.ftso-ball{transform:translate(240px,111px); animation:ftsoBallCycle 15s cubic-bezier(.4,.05,.6,.95) infinite;}
 .brand:hover .ftso-ball{animation:ftsoBallFly 5.2s cubic-bezier(.4,.05,.6,.95) 1;}
 @keyframes ftsoBallFly{
   0%{ transform:translate(92px,111px) rotate(0deg); }
@@ -110,11 +110,11 @@ body, .site-header, section, footer, .card, .btn, .badge, .status, .stat, .photo
   100%{ transform:translate(240px,111px) rotate(720deg); }
 }
 @keyframes ftsoBallCycle{
-  0%{ transform:translate(240px,111px) rotate(0deg); }
-  6%{ transform:translate(92px,111px) rotate(-160deg); }
-  20%{ transform:translate(388px,111px) rotate(320deg); }
-  29%{ transform:translate(240px,111px) rotate(560deg); }
-  100%{ transform:translate(240px,111px) rotate(560deg); }
+  0%{ transform:translate(240px,111px) rotate(0deg); }        /* 0 c — покой */
+  7%{ transform:translate(92px,111px) rotate(-160deg); }      /* ~1 c — к левой линии */
+  24%{ transform:translate(388px,111px) rotate(320deg); }     /* ~3.6 c — к правой */
+  33.3%{ transform:translate(240px,111px) rotate(560deg); }   /* 5 c — вернулся в центр */
+  100%{ transform:translate(240px,111px) rotate(560deg); }    /* 5–15 c — 10 секунд покоя */
 }
 @media (max-width:1360px){ .brand{margin-right:8px;} }
 /* Крупный знак с ореолом (футер, «О Федерации») */
