@@ -591,20 +591,7 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .partner img{max-width:100%; max-height:100%; object-fit:contain; display:block;}
 .partner--cta{width:auto; min-width:16rem; max-width:26rem; height:auto; min-height:72px; border:1px solid var(--primary); background:var(--surface); color:var(--primary); font-weight:600; font-size:.9rem; text-align:center; text-decoration:none; line-height:1.3; padding:.7rem 1.1rem; white-space:normal; overflow-wrap:anywhere;}
 .partner--cta:hover{background:color-mix(in srgb,var(--primary) 8%, var(--surface));}
-/* Привлечение внимания к свободному слоту: медленное СВЕЧЕНИЕ БУКВ (6 с), без бегущих
-   бликов и без движения вёрстки. Только text-shadow и насыщенность цвета текста;
-   при наведении гаснет, при prefers-reduced-motion не запускается. */
-.partner--cta{position:relative; animation:cta-glow 6s ease-in-out infinite;}
-.partner--cta:hover{animation:none;}
-@keyframes cta-glow{
-  0%, 100%{ color:var(--primary); text-shadow:0 0 0 transparent; }
-  50%{
-    color:color-mix(in srgb,var(--primary) 70%, #ffffff);
-    text-shadow:0 0 4px color-mix(in srgb,var(--primary) 95%, transparent),
-                0 0 12px color-mix(in srgb,var(--primary) 65%, transparent),
-                0 0 26px color-mix(in srgb,var(--primary) 35%, transparent);
-  }
-}
+/* Анимация плашки снята по просьбе владельца 06.09.2026 — оформление отдаётся отдельно. */
 .partners--compact{background:transparent; border:0; padding:.6rem 0 0;}
 .partners--compact .partners__inner{padding:0; max-width:100%;}
 .partners--compact .partners__row{max-width:100%;}
