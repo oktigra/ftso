@@ -31,7 +31,10 @@ import { seedOrder } from './brackets.mjs';
 const DASH = /\s+[—–-]\s+/;
 const ROUND_OF = { '1/16': 32, '1/8': 16, '1/4': 8, '1/2': 4, 'финал': 2 };
 
-function normScore(s) { return String(s || '').trim().replace(/\//g, ' ').replace(/\s+/g, ' '); }
+function normScore(s) {
+  // «6-2 6-3» → «6:2 6:3»; «/» между сетами → пробел; «отказ п/б» → «отказ»; «отказ» без номера = снялся проигравший
+  return String(s || '').trim().replace(/п\/б/gi, '').replace(/(\d)-(\d)/g, '$1:$2').replace(/\//g, ' ').replace(/\s+/g, ' ').trim();
+}
 
 /** Разбор текста в структуру — без базы. */
 export function parseTournamentText(text) {
@@ -80,7 +83,7 @@ export function parseTournamentText(text) {
     const a = sides[0].trim();
     const tail = sides.slice(1).join(' — ').trim();
     // счёт — хвост после имени: цифры/двоеточия/слэши/скобки/слова неявка,отказ,не сыгран
-    const sm = /^(.*?)(?:\s+((?:\d{1,2}:\d{1,2}(?:\(\d+\))?[\s/]*)+(?:отказ\s*\d?|отк\.?\s*\d?)?|неявка(?:\s*\d)?|не сыгран(?:о)?|отказ|w\/o))?$/i.exec(tail);
+    const sm = /^(.*?)(?:\s+((?:\d{1,2}[:\-]\d{1,2}(?:\(\d+\))?[\s/]*)+(?:отказ(?:\s*п\/б)?\s*\d?|отк\.?\s*\d?)?|неявка(?:\s*\d)?|не сыгран(?:о)?|отказ(?:\s*п\/б)?|w\/o))?$/i.exec(tail);
     const b = (sm ? sm[1] : tail).trim(); const scoreRaw = sm && sm[2] ? sm[2].trim() : '';
     if (!b) throw new ValidationError(`Не разобран соперник в строке «${line}»`);
     if (/^не сыгран/i.test(scoreRaw) || (!scoreRaw && !winner && cur.type !== 'bracket')) { cur.matches.push({ stage, a, b, skipped: true }); continue; }
@@ -99,19 +102,36 @@ const isBye = (s) => /^(x|х|—|-|bye|свободен)$/i.test(String(s).trim(
 export function importTournament(db, text, { userId = null } = {}) {
   const t = parseTournamentText(text);
   const report = { players_created: [], warnings: [], sections: [] };
+  // Имена, уже встреченные в ЭТОМ импорте: «Захарян К.» и «Захарян» в поздних кругах — тот же
+  // человек, что «Захарян Кристина» в первом. Сначала ищем среди них, потом в базе.
+  const seen = new Map(); // normalizeName(полное) → id
+  const matchShort = (shortKey, fullKey) => {
+    const [sur, ini] = shortKey.split(' '); const [fsur, fname] = fullKey.split(' ');
+    if (sur !== fsur) return false;
+    if (!ini) return true; // голая фамилия
+    return Boolean(fname) && fname.startsWith(ini.replace(/\.$/, ''));
+  };
   const findOrCreate = (raw, sex) => {
     const name = String(raw).trim().replace(/\s+/g, ' ');
     const key = normalizeName(name);
+    const isShort = !/\s/.test(key) || /^\S+\s\S{1,2}\.?$/.test(name.replace(/\s+/g, ' ')) && key.split(' ')[1].length <= 2;
+    if (seen.has(key)) return seen.get(key);
+    if (isShort) {
+      const cands = [...seen.entries()].filter(([k]) => matchShort(key, k));
+      if (cands.length === 1) return cands[0][1];
+      if (cands.length > 1) throw new ValidationError(`«${name}»: в этом протоколе несколько подходящих — ${cands.map(([k]) => k).join(', ')}; напишите имя полностью`);
+    }
     const all = db.prepare('SELECT id, full_name, city FROM players WHERE anonymized_at IS NULL').all();
     let found = all.filter((p) => normalizeName(p.full_name) === key);
-    // По одной фамилии: совпадение по первому слову, если оно единственное в базе
-    if (!found.length && !/\s/.test(key)) found = all.filter((p) => normalizeName(p.full_name).split(' ')[0] === key);
+    if (!found.length && isShort) found = all.filter((p) => matchShort(key, normalizeName(p.full_name)));
     if (found.length > 1) throw new ValidationError(`«${name}»: в базе несколько игроков — ${found.map((p) => `#${p.id} ${p.full_name} (${p.city || '—'})`).join(', ')}; укажите «#номер»`);
-    if (found.length === 1) return found[0].id;
     const idm = /^#(\d+)$/.exec(name);
     if (idm) return Number(idm[1]);
+    if (found.length === 1) { seen.set(normalizeName(found[0].full_name), found[0].id); return found[0].id; }
+    if (isShort) report.warnings.push(`«${name}»: заведён без имени — дозаполните в «Игроках»`);
     const id = Number(db.prepare('INSERT INTO players (full_name, city, sex) VALUES (?, ?, ?)').run(name, t.city || 'Смоленская область', sex || 'M').lastInsertRowid);
     report.players_created.push({ id, name });
+    seen.set(key, id);
     return id;
   };
   const runAll = db.transaction(() => {
@@ -191,6 +211,11 @@ export function importTournament(db, text, { userId = null } = {}) {
             db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage, played_on) VALUES (?, ?, ?, ?, ?, ?, ?)').run(tid, winnerId, loserId, score, 'single', 'manual', t.end_date);
             ins.run(tid, winnerId, 3, 'single'); ins.run(tid, loserId, 4, 'single'); sec.matches++;
           }
+        } else if (s.places.length) {
+          // Финал не в протоколе, но итог известен (например, из публикации) — места из строки «Итог:».
+          const ins = db.prepare('INSERT OR REPLACE INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
+          for (const pl of s.places) { ins.run(tid, findOrCreate(pl.who, sex), pl.place, 'single'); sec.places++; }
+          report.warnings.push(`${s.title}: финал не сыгран в протоколе — места взяты из строки «Итог»`);
         } else report.warnings.push(`${s.title}: финал не сыгран — места не записаны`);
       } else { // pairs — только места
         const ins = db.prepare('INSERT OR REPLACE INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
