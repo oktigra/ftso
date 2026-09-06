@@ -17,8 +17,10 @@
       <h1><%= texts.title %></h1>
       <p class="lead"><%= texts.lead %></p>
       <div class="hero-cta">
-        <a class="btn btn--primary" href="#tournaments">Ближайшие турниры</a>
-        <a class="btn btn--secondary" href="#rating">Открыть рейтинг</a>
+        <a class="btn btn--primary" href="/tournaments">Найти турнир</a>
+        <a class="btn btn--secondary" href="<%= myRatingHref %>">Мой рейтинг</a>
+        <a class="btn btn--secondary" href="/coaches">Найти тренера</a>
+        <a class="btn btn--secondary" href="/courts">Корты и клубы</a>
       </div>
       <div class="stats">
         <% stats.forEach(function (s) { %>
@@ -57,6 +59,28 @@
 <%
 /* Блок турниров — ЖИВЫЕ данные: пять последних из календаря. */
 %>
+<% if (recentMatches.length) { %>
+<%
+/* ЛЕНТА «СЕГОДНЯ НА КОРТЕ» (по образцу ленты «Текущий счёт» ФТР): матчи сеток за
+   сегодня/вчера или идущих турниров. Нет матчей — блока нет. Горизонтальная прокрутка. */
+%>
+<section class="live-strip" aria-label="Сегодня на корте">
+  <div class="container">
+    <div class="live-strip__head"><span class="eyebrow">Сегодня на корте</span></div>
+    <div class="live-strip__row">
+      <% recentMatches.forEach(function (m) { %>
+        <article class="live-card">
+          <a class="live-card__t" href="/tournaments/<%= m.tournament_id %>"><%= m.tournament %></a>
+          <div class="live-card__p live-card__p--win"><% if (m.w_anon) { %>Игрок удалён<% } else { %><a href="/player/<%= m.w_id %>"><%= m.w_name %></a><% } %></div>
+          <div class="live-card__p"><% if (m.l_anon) { %>Игрок удалён<% } else { %><a href="/player/<%= m.l_id %>"><%= m.l_name %></a><% } %></div>
+          <div class="live-card__s"><%= m.scoreShown || '' %> <span class="muted">· <%= m.played_on %><%= m.kind === 'double' ? ' · пары' : '' %></span></div>
+        </article>
+      <% }); %>
+    </div>
+  </div>
+</section>
+<% } %>
+
 <section class="section-pad section-wm" id="tournaments">
   <svg class="wm wm--tourn" data-parallax=".1" viewBox="0 0 300 400" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><rect x="10" y="10" width="280" height="380" rx="2"/><line x1="10" y1="200" x2="290" y2="200"/><rect x="45" y="70" width="210" height="260"/><line x1="150" y1="70" x2="150" y2="330"/><line x1="45" y1="200" x2="255" y2="200"/></svg>
   <div class="container">
@@ -67,24 +91,29 @@
     </div>
     <div class="tourn-grid">
       <div>
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th>Дата</th><th>Турнир</th><th>Категория</th><th>Участников</th></tr></thead>
-            <tbody>
-              <% if (!tournaments.length) { %>
-                <tr><td colspan="4" class="muted">Турниры пока не заведены.</td></tr>
-              <% } %>
-              <% tournaments.forEach(function (t) { %>
-                <tr>
-                  <td class="t-date"><%= t.end_date %></td>
-                  <td class="t-name"><a href="/tournaments/<%= t.id %>"><%= t.name %></a></td>
-                  <td><span class="badge badge--<%= t.category.toLowerCase() %>"><%= t.category %></span></td>
-                  <td><%= t.participants %></td>
-                </tr>
-              <% }); %>
-            </tbody>
-          </table>
-        </div>
+        <%
+        /* КАРТОЧКИ ТУРНИРОВ вместо таблицы: дата крупно, название, город, категория,
+           статус; ближайшие/идущие — первыми, затем последние завершённые. */
+        const monthsRu = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+        const dm = (d) => d ? `${Number(d.slice(8, 10))} ${monthsRu[Number(d.slice(5, 7)) - 1]}` : '';
+        const statusRu = { upcoming: 'предстоящий', ongoing: 'идёт', finished: 'завершён' };
+        %>
+        <% if (!homeTournaments.length) { %>
+          <div class="panel notice">Турниры пока не заведены.</div>
+        <% } else { %>
+          <div class="tcards">
+            <% homeTournaments.forEach(function (t) { %>
+              <a class="tcard fx-card" href="/tournaments/<%= t.id %>">
+                <div class="tcard__date"><b><%= dm(t.start_date || t.end_date) %></b><% if (t.start_date && t.start_date !== t.end_date) { %><span>— <%= dm(t.end_date) %></span><% } %></div>
+                <div class="tcard__body">
+                  <div class="tcard__name"><%= t.name %></div>
+                  <div class="tcard__meta"><%= t.city || 'Смоленская область' %><%= t.age_group ? ' · ' + t.age_group : '' %><%= t.participants ? ' · участников: ' + t.participants : '' %></div>
+                  <div class="tcard__tags"><span class="badge badge--<%= t.category.toLowerCase() %>"><%= t.category %></span> <span class="tag tag--<%= t.status %>"><%= statusRu[t.status] %></span></div>
+                </div>
+              </a>
+            <% }); %>
+          </div>
+        <% } %>
         <p class="table-foot"><a class="link-more" href="/tournaments">Все турниры <span aria-hidden="true">→</span></a></p>
       </div>
       <aside class="reg-card fx-card"><%- include('partials/court-card') %>
@@ -125,22 +154,35 @@
     <% } else if (top5.length === 0) { %>
       <div class="panel notice">В последнем снимке рейтинга нет игроков.</div>
     <% } else { %>
-      <div class="table-scroll">
-        <table>
-          <thead><tr><th>Место</th><th>Игрок</th><th>Город</th><th>Очки</th><th>Изменение</th></tr></thead>
-          <tbody>
-            <% top5.forEach(function (p) { %>
-              <tr>
-                <td class="rank"><%= p.rank %></td>
-                <td class="player<%= p.anonymized ? ' player--anonymized' : '' %>"><% if (p.anonymized) { %><%= p.playerName %><% } else { %><a href="/player/<%= p.playerId %>"><%= p.playerName %></a><% } %></td>
-                <td><%= p.city || '—' %></td>
-                <td class="pts"><%= p.ratingPoints %></td>
-                <td class="chg chg--<%= p.change.kind %>"><%= p.change.label %></td>
-              </tr>
-            <% }); %>
-          </tbody>
-        </table>
+      <%
+      /* ТОП-10 с переключателем «Все / Мужчины / Женщины» (как у ФТР): три таблицы в разметке,
+         переключение классом без перезагрузки; без JS видны все три подряд. */
+      %>
+      <div class="top-tabs" role="tablist" aria-label="Топ рейтинга">
+        <button class="tag top-tab is-active" type="button" data-top-tab="all">Все</button>
+        <button class="tag top-tab" type="button" data-top-tab="M">Мужчины</button>
+        <button class="tag top-tab" type="button" data-top-tab="F">Женщины</button>
       </div>
+      <% [['all', topBySex.all], ['M', topBySex.M], ['F', topBySex.F]].forEach(function (pair) { const key = pair[0], list = pair[1]; %>
+        <div class="table-scroll top-panel" data-top-panel="<%= key %>"<%= key === 'all' ? '' : ' hidden' %>>
+          <% if (!list.length) { %><p class="muted">В этом рейтинге пока нет игроков.</p><% } else { %>
+          <table>
+            <thead><tr><th>Место</th><th>Игрок</th><th>Город</th><th>Очки</th><th>Изменение</th></tr></thead>
+            <tbody>
+              <% list.forEach(function (p, i) { %>
+                <tr>
+                  <td class="rank"><%= key === 'all' ? p.rank : i + 1 %></td>
+                  <td class="player<%= p.anonymized ? ' player--anonymized' : '' %>"><% if (p.anonymized) { %><%= p.playerName %><% } else { %><a href="/player/<%= p.playerId %>"><%= p.playerName %></a><% } %></td>
+                  <td><%= p.city || '—' %></td>
+                  <td class="pts"><%= p.ratingPoints %></td>
+                  <td class="chg chg--<%= p.change.kind %>"><%= p.change.label %></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+          <% } %>
+        </div>
+      <% }); %>
     <% } %>
 
     <p class="rules-note">Рейтинг рассчитывается по регламенту ФТСО: учитываются <%= rules.countBest %> лучших турниров за последние 52 недели, коэффициент категории A × <%= rules.categoryCoef.A %>, B × <%= rules.categoryCoef.B %>.</p>

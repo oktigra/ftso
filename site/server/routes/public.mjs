@@ -14,7 +14,7 @@ import {
 import { DIRECTORIES, listDirectory, directoryFilterOptions } from '../lib/directories.mjs';
 import { descriptionFrom } from '../lib/seo.mjs';
 import { siteText, paragraphs } from '../lib/texts.mjs';
-import { listGroups } from '../lib/groups.mjs';
+import { listGroups, scoreFor } from '../lib/groups.mjs';
 import { listBrackets } from '../lib/brackets.mjs';
 import { mountTournamentSheets } from '../lib/tournament-sheet-routes.mjs';
 import {
@@ -25,6 +25,8 @@ import {
   tournamentFilterOptions,
   homeStats,
   homeNextEvent,
+  homeTournaments,
+  recentMatches,
   siteAsset,
   tournamentParticipants,
   tournamentMatches,
@@ -47,6 +49,10 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       // Пустой rating_cache (ещё ни разу не считали) -> витрина показывает
       // «рейтинг ещё не рассчитан», а не 500.
       top5: standings ? standings.players.slice(0, 5) : [],
+      topBySex: standings ? { M: standings.players.filter((p) => p.sex === 'M').slice(0, 10), F: standings.players.filter((p) => p.sex === 'F').slice(0, 10), all: standings.players.slice(0, 10) } : { M: [], F: [], all: [] },
+      homeTournaments: homeTournaments(db, 4),
+      recentMatches: recentMatches(db, 8).map((m) => ({ ...m, scoreShown: scoreFor(m.score, true) })),
+      myRatingHref: req.session && req.session.player ? `/player/${req.session.player.playerId}` : '/rating',
       standings,
       statusText: standings ? statusLabel(standings.status) : null,
       // Турниры и новости на главной теперь ЖИВЫЕ — из своих таблиц.
