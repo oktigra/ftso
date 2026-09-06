@@ -48,9 +48,10 @@ export function parseTournamentText(text) {
       if (!ds.length) throw new ValidationError(`Даты: нужен формат ГГГГ-ММ-ДД («${line}»)`);
       t.start_date = ds.length > 1 ? ds[0] : null; t.end_date = ds[ds.length - 1]; continue;
     }
-    if (/^(город|категория|судья):/i.test(line)) {
+    if (/^(город|категория|судья|место|организатор|контакт):/i.test(line)) {
       const o = kv(line);
       if (o['город']) t.city = o['город']; if (o['категория']) t.category = o['категория'].toUpperCase(); if (o['судья']) t.judge = o['судья'];
+      if (o['место']) t.venue = o['место']; if (o['организатор']) t.organizer = o['организатор']; if (o['контакт']) t.organizer_contact = o['контакт'];
       continue;
     }
     if ((m = /^(сетка|группа|пары):\s*(.+)$/i.exec(line))) {
@@ -114,8 +115,8 @@ export function importTournament(db, text, { userId = null } = {}) {
     return id;
   };
   const runAll = db.transaction(() => {
-    const tid = Number(db.prepare('INSERT INTO tournaments (name, start_date, end_date, category, city, kind, is_published) VALUES (?, ?, ?, ?, ?, ?, 0)')
-      .run(t.name, t.start_date, t.end_date, t.category, t.city || null, /первенств|чемпионат/i.test(t.name) ? 'championship' : 'other').lastInsertRowid);
+    const tid = Number(db.prepare('INSERT INTO tournaments (name, start_date, end_date, category, city, kind, venue, organizer, organizer_contact, is_published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)')
+      .run(t.name, t.start_date, t.end_date, t.category, t.city || null, /первенств|чемпионат/i.test(t.name) ? 'championship' : 'other', t.venue || null, t.organizer || null, t.judge ? `Главный судья: ${t.judge}` : (t.organizer_contact || null)).lastInsertRowid);
     for (const s of t.sections) {
       const sec = { title: s.title, type: s.type, matches: 0, places: 0 };
       const sex = s.sex === 'F' ? 'F' : 'M';

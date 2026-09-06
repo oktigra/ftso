@@ -165,7 +165,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
   app.get('/tournaments/:id', (req, res, next) => {
     if (!/^\d+$/.test(req.params.id)) return next();
     const tournament = db
-      .prepare('SELECT id, name, end_date, start_date, category, city, kind, age_group, sex FROM tournaments WHERE id = ? AND is_published = 1')
+      .prepare('SELECT id, name, end_date, start_date, category, city, kind, age_group, sex, venue, organizer, organizer_contact FROM tournaments WHERE id = ? AND is_published = 1')
       .get(Number(req.params.id));
     if (!tournament) return next(); // -> общий 404-обработчик
     res.status(200).render('tournament', {

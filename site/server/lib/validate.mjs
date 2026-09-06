@@ -281,6 +281,9 @@ export function tournamentInput(body) {
     start_date,
     kind: body.kind ? oneOf(body.kind, 'Тип турнира', TOURNAMENT_KINDS) : 'other',
     sex: body.sex ? oneOf(body.sex, 'Пол', ['M', 'F', 'X']) : null,
+    venue: str(body.venue, 'Место проведения', { max: 160, required: false }) || null,
+    organizer: str(body.organizer, 'Организатор', { max: 160, required: false }) || null,
+    organizer_contact: str(body.organizer_contact, 'Контакт организатора', { max: 160, required: false }) || null,
     // Возраст: из списка либо «custom» + своё значение в age_group_custom.
     age_group: body.age_group === 'custom'
       ? (str(body.age_group_custom, 'Возраст (вручную)', { max: 40, required: false }) || null)
