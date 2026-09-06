@@ -2755,7 +2755,7 @@ await check('логотип ФТСО (ТЗ дизайна): знак 80×37 ин
   const meta = await sharpMod(og).metadata();
   eq(`${meta.width}×${meta.height}`, '1200×630', 'OG-картинка не 1200×630');
   const css = (await http('/static/css/site.css')).text;
-  assert(/@keyframes ftsoBallCycle/.test(css) && /animation:ftsoBallCycle 18s[^;]*infinite;/.test(css), 'нет цикла мяча с паузой');
+  assert(/@keyframes ftsoBallCycle/.test(css) && /animation:ftsoBallCycle 15s[^;]*infinite;/.test(css), 'нет цикла мяча с паузой');
   assert(/\.brand:hover \.ftso-ball\{animation:ftsoBallFly/.test(css), 'нет пролёта мяча по наведению');
   assert(/\.logo-seal\{filter:drop-shadow/.test(css), 'нет ореола у основного знака');
   return 'шапка: инлайн-знак 80×37 с мячом и подписью; подвал и «О Федерации»: основной знак с ореолом; favicon и OG 1200×630 из нового знака';
