@@ -276,6 +276,11 @@ export function migrate() {
   // кортов и всплыло вариантом фильтра на витрине — чистим в NULL (примечание остаётся).
   db.prepare("UPDATE courts SET surface = NULL WHERE surface = 'уточнить'").run();
   db.prepare("UPDATE courts SET courts_count = NULL WHERE courts_count = 'уточнить'").run();
+  // ТЗ 4.5/4.6 «фото» у тренеров, кортов, клубов.
+  for (const t of ['coaches', 'courts', 'clubs']) addColumnIfMissing(db, t, 'photo_upload_id', 'INTEGER REFERENCES uploads(id) ON DELETE SET NULL');
+  for (const t of ['coaches', 'courts', 'clubs']) { addColumnIfMissing(db, t, 'hours', 'TEXT'); addColumnIfMissing(db, t, 'prices', 'TEXT'); } // режим работы, цены (06.09.2026)
+  // ДОЗАПОЛНЕНИЕ СТАРТОВОГО СПИСКА — строго ПОСЛЕ всех колонок справочников (06.09.2026: на бою
+  // миграция падала «no column named hours», потому что дозаполнение шло раньше колонки).
   // Ред. 2 стартового списка (05.09.2026 23:00, уточнение браузерным агентом): ПУСТЫЕ поля
   // уже загруженных записей дозаполняются, заполненное не трогается; новых строк не вставляет
   // (это делает кнопка в админке). На чистой базе — пусто, поэтому тесты не затрагивает.
@@ -283,9 +288,7 @@ export function migrate() {
     const spec = DIRECTORIES[key];
     if (db.prepare(`SELECT 1 FROM ${spec.table} LIMIT 1`).get()) applyDirectorySeed(db, spec, { insert: false });
   }
-  for (const t of ['coaches', 'courts', 'clubs']) { addColumnIfMissing(db, t, 'hours', 'TEXT'); addColumnIfMissing(db, t, 'prices', 'TEXT'); } // режим работы, цены (06.09.2026)
-  // ТЗ 4.5/4.6 «фото» у тренеров, кортов, клубов.
-  for (const t of ['coaches', 'courts', 'clubs']) addColumnIfMissing(db, t, 'photo_upload_id', 'INTEGER REFERENCES uploads(id) ON DELETE SET NULL');
+
   addColumnIfMissing(db, 'users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'gallery_items', 'tournament_id', 'INTEGER REFERENCES tournaments(id) ON DELETE SET NULL');
   const resultsRebuilt = upgradeResults(db);
