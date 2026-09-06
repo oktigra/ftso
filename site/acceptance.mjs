@@ -2390,6 +2390,50 @@ await check('поиск по сайту: турниры, игроки, ново�
   return `ЕЛК → турнир, игрок, корт (ё/регистр); черновик скрыт; страница и строка в меню`;
 });
 
+await check('судья турнира: временная ссылка даёт ввод счёта только своего турнира; результаты/чужой турнир/админка закрыты; отзыв гасит доступ', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Судейский', date('now','+2 day'), 'B')").run().lastInsertRowid);
+  const other = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Чужой', date('now','+2 day'), 'B')").run().lastInsertRowid);
+  const ids = ['Судьин Один', 'Судьин Два'].map((n) => Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES (?, 'Смоленск', 'M')").run(n).lastInsertRowid));
+  const _csrf = tokenFrom((await http(`/admin/tournaments/${t}/results`, { jar })).text);
+  eq((await http(`/admin/tournaments/${t}/groups`, { method: 'POST', form: { _csrf, name: 'A', kind: 'single' }, jar })).status, 302, 'группа');
+  const gid = db.prepare('SELECT id FROM tournament_groups WHERE tournament_id = ?').get(t).id;
+  for (const id of ids) await http(`/admin/tournaments/${t}/groups/${gid}/members`, { method: 'POST', form: { _csrf, player: `#${id}` }, jar });
+  // Выдача ссылки — секрет показан один раз.
+  const issue = await http(`/admin/tournaments/${t}/judges`, { method: 'POST', form: { _csrf, label: 'Главный судья' }, jar });
+  eq(issue.status, 302, 'выдача ссылки');
+  const shown = await http(`/admin/tournaments/${t}/results`, { jar });
+  const link = (shown.text.match(/class="flash-secret__value">([^<]+)</) || [])[1];
+  assert(link && /\/judge\/[A-Za-z0-9_-]{20,}$/.test(link), `ссылка не показана: ${link}`);
+  assert(!/flash-secret__value/.test((await http(`/admin/tournaments/${t}/results`, { jar })).text), 'ссылка показана второй раз');
+  // Судья: отдельная сессия без входа.
+  const jj = new Jar();
+  const enter = await http(new URL(link).pathname, { jar: jj });
+  eq(enter.status + ' ' + enter.location, `302 /admin/tournaments/${t}/results`, 'вход по ссылке ведёт на результаты турнира');
+  const page = await http(`/admin/tournaments/${t}/results`, { jar: jj });
+  eq(page.status, 200, 'страница результатов судье');
+  assert(/Судья турнира: Главный судья/.test(page.text) && !/Добавить результат<\/h2>/.test(page.text) && !/Создать группу/.test(page.text) && !/Доступ судье/.test(page.text), 'судья видит лишнее или не видит плашку');
+  const jc = tokenFrom(page.text);
+  eq((await http(`/admin/tournaments/${t}/groups/${gid}/cell`, { method: 'POST', form: { _csrf: jc, a: ids[0], b: ids[1], score: '6:2 6:2' }, jar: jj })).status, 302, 'судья вписал счёт');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t).n, 1, 'счёт судьи не записан');
+  eq(db.prepare("SELECT user_id FROM action_log WHERE action LIKE '%group.cell.set%' ORDER BY id DESC LIMIT 1").get().user_id, null, 'действие судьи должно писаться без user_id');
+  eq((await http(`/admin/tournaments/${t}/results`, { method: 'POST', form: { _csrf: jc, player: `#${ids[0]}`, place: '1' }, jar: jj })).status, 302, 'ответ на добавление результата');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(t).n, 0, 'судья не должен добавлять результаты');
+  eq((await http(`/admin/tournaments/${other}/results`, { jar: jj })).status, 302, 'чужой турнир — на вход');
+  eq((await http('/admin/players', { jar: jj })).status, 302, 'админка — на вход');
+  eq((await http(`/admin/tournaments/${t}/protocol.xlsx`, { jar: jj })).status, 200, 'протокол судье');
+  eq((await http(`/admin/tournaments/${t}/judges`, { method: 'POST', form: { _csrf: jc, label: 'x' }, jar: jj })).status, 302, 'ответ судьи на выдачу ссылки');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM judge_tokens WHERE tournament_id = ?').get(t).n, 1, 'судья выдал ссылку');
+  // Отзыв — доступ гаснет сразу, ссылка больше не работает.
+  const jid = db.prepare('SELECT id FROM judge_tokens WHERE tournament_id = ?').get(t).id;
+  eq((await http(`/admin/tournaments/${t}/judges/${jid}/revoke`, { method: 'POST', form: { _csrf }, jar })).status, 302, 'отзыв');
+  eq((await http(`/admin/tournaments/${t}/results`, { jar: jj })).status, 302, 'после отзыва судья должен уйти на вход');
+  eq((await http(new URL(link).pathname)).status, 404, 'отозванная ссылка');
+  db.prepare('DELETE FROM tournaments WHERE id IN (?, ?)').run(t, other); db.prepare("DELETE FROM players WHERE full_name LIKE 'Судьин %'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'ссылка один раз; судья вписал счёт (журнал без user_id), результаты/чужой турнир/админка закрыты; отзыв гасит сессию и ссылку';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

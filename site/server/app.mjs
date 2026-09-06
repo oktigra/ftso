@@ -218,6 +218,11 @@ export function createApp(config) {
 
   // Текущий пользователь — только когда сессия уже разобрана.
   app.use((req, res, next) => {
+    // Судья по временной ссылке: отозванная или просроченная ссылка гасит сессию сразу.
+    if (req.session && req.session.judge) {
+      const j = db.prepare('SELECT revoked_at, expires_at FROM judge_tokens WHERE id = ?').get(req.session.judge.tokenId);
+      if (!j || j.revoked_at || j.expires_at < new Date().toISOString()) delete req.session.judge;
+    }
     res.locals.user = currentUser(req);
     // Кнопка «Вход» в шапке: игрок или представитель уже в кабинете — «Кабинет».
     res.locals.cabinetSignedIn = Boolean(req.session && (req.session.player || req.session.guardian));

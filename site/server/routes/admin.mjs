@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { requireRole, ROLES, ACTIVE_ROLES, rolesFor } from '../middleware/auth.mjs';
 import { parseMultipart } from '../lib/multipart.mjs';
 import { rowsFromXlsx, rowsFromCsv, protocolTextFromRows } from '../lib/xlsx.mjs';
@@ -95,6 +96,9 @@ const flash = (req, res, kind, text, back, secret = null) => {
   req.session.save(() => res.redirect(back));
 };
 
+/** Кто действует: сотрудник (id) либо судья по временной ссылке (null; в журнале — ссылка). */
+const actorId = (req) => (req.session && req.session.user ? req.session.user.id : null);
+
 export default function mountAdmin(app, { db, config, limitWrites }) {
   // Флеш-сообщение достаётся один раз.
   app.use('/admin', (req, res, next) => {
@@ -191,7 +195,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         .prepare('INSERT INTO players (full_name, city, sex, birth_date, rni) VALUES (?, ?, ?, ?, ?)')
         .run(data.full_name, data.city, data.sex, data.birth_date, data.rni);
       const id = Number(info.lastInsertRowid);
-      logAction(db, req.session.user.id, 'player.create', id, data);
+      logAction(db, actorId(req), 'player.create', id, data);
       flash(req, res, 'ok', `Игрок «${data.full_name}» добавлен.`, '/admin/players');
     }),
   );
@@ -222,7 +226,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         )
         .run(data.full_name, data.city, data.sex, data.birth_date, data.rni, id);
       if (!info.changes) throw new ValidationError('Игрок не найден');
-      logAction(db, req.session.user.id, 'player.update', id, data);
+      logAction(db, actorId(req), 'player.update', id, data);
       flash(req, res, 'ok', 'Игрок обновлён.', '/admin/players');
     }),
   );
@@ -241,7 +245,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // заявки, а вместе с ними — согласия, данные при подаче. Журнал закрыт на
       // удаление триггером СУБД, и это законное исключение, а не обход.
       withConsentErasure(db, () => db.prepare('DELETE FROM players WHERE id = ?').run(id));
-      logAction(db, req.session.user.id, 'player.delete', id, { consents_erased: wiped });
+      logAction(db, actorId(req), 'player.delete', id, { consents_erased: wiped });
       flash(req, res, 'ok', 'Игрок удалён.', '/admin/players');
     }),
   );
@@ -268,7 +272,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         // прекращение распространения, в журнал идёт отзыв с пометкой источника.
         setDistributionConsent(db, id, false, { source: 'offline' });
       })();
-      logAction(db, req.session.user.id, 'player.photo.delete', id, {
+      logAction(db, actorId(req), 'player.photo.delete', id, {
         reason: String(req.body.reason || '').slice(0, 200) || null,
       });
       flash(req, res, 'ok', 'Фотография удалена.', '/admin/players');
@@ -349,7 +353,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       }
       flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
 
-      logAction(db, req.session.user.id, 'guardian.replace', id, {
+      logAction(db, actorId(req), 'guardian.replace', id, {
         previous_guardian_id: previous ? previous.id : null,
         guardian_id: out.id,
         sessions_revoked: revoked,
@@ -407,7 +411,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const playerId = linkTo ? intAtLeast(linkTo, 'Игрок для привязки') : null;
       let out;
       try {
-        out = approveRegistration(db, id, { playerId, userId: req.session.user.id });
+        out = approveRegistration(db, id, { playerId, userId: actorId(req) });
       } catch (err) {
         throw new ValidationError(err.message);
       }
@@ -465,7 +469,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         queueMail(db, { to: account.email, kind: 'cabinet.linked', ...note });
       }
       flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
-      logAction(db, req.session.user.id, 'registration.approve', id, {
+      logAction(db, actorId(req), 'registration.approve', id, {
         player_id: out.playerId,
         created_player: out.created,
         minor: Boolean(out.guardian),
@@ -492,7 +496,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const reason = str(req.body.reason, 'Причина', { max: 300, required: false });
       let reg;
       try {
-        reg = rejectRegistration(db, id, { reason, userId: req.session.user.id });
+        reg = rejectRegistration(db, id, { reason, userId: actorId(req) });
       } catch (err) {
         throw new ValidationError(err.message);
       }
@@ -503,7 +507,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       });
       queueMail(db, { to: reg.email, kind: 'registration.rejected', ...letter });
       flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
-      logAction(db, req.session.user.id, 'registration.reject', id, { reason });
+      logAction(db, actorId(req), 'registration.reject', id, { reason });
       flash(req, res, 'ok', 'Заявка отклонена, уведомление поставлено в очередь.', '/admin/registrations');
     }),
   );
@@ -518,7 +522,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       db.prepare("UPDATE mail_outbox SET status = 'queued', attempts = 0 WHERE status = 'failed'").run();
       flushOutbox(db)
         .then((stat) => {
-          logAction(db, req.session.user.id, 'mail.retry', null, stat);
+          logAction(db, actorId(req), 'mail.retry', null, stat);
           flash(req, res, 'ok', `Отправлено: ${stat.sent}, осталось в очереди: ${stat.pending}.`, '/admin/registrations');
         })
         .catch(next);
@@ -557,7 +561,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const id = intAtLeast(req.params.id, 'id');
       let out;
       try {
-        out = approveRequest(db, id, { userId: req.session.user.id });
+        out = approveRequest(db, id, { userId: actorId(req) });
       } catch (err) {
         throw new ValidationError(err.message);
       }
@@ -572,7 +576,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       });
       queueMail(db, { to: r.email, kind: 'tournament.approved', ...letter });
       flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
-      logAction(db, req.session.user.id, 'tournament_request.approve', id, {
+      logAction(db, actorId(req), 'tournament_request.approve', id, {
         tournament_id: out.tournamentId,
       });
       flash(
@@ -596,7 +600,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const reason = str(req.body.reason, 'Причина', { max: 300, required: false });
       let r;
       try {
-        r = rejectRequest(db, id, { reason, userId: req.session.user.id });
+        r = rejectRequest(db, id, { reason, userId: actorId(req) });
       } catch (err) {
         throw new ValidationError(err.message);
       }
@@ -608,7 +612,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       });
       queueMail(db, { to: r.email, kind: 'tournament.rejected', ...letter });
       flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
-      logAction(db, req.session.user.id, 'tournament_request.reject', id, { reason });
+      logAction(db, actorId(req), 'tournament_request.reject', id, { reason });
       flash(req, res, 'ok', 'Заявка отклонена, уведомление поставлено в очередь.', '/admin/tournament-requests');
     }),
   );
@@ -640,7 +644,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const on = req.body.value === '1' ? 1 : 0;
       const info = db.prepare('UPDATE tournaments SET is_published = ? WHERE id = ?').run(on, id);
       if (!info.changes) throw new ValidationError('Турнир не найден');
-      logAction(db, req.session.user.id, on ? 'tournament.publish' : 'tournament.unpublish', id, null);
+      logAction(db, actorId(req), on ? 'tournament.publish' : 'tournament.unpublish', id, null);
       flash(req, res, 'ok', on ? 'Турнир опубликован — виден в календаре и на сайте.' : 'Турнир снят с публикации — черновик, виден только здесь.', '/admin/tournaments');
     }),
   );
@@ -657,7 +661,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const info = db
         .prepare('INSERT INTO tournaments (name, end_date, category, city, start_date, kind, age_group, sex, is_published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.age_group, data.sex, published);
-      logAction(db, req.session.user.id, 'tournament.create', info.lastInsertRowid, data);
+      logAction(db, actorId(req), 'tournament.create', info.lastInsertRowid, data);
       flash(req, res, 'ok', published ? `Турнир «${data.name}» опубликован.` : `Черновик «${data.name}» сохранён — виден только в админке.`, '/admin/tournaments');
     }),
   );
@@ -675,7 +679,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         .prepare('UPDATE tournaments SET name = ?, end_date = ?, category = ?, city = ?, start_date = ?, kind = ?, age_group = ?, sex = ?, is_published = COALESCE(?, is_published) WHERE id = ?')
         .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.age_group, data.sex, pub, id);
       if (!info.changes) throw new ValidationError('Турнир не найден');
-      logAction(db, req.session.user.id, 'tournament.update', id, data);
+      logAction(db, actorId(req), 'tournament.update', id, data);
       flash(req, res, 'ok', 'Турнир обновлён.', '/admin/tournaments');
     }),
   );
@@ -687,7 +691,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     guard((req, res) => {
       const id = intAtLeast(req.params.id, 'id');
       db.prepare('DELETE FROM tournaments WHERE id = ?').run(id);
-      logAction(db, req.session.user.id, 'tournament.delete', id, null);
+      logAction(db, actorId(req), 'tournament.delete', id, null);
       flash(req, res, 'ok', 'Турнир удалён.', '/admin/tournaments');
     }),
   );
@@ -705,6 +709,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       groups: listGroups(db, id),
       brackets: listBrackets(db, id),
       bracketSizes: BRACKET_SIZES,
+      judges: db.prepare("SELECT id, label, expires_at, created_at, revoked_at FROM judge_tokens WHERE tournament_id = ? ORDER BY id DESC").all(id),
+      judge: req.session && req.session.judge ? req.session.judge : null,
       ...extra,
       players: db.prepare('SELECT id, full_name, city FROM players ORDER BY full_name').all(),
       results: db
@@ -747,7 +753,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const kind = req.body.kind === 'double' ? 'double' : 'single';
       try {
         const info = db.prepare('INSERT INTO tournament_groups (tournament_id, name, kind) VALUES (?, ?, ?)').run(tournamentId, name, kind);
-        logAction(db, req.session.user.id, 'group.create', tournamentId, { group: Number(info.lastInsertRowid), name, kind });
+        logAction(db, actorId(req), 'group.create', tournamentId, { group: Number(info.lastInsertRowid), name, kind });
       } catch (err) {
         if (String(err.message).includes('UNIQUE')) throw new ValidationError(`Группа «${name}» уже есть`);
         throw err;
@@ -769,7 +775,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       if (n >= 16) throw new ValidationError('В группе не больше 16 участников');
       const dup = db.prepare('INSERT OR IGNORE INTO tournament_group_members (group_id, player_id, seed) VALUES (?, ?, ?)').run(g.id, playerId, n + 1);
       if (!dup.changes) throw new ValidationError('Этот игрок уже в группе');
-      logAction(db, req.session.user.id, 'group.member.add', tournamentId, { group: g.id, playerId });
+      logAction(db, actorId(req), 'group.member.add', tournamentId, { group: g.id, playerId });
       flash(req, res, 'ok', 'Участник добавлен.', resultsBack(tournamentId));
     }),
   );
@@ -784,7 +790,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const pid = intAtLeast(req.params.pid, 'Игрок');
       // Его матчи в группе остаются в базе (это сыгранные матчи), убираем только из состава.
       db.prepare('DELETE FROM tournament_group_members WHERE group_id = ? AND player_id = ?').run(g.id, pid);
-      logAction(db, req.session.user.id, 'group.member.delete', tournamentId, { group: g.id, playerId: pid });
+      logAction(db, actorId(req), 'group.member.delete', tournamentId, { group: g.id, playerId: pid });
       flash(req, res, 'ok', 'Участник убран из группы.', resultsBack(tournamentId));
     }),
   );
@@ -800,7 +806,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const inGroup = db.prepare('SELECT COUNT(*) AS n FROM tournament_group_members WHERE group_id = ? AND player_id IN (?, ?)').get(g.id, a, b).n;
       if (inGroup !== 2) throw new ValidationError('Оба игрока должны быть в группе');
       const out = setCell(db, tournamentId, g, a, b, req.body.score);
-      logAction(db, req.session.user.id, out.cleared ? 'group.cell.clear' : 'group.cell.set', tournamentId, { group: g.id, a, b, ...out });
+      logAction(db, actorId(req), out.cleared ? 'group.cell.clear' : 'group.cell.set', tournamentId, { group: g.id, a, b, ...out });
       flash(req, res, 'ok', out.cleared ? 'Клетка очищена.' : 'Счёт записан.', resultsBack(tournamentId));
     }),
   );
@@ -813,7 +819,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const tournamentId = intAtLeast(req.params.id, 'Турнир');
       const g = groupOf(tournamentId, intAtLeast(req.params.gid, 'Группа'));
       const n = writeGroupPlaces(db, tournamentId, g);
-      logAction(db, req.session.user.id, 'group.places', tournamentId, { group: g.id, count: n });
+      logAction(db, actorId(req), 'group.places', tournamentId, { group: g.id, count: n });
       flash(req, res, 'ok', `Места группы «${g.name}» записаны в результаты: ${n}. Внесли всё — пересчитайте рейтинг.`, `/admin/tournaments/${tournamentId}/results`);
     }),
   );
@@ -826,7 +832,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const tournamentId = intAtLeast(req.params.id, 'Турнир');
       const g = groupOf(tournamentId, intAtLeast(req.params.gid, 'Группа'));
       db.prepare('DELETE FROM tournament_groups WHERE id = ?').run(g.id);
-      logAction(db, req.session.user.id, 'group.delete', tournamentId, { group: g.id });
+      logAction(db, actorId(req), 'group.delete', tournamentId, { group: g.id });
       flash(req, res, 'ok', `Группа «${g.name}» удалена (сыгранные матчи остались).`, resultsBack(tournamentId));
     }),
   );
@@ -846,7 +852,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     if (!BRACKET_SIZES.includes(size)) throw new ValidationError('Размер сетки: 4, 8, 16 или 32');
     try {
       const info = db.prepare('INSERT INTO tournament_brackets (tournament_id, name, kind, size) VALUES (?, ?, ?, ?)').run(tid, name, kind, size);
-      logAction(db, req.session.user.id, 'bracket.create', tid, { bracket: Number(info.lastInsertRowid), name, kind, size });
+      logAction(db, actorId(req), 'bracket.create', tid, { bracket: Number(info.lastInsertRowid), name, kind, size });
     } catch (err) {
       if (String(err.message).includes('UNIQUE')) throw new ValidationError(`Сетка «${name}» уже есть`);
       throw err;
@@ -857,60 +863,108 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     const playerId = resolvePlayer(db, req.body.player, { ValidationError });
     if (!playerId) throw new ValidationError(`Игрок «${String(req.body.player || '').trim()}» не найден`);
     const b = seed(db, tid, intAtLeast(req.params.bid, 'Сетка'), intAtLeast(req.body.position, 'Позиция'), playerId);
-    logAction(db, req.session.user.id, 'bracket.seed', tid, { bracket: b.id, playerId, position: Number(req.body.position) });
+    logAction(db, actorId(req), 'bracket.seed', tid, { bracket: b.id, playerId, position: Number(req.body.position) });
     return 'Посеян.';
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/unseed', (req, tid) => {
     const b = unseed(db, tid, intAtLeast(req.params.bid, 'Сетка'), intAtLeast(req.body.position, 'Позиция'));
-    logAction(db, req.session.user.id, 'bracket.unseed', tid, { bracket: b.id, position: Number(req.body.position) });
+    logAction(db, actorId(req), 'bracket.unseed', tid, { bracket: b.id, position: Number(req.body.position) });
     return 'Слот освобождён.';
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/decide', (req, tid) => {
     const out = decide(db, tid, intAtLeast(req.params.bid, 'Сетка'), Number(req.body.r), Number(req.body.k), req.body.score);
-    logAction(db, req.session.user.id, 'bracket.decide', tid, { bracket: Number(req.params.bid), r: Number(req.body.r), k: Number(req.body.k), ...out });
+    logAction(db, actorId(req), 'bracket.decide', tid, { bracket: Number(req.params.bid), r: Number(req.body.r), k: Number(req.body.k), ...out });
     return out.bye ? 'Проход без игры записан.' : 'Итог пары записан.';
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/undo', (req, tid) => {
     undo(db, tid, intAtLeast(req.params.bid, 'Сетка'), Number(req.body.r), Number(req.body.k));
-    logAction(db, req.session.user.id, 'bracket.undo', tid, { bracket: Number(req.params.bid), r: Number(req.body.r), k: Number(req.body.k) });
+    logAction(db, actorId(req), 'bracket.undo', tid, { bracket: Number(req.params.bid), r: Number(req.body.r), k: Number(req.body.k) });
     return 'Итог пары отменён.';
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/places', (req, tid) => {
     const n = bracketPlaces(db, tid, intAtLeast(req.params.bid, 'Сетка'));
-    logAction(db, req.session.user.id, 'bracket.places', tid, { bracket: Number(req.params.bid), count: n });
+    logAction(db, actorId(req), 'bracket.places', tid, { bracket: Number(req.params.bid), count: n });
     return `Места по сетке записаны в результаты: ${n}. Внесли всё — пересчитайте рейтинг.`;
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/seed-from-groups', (req, tid) => {
     const out = seedFromGroups(db, tid, intAtLeast(req.params.bid, 'Сетка'), Number(req.body.per_group || 2));
-    logAction(db, req.session.user.id, 'bracket.seed_from_groups', tid, { bracket: Number(req.params.bid), ...out });
+    logAction(db, actorId(req), 'bracket.seed_from_groups', tid, { bracket: Number(req.params.bid), ...out });
     return `Посеяно из ${out.groups} групп: ${out.seeded} игроков.`;
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/places-with-groups', (req, tid) => {
     const out = placesWithGroups(db, tid, intAtLeast(req.params.bid, 'Сетка'));
-    logAction(db, req.session.user.id, 'bracket.places_with_groups', tid, { bracket: Number(req.params.bid), ...out });
+    logAction(db, actorId(req), 'bracket.places_with_groups', tid, { bracket: Number(req.params.bid), ...out });
     return `Места записаны: по сетке ${out.bracket}, не вышедшие из групп ${out.rest}. Внесли всё — пересчитайте рейтинг.`;
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/seed-by-rating', (req, tid) => {
     const out = seedByRating(db, tid, intAtLeast(req.params.bid, 'Сетка'), req.body.players);
-    logAction(db, req.session.user.id, 'bracket.seed_by_rating', tid, { bracket: Number(req.params.bid), ...out });
+    logAction(db, actorId(req), 'bracket.seed_by_rating', tid, { bracket: Number(req.params.bid), ...out });
     return `Посеяно по рейтингу: ${out.seeded} (с рейтингом ${out.rated}, без — ${out.unrated}, они в конце). Проверьте и поправьте при необходимости.`;
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/swap', (req, tid) => {
     swapSeeds(db, tid, intAtLeast(req.params.bid, 'Сетка'), Number(req.body.p1), Number(req.body.p2));
-    logAction(db, req.session.user.id, 'bracket.swap', tid, { bracket: Number(req.params.bid), p1: Number(req.body.p1), p2: Number(req.body.p2) });
+    logAction(db, actorId(req), 'bracket.swap', tid, { bracket: Number(req.params.bid), p1: Number(req.body.p1), p2: Number(req.body.p2) });
     return 'Позиции поменяны местами.';
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/delete', (req, tid) => {
     const bid = intAtLeast(req.params.bid, 'Сетка');
     const info = db.prepare('DELETE FROM tournament_brackets WHERE id = ? AND tournament_id = ?').run(bid, tid);
     if (!info.changes) throw new ValidationError('Сетка не найдена');
-    logAction(db, req.session.user.id, 'bracket.delete', tid, { bracket: bid });
+    logAction(db, actorId(req), 'bracket.delete', tid, { bracket: bid });
     return 'Сетка удалена (сыгранные матчи остались).';
   });
 
   // СЕТКА/ПРОТОКОЛ/ПЕЧАТЬ ДЛЯ АДМИНКИ — любые турниры, включая черновики (замер агента 06.09:
   // секретарь ведёт турнир черновиком до публикации, витринные адреса отдавали 404).
   mountTournamentSheets(app, { db, prefix: '/admin/tournaments', publishedOnly: false, erasedLabel: ERASED_LABEL, middlewares: [requireRole(...DATA_ROLES)] });
+
+  // СУДЬЯ ТУРНИРА: временная ссылка (72 часа после завершения турнира, не меньше 3 дней от выдачи),
+  // показывается один раз; отзыв — кнопкой. Судья входит по /judge/<token>.
+  app.post(
+    '/admin/tournaments/:id/judges',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      if (res.locals.judgeMode) throw new ValidationError('Судья не может выдавать ссылки');
+      const tid = intAtLeast(req.params.id, 'Турнир');
+      const t = db.prepare('SELECT id, name, end_date FROM tournaments WHERE id = ?').get(tid);
+      if (!t) throw new ValidationError('Турнир не найден');
+      const label = str(req.body.label, 'Подпись', { max: 80, required: false }) || 'судья';
+      const token = randomBytes(24).toString('base64url');
+      const byEnd = new Date(`${t.end_date}T23:59:59Z`).getTime() + 3 * 864e5;
+      const min = Date.now() + 3 * 864e5;
+      const expires = new Date(Math.max(byEnd, min)).toISOString();
+      db.prepare('INSERT INTO judge_tokens (tournament_id, token, label, expires_at, created_by) VALUES (?, ?, ?, ?, ?)').run(tid, token, label, expires, actorId(req));
+      logAction(db, actorId(req), 'judge.link.create', tid, { label, expires });
+      flash(req, res, 'ok', `Ссылка для «${label}» — действует до ${expires.slice(0, 10)}, сообщите лично; больше не покажется.`, `/admin/tournaments/${tid}/results#judges`, `${req.protocol}://${req.get('host')}/judge/${token}`);
+    }),
+  );
+  app.post(
+    '/admin/tournaments/:id/judges/:jid/revoke',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      if (res.locals.judgeMode) throw new ValidationError('Судья не может отзывать ссылки');
+      const tid = intAtLeast(req.params.id, 'Турнир'); const jid = intAtLeast(req.params.jid, 'Ссылка');
+      const info = db.prepare("UPDATE judge_tokens SET revoked_at = datetime('now') WHERE id = ? AND tournament_id = ? AND revoked_at IS NULL").run(jid, tid);
+      if (!info.changes) throw new ValidationError('Ссылка не найдена или уже отозвана');
+      logAction(db, actorId(req), 'judge.link.revoke', tid, { judge: jid });
+      flash(req, res, 'ok', 'Ссылка судьи отозвана.', `/admin/tournaments/${tid}/results#judges`);
+    }),
+  );
+  app.get('/judge/:token', (req, res, next) => {
+    const row = db.prepare("SELECT j.id, j.tournament_id, j.expires_at, j.label FROM judge_tokens j WHERE j.token = ? AND j.revoked_at IS NULL").get(String(req.params.token || ''));
+    if (!row || row.expires_at < new Date().toISOString()) return next(); // 404 — ссылка не годится
+    req.session.regenerate((err) => {
+      if (err) return next(err);
+      req.session.judge = { tournamentId: row.tournament_id, tokenId: row.id, expiresAt: row.expires_at, label: row.label };
+      logAction(db, null, 'judge.enter', row.tournament_id, { judge: row.id });
+      req.session.save(() => res.redirect(`/admin/tournaments/${row.tournament_id}/results`));
+    });
+  });
+  app.post('/judge/logout', (req, res) => {
+    req.session.destroy(() => res.redirect('/'));
+  });
 
   // ОБРАТНАЯ ЗАЛИВКА ПРОТОКОЛА (решение владельца 06.09.2026): секретарь скачал
   // protocol.xlsx, вписал счёт, загрузил — счёт разносится по группам (setCell) и
@@ -961,7 +1015,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
             done.push(key);
           } catch (e) { errors.push(`${(r[1] || key).replace(/\s*\(#\d+\)$/, '')} — ${(r[2] || '').replace(/\s*\(#\d+\)$/, '')}: ${e.message}`); }
         }
-        logAction(db, req.session.user.id, 'protocol.import', tournamentId, { applied: done.length, skipped, errors: errors.length });
+        logAction(db, actorId(req), 'protocol.import', tournamentId, { applied: done.length, skipped, errors: errors.length });
         const msg = `Протокол разобран: записано ${done.length}, пропущено (пусто или уже есть) ${skipped}${errors.length ? `; ошибки (${errors.length}): ${errors.slice(0, 5).join('; ')}${errors.length > 5 ? '…' : ''}` : ''}. Если сетка продвинулась — скачайте протокол заново для следующего круга.`;
         return flash(req, res, errors.length ? 'error' : 'ok', msg, back);
       } catch (err) {
@@ -1025,7 +1079,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         if (have + rows.length > config.rating.maxParticipants) throw new ValidationError(`Превышен потолок участников турнира (${config.rating.maxParticipants})`);
         const ins = db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)');
         db.transaction(() => { for (const r of rows) ins.run(tournamentId, r.playerId, r.place); })();
-        logAction(db, req.session.user.id, 'result.bulk', tournamentId, { count: rows.length });
+        logAction(db, actorId(req), 'result.bulk', tournamentId, { count: rows.length });
         return flash(req, res, 'ok', `Сохранено результатов: ${rows.length}. Внесли всё — пересчитайте рейтинг.`, `/admin/tournaments/${tournamentId}/results`);
       } catch (err) {
         if (err instanceof ValidationError) return flash(req, res, 'error', err.message, `/admin/tournaments/${req.params.id}/results`);
@@ -1065,7 +1119,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         playerId = Number(db
           .prepare('INSERT INTO players (full_name, city, sex, birth_date, rni) VALUES (?, ?, ?, ?, ?)')
           .run(fresh.full_name, fresh.city, fresh.sex, fresh.birth_date, fresh.rni).lastInsertRowid);
-        logAction(db, req.session.user.id, 'player.create', playerId, { ...fresh, via: 'results' });
+        logAction(db, actorId(req), 'player.create', playerId, { ...fresh, via: 'results' });
         created = true;
       }
       if (!db.prepare('SELECT 1 FROM players WHERE id = ?').get(playerId)) {
@@ -1092,7 +1146,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         }
         throw err;
       }
-      logAction(db, req.session.user.id, 'result.create', tournamentId, { playerId, place });
+      logAction(db, actorId(req), 'result.create', tournamentId, { playerId, place });
       flash(req, res, 'ok', created ? `Игрок заведён (#${playerId}) и результат добавлен.` : 'Результат добавлен.', back);
     }),
   );
@@ -1105,7 +1159,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const id = intAtLeast(req.params.id, 'id');
       const row = db.prepare('SELECT tournament_id FROM results WHERE id = ?').get(id);
       db.prepare('DELETE FROM results WHERE id = ?').run(id);
-      logAction(db, req.session.user.id, 'result.delete', id, null);
+      logAction(db, actorId(req), 'result.delete', id, null);
       flash(
         req,
         res,
@@ -1149,7 +1203,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         }
         throw err;
       }
-      logAction(db, req.session.user.id, 'match.create', tournamentId, { winner, loser });
+      logAction(db, actorId(req), 'match.create', tournamentId, { winner, loser });
       flash(req, res, 'ok', 'Матч добавлен.', back);
     }),
   );
@@ -1162,7 +1216,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const id = intAtLeast(req.params.id, 'id');
       const row = db.prepare('SELECT tournament_id FROM matches WHERE id = ?').get(id);
       db.prepare('DELETE FROM matches WHERE id = ?').run(id);
-      logAction(db, req.session.user.id, 'match.delete', id, null);
+      logAction(db, actorId(req), 'match.delete', id, null);
       flash(
         req,
         res,
@@ -1190,7 +1244,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       } catch (err) {
         // Движок падает на битых данных, а не молчит — показываем сообщением,
         // сервер жив, лок уже снят в finally.
-        logAction(db, req.session.user.id, 'rating.recompute.failed', null, { error: err.message });
+        logAction(db, actorId(req), 'rating.recompute.failed', null, { error: err.message });
         throw new ValidationError(`Пересчёт не выполнен: ${err.message}`);
       }
       if (!result.ok) {
@@ -1200,7 +1254,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
             : 'Пересчёт уже идёт — подождите.';
         return flash(req, res, 'error', text, safeRefererPath(req, '/admin'));
       }
-      logAction(db, req.session.user.id, 'rating.recompute', result.snapshotId, {
+      logAction(db, actorId(req), 'rating.recompute', result.snapshotId, {
         players: result.players,
       });
       const warn = result.warnings.length ? ` Предупреждения: ${result.warnings.join('; ')}` : '';
@@ -1229,15 +1283,15 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const next = str(req.body.new_password, 'Новый пароль', { min: 10, max: 200 });
       const row = db
         .prepare('SELECT password_hash FROM users WHERE id = ?')
-        .get(req.session.user.id);
+        .get(actorId(req));
       if (!row || !verifyPassword(current, row.password_hash)) {
         throw new ValidationError('Текущий пароль неверен');
       }
       db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(
         hashPassword(next),
-        req.session.user.id,
+        actorId(req),
       );
-      logAction(db, req.session.user.id, 'user.password.self', req.session.user.id, null);
+      logAction(db, actorId(req), 'user.password.self', actorId(req), null);
       req.session.user.mustChangePassword = false;
       flash(req, res, 'ok', 'Пароль изменён.', '/admin');
     }),
@@ -1267,7 +1321,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         const info = db
           .prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)')
           .run(username, hashPassword(password), role);
-        logAction(db, req.session.user.id, 'user.create', info.lastInsertRowid, { username, role });
+        logAction(db, actorId(req), 'user.create', info.lastInsertRowid, { username, role });
       } catch (err) {
         if (String(err.message).includes('UNIQUE')) {
           throw new ValidationError('Такой логин уже занят');
@@ -1293,7 +1347,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       if (!account) throw new ValidationError('У игрока нет кабинета — он появляется при одобрении заявки');
       const token = issueResetToken(db, account.id, { hours: 72 });
       const url = `${req.protocol}://${req.get('host')}/cabinet/reset/${token}`;
-      logAction(db, req.session.user.id, 'player.cabinet.link', id, null);
+      logAction(db, actorId(req), 'player.cabinet.link', id, null);
       flash(req, res, 'ok', 'Ссылка для входа в кабинет — действует 72 часа, один раз; передайте игроку лично.', '/admin/players', url);
     }),
   );
@@ -1310,10 +1364,10 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       if (!target) throw new ValidationError('Пользователь не найден');
       const password = temporaryPassword();
       db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?').run(hashPassword(password), id);
-      logAction(db, req.session.user.id, 'user.password.reset', id, null);
+      logAction(db, actorId(req), 'user.password.reset', id, null);
       // СЕБЕ (решение владельца 05.09.2026): временный выдаётся так же, сессия остаётся,
       // но тут же ведёт на смену — временный вводится как «текущий», новый — свой.
-      if (id === req.session.user.id) {
+      if (id === actorId(req)) {
         req.session.user.mustChangePassword = true;
         return flash(req, res, 'ok', 'Ваш временный пароль — введите его ниже как текущий и задайте новый. Больше он не покажется.', '/admin/account?change=1', password);
       }
@@ -1327,9 +1381,9 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     limitWrites,
     guard((req, res) => {
       const id = intAtLeast(req.params.id, 'id');
-      if (id === req.session.user.id) throw new ValidationError('Нельзя удалить самого себя');
+      if (id === actorId(req)) throw new ValidationError('Нельзя удалить самого себя');
       db.prepare('DELETE FROM users WHERE id = ?').run(id);
-      logAction(db, req.session.user.id, 'user.delete', id, null);
+      logAction(db, actorId(req), 'user.delete', id, null);
       flash(req, res, 'ok', 'Пользователь удалён.', '/admin/users');
     }),
   );
