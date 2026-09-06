@@ -2694,6 +2694,45 @@ await check('тренер = игрок: связь записей (не слия
   return 'связь пишется по фамилии, незнакомый отбит, ссылки в обе стороны, снятие и обезличивание не рвут карточку';
 });
 
+await check('партнёры: полоса под первым экраном и ряд в подвале, приглашение «станьте партнёром» всегда, логотип отдаётся, скрытый партнёр не виден, в админку полоса не лезет', async () => {
+  // Без партнёров — на главной только приглашение.
+  const home0 = await http('/');
+  assert(/class="partners"/.test(home0.text) && /Станьте партнёром или спонсором/.test(home0.text), 'нет полосы с приглашением');
+  assert(!/class="partner"[^>]*>\s*<img/.test(home0.text), 'без партнёров не должно быть логотипов');
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/partners', { jar });
+  eq(page.status, 200, '/admin/partners');
+  const _csrf = tokenFrom(page.text);
+  const sharpMod = (await import('sharp')).default;
+  const logo = await sharpMod({ create: { width: 360, height: 144, channels: 3, background: '#123456' } }).png().toBuffer();
+  eq((await http('/admin/partners', { method: 'POST', multipart: { fields: { _csrf, name: 'ТК «Алпина»', url: 'https://alpinatennis.ru/', sort: '10' }, files: [{ field: 'logo', filename: 'logo.png', type: 'image/png', buffer: logo }] }, jar })).status, 302, 'добавление партнёра');
+  const p = db.prepare("SELECT id, logo_upload_id, is_active FROM partners WHERE name = 'ТК «Алпина»'").get();
+  assert(p && p.logo_upload_id, 'партнёр без логотипа');
+  eq((await http(`/partners/${p.id}/logo`)).status, 200, 'логотип отдаётся');
+  const home = await http('/');
+  assert(new RegExp(`<a class="partner" href="https://alpinatennis.ru/"`).test(home.text) && new RegExp(`/partners/${p.id}/logo`).test(home.text), 'логотипа нет на главной');
+  // Подвал других страниц — компактный ряд; на главной второй раз не дублируется.
+  assert(/partners--compact/.test((await http('/rating')).text), 'в подвале /rating нет ряда партнёров');
+  eq((home.text.match(/class="partners"/g) || []).length, 1, 'на главной должна быть ровно одна полоса партнёров (в подвале не дублируется)');
+  assert(!/partners--compact/.test(home.text), 'на главной компактный ряд в подвале лишний');
+  assert(!/class="partners/.test((await http('/admin', { jar })).text), 'полоса просочилась в админку');
+  // Выключение — партнёр пропадает с сайта, но остаётся в админке.
+  eq((await http(`/admin/partners/${p.id}/update`, { method: 'POST', form: { _csrf, name: 'ТК «Алпина»', url: 'https://alpinatennis.ru/', sort: '10' }, jar })).status, 302, 'снятие галочки');
+  eq(db.prepare('SELECT is_active FROM partners WHERE id = ?').get(p.id).is_active, 0, 'не выключился');
+  assert(!new RegExp(`/partners/${p.id}/logo`).test((await http('/')).text), 'выключенный партнёр виден на сайте');
+  eq((await http(`/partners/${p.id}/logo`)).status, 404, 'логотип выключенного не должен отдаваться');
+  // Тексты подписи и приглашения правятся.
+  const tx = await http('/admin/texts', { jar });
+  eq((await http('/admin/texts', { method: 'POST', form: { _csrf: tokenFrom(tx.text), key: 'partners-cta', value: 'Ваша реклама тут' }, jar })).status, 302, 'правка приглашения');
+  assert(/Ваша реклама тут/.test((await http('/')).text), 'текст приглашения не подменился');
+  db.prepare("DELETE FROM site_texts WHERE key = 'partners-cta'").run();
+  const { loadTexts } = await import('./server/lib/texts.mjs'); loadTexts(db);
+  eq((await http(`/admin/partners/${p.id}/delete`, { method: 'POST', form: { _csrf }, jar })).status, 302, 'удаление');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM uploads WHERE id = ?').get(p.logo_upload_id).n, 0, 'логотип не удалён вместе с партнёром');
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'приглашение всегда; логотип со ссылкой на главной и в подвале; выключенный скрыт и 404; тексты правятся; удаление чистит файл';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

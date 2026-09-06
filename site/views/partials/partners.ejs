@@ -1,0 +1,23 @@
+<%
+/* ПОЛОСА ПАРТНЁРОВ (макет согласован владельцем 06.09.2026): подпись слева, логотипы
+   в рамках 180×72 (object-fit: contain), последним — приглашение, которое ведёт на
+   форму обратной связи. Нет партнёров — остаётся только приглашение. */
+const compact = typeof partnersCompact !== 'undefined' && partnersCompact;
+%>
+<section class="partners<%= compact ? ' partners--compact' : '' %>" aria-label="Партнёры Федерации">
+  <div class="container partners__inner">
+    <div class="partners__title"><%= partnersTitle %></div>
+    <div class="partners__row">
+      <% partners.forEach(function (p) { %>
+        <% if (p.url) { %>
+          <a class="partner" href="<%= p.url %>" rel="noopener nofollow" target="_blank" title="<%= p.name %>" aria-label="Партнёр: <%= p.name %>">
+            <img src="/partners/<%= p.id %>/logo" alt="<%= p.name %>" loading="lazy">
+          </a>
+        <% } else { %>
+          <span class="partner" title="<%= p.name %>"><img src="/partners/<%= p.id %>/logo" alt="<%= p.name %>" loading="lazy"></span>
+        <% } %>
+      <% }); %>
+      <a class="partner partner--cta" href="/contacts#feedback"><%= partnersCta %></a>
+    </div>
+  </div>
+</section>

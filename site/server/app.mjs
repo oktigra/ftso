@@ -1,5 +1,7 @@
 import express from 'express';
 import { seoFor, SEO_DEFAULTS } from './lib/seo.mjs';
+import { activePartners } from './lib/partners.mjs';
+import { siteText } from './lib/texts.mjs';
 import session from 'express-session';
 import helmet from 'helmet';
 import { randomBytes, createHash } from 'node:crypto';
@@ -242,6 +244,10 @@ export function createApp(config) {
     // (первые буквы фамилии и имени) вместо «Вход»; не вошёл — «Вход».
     res.locals.headerAccount = headerAccount(db, req);
     // SEO (ТЗ п. 5): правка из админки по адресу + заготовка раздела.
+    // Партнёры — в подвал на всех публичных страницах и в полосу главной.
+    res.locals.partners = req.path.startsWith('/admin') ? [] : activePartners(db);
+    res.locals.partnersTitle = siteText(db, 'partners-title');
+    res.locals.partnersCta = siteText(db, 'partners-cta');
     res.locals.seo = seoFor(db, req.path);
     res.locals.seoDefault = SEO_DEFAULTS[req.path] || '';
     res.locals.sections = res.locals.user ? ROLE_SECTIONS[res.locals.user.role] || [] : [];

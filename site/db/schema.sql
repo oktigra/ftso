@@ -491,6 +491,20 @@ CREATE TABLE IF NOT EXISTS news (
 );
 CREATE INDEX IF NOT EXISTS idx_news_published ON news (is_published, published_at DESC);
 
+-- ПАРТНЁРЫ И СПОНСОРЫ (06.09.2026): полоса под первым экраном и повтор в подвале.
+-- Логотип — обычная загрузка (профиль gallery, EXIF снимается), показывается в рамке
+-- 180×72 с object-fit: contain, чтобы разнокалиберные картинки не разъезжались.
+CREATE TABLE IF NOT EXISTS partners (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 120),
+  url        TEXT,
+  logo_upload_id INTEGER REFERENCES uploads(id) ON DELETE SET NULL,
+  sort       INTEGER NOT NULL DEFAULT 100,
+  is_active  INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_partners_active ON partners (is_active, sort, id);
+
 -- НАСТРОЙКИ САЙТА по ключу (переключатели админки; тексты — в site_texts).
 CREATE TABLE IF NOT EXISTS site_settings (
   key        TEXT PRIMARY KEY,

@@ -14,6 +14,7 @@ import { SEO_PAGES, SEO_DEFAULTS, seoFor, saveSeo } from '../lib/seo.mjs';
 import { SITE_TEXTS, saveText } from '../lib/texts.mjs';
 import { postInBackground, postToMax, maxWhoAmI, maxFindChats, maxEnabled } from '../lib/max-post.mjs';
 import { applyStarterDocuments, applyStarterNews, STARTER_DOCUMENTS, STARTER_NEWS } from '../lib/starter-content.mjs';
+import { allPartners } from '../lib/partners.mjs';
 import { DIRECTORY_SEED, applyDirectorySeed } from '../lib/directory-seed.mjs';
 import { storeUpload, deleteUpload, uploadById, sendUpload } from '../lib/uploads.mjs';
 import {
@@ -366,6 +367,75 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
     logAction(db, req.session.user.id, r.ok ? 'max.post' : 'max.post.failed', null, { kind: 'test', status: r.status, error: r.error });
     flash(req, res, r.ok ? 'ok' : 'error', r.ok ? 'Тестовый пост ушёл в канал.' : `Не ушло: ${r.error || 'HTTP ' + r.status}`, '/admin/max');
   }));
+
+  // --- ПАРТНЁРЫ И СПОНСОРЫ (06.09.2026) --------------------------------------
+  app.get('/admin/partners', requireRole(...CONTENT_ROLES), (req, res) => {
+    res.render('admin/partners', { title: 'Партнёры — админка ФТСО', partnersList: allPartners(db) });
+  });
+  app.post(
+    '/admin/partners',
+    requireRole(...CONTENT_ROLES),
+    limitWrites,
+    guard(async (req, res) => {
+      const { fields, upload } = await oneFile(req, { profile: 'gallery', field: 'logo', required: false });
+      const name = str(fields.name, 'Название', { max: 120 });
+      const url = str(fields.url, 'Ссылка', { max: 300, required: false }) || null;
+      if (url && !/^https?:\/\//i.test(url)) throw new ValidationError('Ссылка должна начинаться с http:// или https://');
+      const sort = Number(fields.sort) || 100;
+      const info = db.prepare('INSERT INTO partners (name, url, logo_upload_id, sort) VALUES (?, ?, ?, ?)').run(name, url, upload ? upload.id : null, sort);
+      logAction(db, req.session.user.id, 'partner.create', Number(info.lastInsertRowid), { name, sort });
+      flash(req, res, 'ok', upload ? `Партнёр «${name}» добавлен.` : `Партнёр «${name}» добавлен — загрузите логотип, без него он не показывается.`, '/admin/partners');
+    }),
+  );
+  app.post(
+    '/admin/partners/:id/logo',
+    requireRole(...CONTENT_ROLES),
+    limitWrites,
+    guard(async (req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const row = db.prepare('SELECT logo_upload_id FROM partners WHERE id = ?').get(id);
+      if (!row) throw new ValidationError('Партнёр не найден');
+      const { upload } = await oneFile(req, { profile: 'gallery', field: 'logo' });
+      db.transaction(() => {
+        db.prepare('UPDATE partners SET logo_upload_id = ? WHERE id = ?').run(upload.id, id);
+        if (row.logo_upload_id) deleteUpload(db, row.logo_upload_id, config.upload.dir);
+      })();
+      logAction(db, req.session.user.id, 'partner.logo', id, { upload: upload.id });
+      flash(req, res, 'ok', 'Логотип обновлён.', '/admin/partners');
+    }),
+  );
+  app.post(
+    '/admin/partners/:id/update',
+    requireRole(...CONTENT_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const name = str(req.body.name, 'Название', { max: 120 });
+      const url = str(req.body.url, 'Ссылка', { max: 300, required: false }) || null;
+      if (url && !/^https?:\/\//i.test(url)) throw new ValidationError('Ссылка должна начинаться с http:// или https://');
+      const info = db.prepare('UPDATE partners SET name = ?, url = ?, sort = ?, is_active = ? WHERE id = ?')
+        .run(name, url, Number(req.body.sort) || 100, req.body.is_active === '1' ? 1 : 0, id);
+      if (!info.changes) throw new ValidationError('Партнёр не найден');
+      logAction(db, req.session.user.id, 'partner.update', id, { name });
+      flash(req, res, 'ok', 'Сохранено.', '/admin/partners');
+    }),
+  );
+  app.post(
+    '/admin/partners/:id/delete',
+    requireRole(...CONTENT_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const row = db.prepare('SELECT logo_upload_id FROM partners WHERE id = ?').get(id);
+      if (!row) throw new ValidationError('Партнёр не найден');
+      db.transaction(() => {
+        db.prepare('DELETE FROM partners WHERE id = ?').run(id);
+        if (row.logo_upload_id) deleteUpload(db, row.logo_upload_id, config.upload.dir);
+      })();
+      logAction(db, req.session.user.id, 'partner.delete', id, null);
+      flash(req, res, 'ok', 'Партнёр удалён.', '/admin/partners');
+    }),
+  );
 
   // --- ТЕКСТЫ САЙТА (ТЗ п. 5 «управление страницами») ------------------------
   app.get('/admin/texts', requireRole(...CONTENT_ROLES), (req, res) => {

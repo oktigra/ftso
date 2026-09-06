@@ -88,6 +88,14 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
   });
 
   // Фото баннера главной (загружается в админке, «Документы и галерея»).
+  app.get('/partners/:id/logo', (req, res, next) => {
+    if (!/^\d+$/.test(req.params.id)) return next();
+    const row = db.prepare('SELECT logo_upload_id FROM partners WHERE id = ? AND is_active = 1').get(Number(req.params.id));
+    if (!row || !row.logo_upload_id) return next();
+    const upload = uploadById(db, row.logo_upload_id);
+    if (!upload || !sendUploadInline(req, res, upload, config.upload.dir)) return next();
+  });
+
   app.get('/site/hero', (req, res, next) => {
     const id = siteAsset(db, 'home-hero');
     if (!id) return next();
