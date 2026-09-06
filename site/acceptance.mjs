@@ -2618,6 +2618,24 @@ await check('категория C: принимается формой, коэф
   return 'C сохраняется, ×0,5 в движке (100 → 50), показана на витрине';
 });
 
+await check('турнир: место проведения (из справочника кортов) и организатор с контактом — форма, карточка, одобрение заявки, импорт из текста', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/tournaments', { jar })).text);
+  eq((await http('/admin/tournaments', { method: 'POST', form: { _csrf, name: 'Турнир с местом', end_date: '2026-07-01', category: 'B', kind: 'other', city: 'Смоленск', venue: 'ТК «Алпина»', organizer: 'ТК «Алпина»', organizer_contact: '+7 (4812) 77-60-60', action: 'publish' }, jar })).status, 302, 'создание');
+  const t = db.prepare("SELECT id, venue, organizer, organizer_contact FROM tournaments WHERE name = 'Турнир с местом'").get();
+  eq([t.venue, t.organizer, t.organizer_contact].join('|'), 'ТК «Алпина»|ТК «Алпина»|+7 (4812) 77-60-60', 'поля не сохранились');
+  const card = (await http(`/tournaments/${t.id}`)).text;
+  assert(/ТК «Алпина»/.test(card) && /Организатор: ТК «Алпина» · \+7 \(4812\) 77-60-60/.test(card), 'карточка без места/организатора');
+  assert(/list="venues-list"/.test((await http('/admin/tournaments', { jar })).text), 'нет подсказки кортов в форме');
+  // Импорт из текста: «Место:», «Организатор:», «Судья:» → поля турнира.
+  const imp = await http('/admin/tournaments/import', { method: 'POST', form: { _csrf, text: 'Турнир: Импорт с местом\nДаты: 2026-06-01\nГород: Смоленск | Категория: B | Место: корты «Кристалл» | Организатор: ФТСО | Судья: Н. Груздин\nГруппа: Тест | пол: M\nМестов Один — Местов Два 6:1/6:1' }, jar });
+  eq(imp.status, 200, 'импорт');
+  const ti = db.prepare("SELECT venue, organizer, organizer_contact FROM tournaments WHERE name = 'Импорт с местом'").get();
+  eq([ti.venue, ti.organizer, ti.organizer_contact].join('|'), 'корты «Кристалл»|ФТСО|Главный судья: Н. Груздин', 'импорт не перенёс место/организатора');
+  db.prepare("DELETE FROM tournaments WHERE name IN ('Турнир с местом', 'Импорт с местом')").run(); db.prepare("DELETE FROM players WHERE full_name LIKE 'Местов %'").run(); db.prepare('DELETE FROM write_attempts').run();
+  return 'место/организатор/контакт сохраняются, видны на карточке, подсказка кортов, импорт переносит';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
@@ -3002,6 +3020,8 @@ await check('согласование создаёт турнир, отказ о
   eq(after.status, 'approved', 'статус заявки');
   // Ускорение ввода п. 5: после одобрения — сразу страница результатов нового турнира.
   eq(appr.location, `/admin/tournaments/${after.tournament_id}/results`, 'одобрение должно вести на результаты турнира');
+  const made = db.prepare('SELECT organizer, organizer_contact FROM tournaments WHERE id = ?').get(after.tournament_id);
+  assert(made.organizer && made.organizer_contact, 'при одобрении заявки организатор и контакт должны перейти в турнир');
   eq(db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n, before + 1, 'турнир не создан');
   const created = db.prepare('SELECT name, end_date, category FROM tournaments WHERE id = ?').get(after.tournament_id);
   eq(created.name, r.name, 'название турнира');
