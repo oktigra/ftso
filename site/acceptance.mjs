@@ -2601,7 +2601,7 @@ await check('импорт турнира из текста: сетка с bye/о
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(ot); db.prepare("DELETE FROM players WHERE full_name LIKE 'Открытова %'").run();
   const ret = db.prepare("SELECT m.score FROM matches m JOIN players w ON w.id = m.winner_player_id WHERE m.tournament_id = ? AND w.full_name = 'Импкостылев' AND m.stage LIKE 'b:%'").get(t.id);
   eq(ret.score, '4:6 2:5 отк.', 'отказ записан от победителя (снявшийся — проигравший)');
-  assert(/новых игроков 14/.test(ok.text) && /Открыть результаты/.test(ok.text), 'отчёт не показан');
+  assert(/новых записей игроков 14/.test(ok.text) && /Открыть результаты/.test(ok.text), 'отчёт не показан');
   assert(!/Импортный ветеранский/.test((await http('/tournaments')).text), 'черновик виден на витрине');
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(t.id); db.prepare("DELETE FROM players WHERE full_name LIKE 'Имп%'").run(); db.prepare('DELETE FROM write_attempts').run();
   return 'сетка 8 с bye, отказом и матчем за 3-е, группа, пары → черновик; 15 игроков, 11 матчей, места 1/2/3/4/5 и пар; ошибка — без записи';
