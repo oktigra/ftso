@@ -9,6 +9,15 @@
   // правило на все формы админки: 05.09.2026 владелец удалил сам себя одним
   // кликом. Текст — из data-confirm кнопки либо общий. Без JS форма уйдёт как
   // раньше — сервер и так проверяет права и CSRF.
+  // ГЛАВНАЯ: переключатель топ-10 «Все / Мужчины / Женщины».
+  document.querySelectorAll('[data-top-tab]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var key = b.getAttribute('data-top-tab');
+      document.querySelectorAll('[data-top-tab]').forEach(function (x) { x.classList.toggle('is-active', x === b); });
+      document.querySelectorAll('[data-top-panel]').forEach(function (p) { p.hidden = p.getAttribute('data-top-panel') !== key; });
+    });
+  });
+
   // ТУРНИРЫ: возраст «ввод вручную» показывает поле; «Редактировать» открывает поля строки.
   document.querySelectorAll('[data-age-select]').forEach(function (sel) {
     var scope = sel.closest('td') || sel.closest('form') || document;

@@ -203,6 +203,22 @@ tbody tr:hover{background:var(--surface-2);}
 
 /* tournaments layout */
 .tourn-grid{display:grid; grid-template-columns:1.6fr 1fr; gap:clamp(1.25rem,3vw,2rem); align-items:start;}
+/* Главная: карточки турниров, лента «Сегодня на корте», топ-10 — только переменные темы */
+.tcards{display:grid; grid-template-columns:repeat(2,1fr); gap:.9rem;}
+.tcard{display:flex; gap:.9rem; align-items:flex-start; background:var(--surface); border:1px solid var(--border); border-radius:1.1rem; padding:1rem 1.1rem; color:var(--text); text-decoration:none;}
+.tcard:hover{border-color:var(--primary);}
+.tcard__date{flex:0 0 5.2rem; display:flex; flex-direction:column; font-family:'Manrope',sans-serif; line-height:1.1;}
+.tcard__date b{font-size:1.15rem; color:var(--primary);} .tcard__date span{font-size:.8rem; color:var(--muted);}
+.tcard__name{font-weight:700; margin-bottom:.25rem;} .tcard__meta{font-size:.85rem; color:var(--muted); margin-bottom:.45rem;}
+.tcard__tags{display:flex; gap:.4rem; flex-wrap:wrap;}
+.live-strip{padding:.9rem 0 0;} .live-strip__head{margin-bottom:.5rem;}
+.live-strip__row{display:flex; gap:.75rem; overflow-x:auto; padding-bottom:.5rem; scroll-snap-type:x mandatory;}
+.live-card{flex:0 0 15rem; scroll-snap-align:start; background:var(--surface); border:1px solid var(--border); border-radius:1rem; padding:.7rem .85rem; font-size:.9rem;}
+.live-card__t{display:block; font-size:.75rem; color:var(--muted); text-decoration:none; margin-bottom:.35rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.live-card__p{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;} .live-card__p a{color:inherit; text-decoration:none;}
+.live-card__p--win{font-weight:700;} .live-card__s{margin-top:.3rem; font-family:'Manrope',sans-serif; font-weight:700; color:var(--primary);}
+.top-tabs{display:flex; gap:.4rem; margin-bottom:.8rem;} .top-tab{cursor:pointer; background:var(--surface-2);} .top-tab.is-active{color:var(--primary); border-color:var(--primary);}
+@media (max-width:720px){ .tcards{grid-template-columns:1fr;} }
 /* без min-width:0 grid-элемент раздувается до min-content таблицы (520px) и
    вместо внутреннего скролла уезжает за экран — на мобильном это ломает вёрстку */
 .tourn-grid>*{min-width:0;}

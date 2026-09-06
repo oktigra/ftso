@@ -818,20 +818,20 @@ await check('витрина показывает ТЕ ЖЕ standings, что д�
   return top;
 });
 
-await check('главная показывает ТОП-5 из последнего снимка', async () => {
+await check('главная показывает ТОП-10 из последнего снимка (панель «Все»)', async () => {
   const shown = currentStandings(db);
-  const top5 = shown.players.slice(0, 5);
+  const top10 = shown.players.slice(0, 10);
   const page = await http('/');
-  const section = page.text.split('id="rating"')[1].split('</section>')[0];
-  for (const p of top5) {
+  const section = page.text.split('data-top-panel="all"')[1].split('</table>')[0];
+  for (const p of top10) {
     const esc = p.playerName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     assert(section.includes(esc), `на главной нет игрока ${p.playerName}`);
     assert(section.includes(p.city), `на главной нет города ${p.city}`);
   }
-  const sixth = shown.players[5];
-  if (sixth) assert(!section.includes(sixth.playerName.replace(/</g, '&lt;')), 'на главной больше пяти строк');
-  assert(section.includes('Полный рейтинг'), 'нет ссылки «Полный рейтинг →»');
-  return `${top5.map((p) => `${p.rank}. ${p.playerName}`).join('; ')}`;
+  const eleventh = shown.players[10];
+  if (eleventh) assert(!section.includes(eleventh.playerName.replace(/</g, '&lt;')), 'на главной больше десяти строк');
+  assert(page.text.split('id="rating"')[1].includes('Полный рейтинг'), 'нет ссылки «Полный рейтинг →»');
+  return `${top10.map((p) => `${p.rank}. ${p.playerName}`).join('; ')}`;
 });
 
 await check('«Изменение»: два снимка -> стрелки; проверено арифметикой рангов', async () => {
@@ -2339,6 +2339,35 @@ await check('профиль игрока: наивысшее место и гр�
   assert(/Наивысшее место:<\/strong> \d+/.test(page.text), 'нет «Наивысшее место»');
   if (h.points.length > 1) assert(/class="rating-chart"/.test(page.text) && /class="rating-history"/.test(page.text), 'нет графика/таблицы истории');
   return `наивысшее место ${h.best.rank}, точек истории ${h.points.length}${h.points.length > 1 ? ', график и таблица на месте' : ' (график появится со второго месяца)'}`;
+});
+
+await check('главная: роль-кнопки, карточки турниров, топ-10 с табами Все/Мужчины/Женщины, лента «Сегодня на корте» из матчей сеток', async () => {
+  const home = await http('/');
+  for (const [href, text] of [['/tournaments', 'Найти турнир'], ['/rating', 'Мой рейтинг'], ['/coaches', 'Найти тренера'], ['/courts', 'Корты и клубы']]) {
+    assert(new RegExp(`href="${href}">${text}<`).test(home.text), `нет роль-кнопки «${text}»`);
+  }
+  assert(/data-top-tab="M"/.test(home.text) && /data-top-panel="F"/.test(home.text), 'нет табов топ-10');
+  const rowsAll = (home.text.match(/data-top-panel="all"[\s\S]*?<\/table>/) || [''])[0].split('<tr>').length - 2;
+  assert(rowsAll >= 1 && rowsAll <= 10, `в топ «Все» строк ${rowsAll}`);
+  // Карточки турниров: будущий турнир появляется первым.
+  const future = new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10);
+  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, start_date, category, city) VALUES ('Карточка будущего', ?, ?, 'A', 'Рославль')").run(future, future).lastInsertRowid);
+  const h2 = (await http('/')).text;
+  const firstCard = (h2.match(/<a class="tcard fx-card" href="\/tournaments\/(\d+)"/) || [])[1];
+  eq(Number(firstCard), tid, 'ближайший турнир должен быть первой карточкой');
+  assert(/Рославль/.test(h2) && /предстоящий/.test(h2), 'в карточке нет города/статуса');
+  assert(!/<th>Дата<\/th><th>Турнир<\/th>/.test(h2), 'таблица турниров на главной должна уйти');
+  // Лента: матч сетки за сегодня.
+  const ids = ['Лентов Раз', 'Лентов Два'].map((n) => Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES (?, 'Смоленск', 'M')").run(n).lastInsertRowid));
+  const today = new Date().toISOString().slice(0, 10);
+  db.prepare("INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage, played_on) VALUES (?, ?, ?, '6:4 6:4', 'single', 'b:999', ?)").run(tid, ids[0], ids[1], today);
+  const h3 = (await http('/')).text;
+  assert(/Сегодня на корте/.test(h3) && /live-card__p--win"><a href="\/player\/\d+">Лентов Раз/.test(h3) && /6:4 6:4/.test(h3), 'ленты с матчем нет');
+  db.prepare('DELETE FROM matches WHERE tournament_id = ?').run(tid);
+  assert(!/Сегодня на корте/.test((await http('/')).text) || db.prepare("SELECT COUNT(*) AS n FROM matches m JOIN tournaments t ON t.id = m.tournament_id WHERE t.is_published = 1 AND m.stage <> 'manual' AND COALESCE(m.played_on, t.end_date) >= date('now','-1 day')").get().n > 0, 'без свежих матчей лента должна исчезать');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
+  db.prepare('DELETE FROM players WHERE id IN (?, ?)').run(ids[0], ids[1]);
+  return 'кнопки ×4, карточки (будущий первым), топ-10 с табами, лента появляется с матчем и исчезает без';
 });
 
 await check('rate-limit на /register срабатывает', async () => {

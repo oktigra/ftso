@@ -133,6 +133,34 @@ export function homeNextEvent(db) {
   };
 }
 
+/** Ближайшие/идущие турниры для карточек главной (опубликованные, не завершённые), затем последние завершённые. */
+export function homeTournaments(db, limit = 4) {
+  const today = new Date().toISOString().slice(0, 10);
+  const up = db.prepare(`SELECT id, name, start_date, end_date, category, city, kind, age_group, sex,
+      (SELECT COUNT(*) FROM results r WHERE r.tournament_id = t.id) AS participants
+     FROM tournaments t WHERE is_published = 1 AND end_date >= ? ORDER BY COALESCE(start_date, end_date), id LIMIT ?`).all(today, limit);
+  const rest = limit - up.length;
+  const past = rest > 0 ? db.prepare(`SELECT id, name, start_date, end_date, category, city, kind, age_group, sex,
+      (SELECT COUNT(*) FROM results r WHERE r.tournament_id = t.id) AS participants
+     FROM tournaments t WHERE is_published = 1 AND end_date < ? ORDER BY end_date DESC, id DESC LIMIT ?`).all(today, rest) : [];
+  return [...up, ...past].map((t) => ({ ...t, status: tournamentStatus(t, today) }));
+}
+
+/**
+ * «СЕГОДНЯ НА КОРТЕ» (идея ленты «Текущий счёт» ФТР): матчи сеток и групп опубликованных
+ * турниров, сыгранные сегодня/вчера (по дате матча либо по датам турнира, если он идёт).
+ */
+export function recentMatches(db, limit = 8) {
+  return db.prepare(`
+    SELECT m.id, m.score, m.kind, m.stage, COALESCE(m.played_on, t.end_date) AS played_on, t.id AS tournament_id, t.name AS tournament,
+           w.id AS w_id, w.full_name AS w_name, w.anonymized_at AS w_anon, l.id AS l_id, l.full_name AS l_name, l.anonymized_at AS l_anon
+      FROM matches m JOIN tournaments t ON t.id = m.tournament_id
+      JOIN players w ON w.id = m.winner_player_id JOIN players l ON l.id = m.loser_player_id
+     WHERE t.is_published = 1 AND m.stage <> 'manual'
+       AND (COALESCE(m.played_on, t.end_date) >= date('now', '-1 day') OR (t.start_date IS NOT NULL AND t.start_date <= date('now') AND t.end_date >= date('now')))
+     ORDER BY m.id DESC LIMIT ?`).all(limit);
+}
+
 export function tournamentFilterOptions(db) {
   return {
     cities: db.prepare("SELECT DISTINCT city FROM tournaments WHERE is_published = 1 AND city IS NOT NULL AND city <> '' ORDER BY city").all().map((r) => r.city),
