@@ -8,6 +8,7 @@ import { rowsFromXlsx as protoRowsFromXlsx } from '../lib/xlsx.mjs';
 import { mountTournamentSheets } from '../lib/tournament-sheet-routes.mjs';
 import { protocolKeyFromLabel } from '../lib/tournament-export.mjs';
 import { postInBackground } from '../lib/max-post.mjs';
+import { importTournament } from '../lib/tournament-import.mjs';
 import { ERASED_LABEL } from '../lib/rating-service.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
@@ -643,6 +644,27 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       sexRu: TOURNAMENT_SEX_RU,
     });
   });
+
+  // ИМПОРТ ТУРНИРА ИЗ ТЕКСТА (06.09.2026): переписанный протокол → турнир черновиком целиком.
+  app.get('/admin/tournaments/import', requireRole(...DATA_ROLES), (req, res) => {
+    res.render('admin/tournament-import', { title: 'Импорт турнира из текста — админка ФТСО', report: null, text: '' });
+  });
+  app.post(
+    '/admin/tournaments/import',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    (req, res, next) => {
+      const text = String(req.body.text || '').slice(0, 60000);
+      try {
+        const report = importTournament(db, text, { userId: actorId(req) });
+        logAction(db, actorId(req), 'tournament.import', report.tournamentId, { sections: report.sections.length, players: report.players_created_count, warnings: report.warnings.length });
+        res.render('admin/tournament-import', { title: 'Импорт турнира — готово — админка ФТСО', report, text });
+      } catch (err) {
+        if (err instanceof ValidationError) return res.status(400).render('admin/tournament-import', { title: 'Импорт турнира — ошибка — админка ФТСО', report: { error: err.message }, text });
+        return next(err);
+      }
+    },
+  );
 
   // Опубликовать / снять с публикации — одной кнопкой в строке.
   app.post(

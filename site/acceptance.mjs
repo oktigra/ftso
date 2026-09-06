@@ -2563,6 +2563,38 @@ await check('миграция на живой базе: схема релиза 
   return `схема ${OLD_SHA} + данные → migrate без ошибок; hours/prices есть; данные и матчи целы`;
 });
 
+await check('импорт турнира из текста: сетка с bye/отказом/матчем за 3 место, группа, пары → черновик с игроками, матчами и местами; ошибка не пишет ничего', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/tournaments/import', { jar });
+  eq(page.status, 200, 'страница импорта');
+  const _csrf = tokenFrom(page.text);
+  const text = ['Турнир: Импортный ветеранский', 'Даты: 2026-08-01 — 2026-08-03', 'Город: Вязьма | Категория: A',
+    'Сетка: Мужчины 50+ | пол: M', '1/4: Импантонов — X → Импантонов', '1/4: Импгапеев — Импстепаньков 6:1/6:2 → Импстепаньков', '1/4: Импшульц — Имппoлетаев 6:3/6:1 → Импшульц', '1/4: Имптретьяков — Импкостылев 6:4/5:2 отказ → Импкостылев',
+    '1/2: Импантонов — Импстепаньков 6:0/6:0 → Импантонов', '1/2: Импшульц — Импкостылев 6:3/3:6/10:2 → Импшульц', 'Финал: Импантонов — Импшульц 6:0/6:2 → Импантонов', '3 место: Импстепаньков — Импкостылев 5:7/6:3/10:6 → Импкостылев',
+    'Группа: Женщины 45+ | пол: F', 'Импбукатина — Импадаева 6:3/6:4', 'Импадаева — Имплобанова 7:5/6:7/10:2', 'Импбукатина — Имплобанова 6:3/6:1',
+    'Пары: Мужские пары | пол: M', 'Итог: 1 Импермаков/Имппестов, 2 Импакаев/Импгруздин'].join('\n');
+  const before = db.prepare('SELECT COUNT(*) AS n FROM players').get().n;
+  const bad = await http('/admin/tournaments/import', { method: 'POST', form: { _csrf, text: text.replace('Даты: 2026-08-01 — 2026-08-03', 'Даты: вчера') }, jar });
+  eq(bad.status, 400, 'кривая дата — 400');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM players').get().n, before, 'при ошибке игроки не должны создаваться');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournaments WHERE name = 'Импортный ветеранский'").get().n, 0, 'при ошибке турнир не должен создаваться');
+  const ok = await http('/admin/tournaments/import', { method: 'POST', form: { _csrf, text }, jar });
+  eq(ok.status, 200, 'импорт');
+  const t = db.prepare("SELECT id, is_published, city, category FROM tournaments WHERE name = 'Импортный ветеранский'").get();
+  assert(t && t.is_published === 0 && t.city === 'Вязьма' && t.category === 'A', 'турнир не черновик / поля');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM players').get().n, before + 14, 'новых игроков (7 + 3 + 4)');
+  const res = db.prepare("SELECT p.full_name AS n, r.place, r.discipline FROM results r JOIN players p ON p.id = r.player_id WHERE r.tournament_id = ? ORDER BY r.discipline, r.place, p.full_name").all(t.id);
+  eq(res.filter((r) => r.discipline === 'single').map((r) => `${r.place}:${r.n}`).join(','), '1:Импантонов,2:Импшульц,3:Импкостылев,4:Импстепаньков,5:Импгапеев,5:Имппoлетаев,5:Имптретьяков', 'места одиночки');
+  eq(res.filter((r) => r.discipline === 'double').map((r) => `${r.place}:${r.n}`).join(','), '1:Импермаков,1:Имппестов,2:Импакаев,2:Импгруздин', 'места пар');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t.id).n, 11, 'матчей: 7 сетки + 1 за 3 место + 3 группы');
+  const ret = db.prepare("SELECT m.score FROM matches m JOIN players w ON w.id = m.winner_player_id WHERE m.tournament_id = ? AND w.full_name = 'Импкостылев' AND m.stage LIKE 'b:%'").get(t.id);
+  eq(ret.score, '4:6 2:5 отк.', 'отказ записан от победителя (снявшийся — проигравший)');
+  assert(/новых игроков 14/.test(ok.text) && /Открыть результаты/.test(ok.text), 'отчёт не показан');
+  assert(!/Импортный ветеранский/.test((await http('/tournaments')).text), 'черновик виден на витрине');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t.id); db.prepare("DELETE FROM players WHERE full_name LIKE 'Имп%'").run(); db.prepare('DELETE FROM write_attempts').run();
+  return 'сетка 8 с bye, отказом и матчем за 3-е, группа, пары → черновик; 15 игроков, 11 матчей, места 1/2/3/4/5 и пар; ошибка — без записи';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
