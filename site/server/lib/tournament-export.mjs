@@ -90,13 +90,13 @@ export function tournamentPdf(model) {
     const table = (title, header, rows, widths) => {
       ensure(40);
       doc.font('B').fontSize(11).text(title).moveDown(0.2);
-      const rowH = 16; const x0 = 40;
+      const rowH = title.startsWith('Группа') ? 22 : 16; const x0 = 40;
       const drawRow = (cells, bold) => {
         ensure(rowH + 2);
         let x = x0; const y = doc.y;
         cells.forEach((c, i) => {
           doc.rect(x, y, widths[i], rowH).stroke('#999');
-          doc.font(bold ? 'B' : 'R').fontSize(8).text(String(c), x + 3, y + 4, { width: widths[i] - 6, height: rowH, ellipsis: true, lineBreak: false });
+          doc.font(bold ? 'B' : 'R').fontSize(rowH > 16 ? 9 : 8).text(String(c), x + 3, y + (rowH > 16 ? 6 : 4), { width: widths[i] - 6, height: rowH, ellipsis: true, lineBreak: false });
           x += widths[i];
         });
         doc.y = y + rowH; doc.x = x0;
@@ -109,31 +109,53 @@ export function tournamentPdf(model) {
       table(g.title, g.header, g.rows, [24, nameW, ...Array(n - 4).fill(cellW), 40, 40]);
     }
     for (const b of model.brackets) {
-      ensure(60);
-      doc.font('B').fontSize(11).text(b.title).moveDown(0.3);
-      const cols = b.rounds.length + 1; const colW = Math.min(170, W / cols); const pairH = 40; const gap = 6;
-      const top = doc.y; const maxPairs = b.rounds[0].pairs.length;
-      const totalH = maxPairs * (pairH + gap) + 16;
-      if (top + totalH > doc.page.height - 40) { doc.addPage(); }
+      // СЕТКА ДЛЯ ЗАПОЛНЕНИЯ ОТ РУКИ (замечание владельца 06.09.2026): крупные ячейки,
+      // подписи «Игрок» / «Счёт», у пустых слотов — линии под фамилию, победитель обведён.
+      const cols = b.rounds.length + 1; const colW = Math.floor(W / cols); const boxW = colW - 10;
+      const pairH = 66; const gap = 10; const scoreW = Math.min(96, Math.floor(boxW * 0.42));
+      const maxPairs = b.rounds[0].pairs.length;
+      const totalH = maxPairs * (pairH + gap) + 30;
+      if (doc.y + totalH + 30 > doc.page.height - 40) doc.addPage();
+      doc.font('B').fontSize(11).text(b.title);
+      doc.font('R').fontSize(7.5).fillColor('#555').text('Заполнение: впишите счёт по сетам (например 6:3 6:4) в поле «Счёт», обведите победителя; в следующем круге впишите его фамилию на линии.').fillColor('#000');
+      doc.moveDown(0.4);
       const y0 = doc.y + 14;
+      const drawPair = (x, y, p, empty) => {
+        doc.rect(x, y, boxW, pairH).lineWidth(0.8).stroke(p && p.winner ? '#0e7a52' : '#666');
+        doc.moveTo(x + boxW - scoreW, y).lineTo(x + boxW - scoreW, y + pairH).stroke('#666');
+        doc.moveTo(x, y + pairH / 2).lineTo(x + boxW - scoreW, y + pairH / 2).stroke('#bbb');
+        doc.font('R').fontSize(6).fillColor('#888').text('Игрок 1', x + 4, y + 3, { lineBreak: false }).text('Игрок 2', x + 4, y + pairH / 2 + 3, { lineBreak: false })
+          .text('Счёт', x + boxW - scoreW + 4, y + 3, { lineBreak: false }).fillColor('#000');
+        const rowY = [y + 13, y + pairH / 2 + 13];
+        [p ? p.a : '—', p ? p.b : '—'].forEach((name, i) => {
+          const isWin = p && p.winner === (i === 0 ? 'a' : 'b');
+          if (empty || name === '—') { doc.moveTo(x + 6, rowY[i] + 12).lineTo(x + boxW - scoreW - 6, rowY[i] + 12).lineWidth(0.6).stroke('#333'); }
+          else doc.font(isWin ? 'B' : 'R').fontSize(10).fillColor('#000').text(name, x + 6, rowY[i], { width: boxW - scoreW - 12, lineBreak: false, ellipsis: true });
+        });
+        if (p && p.score) doc.font('B').fontSize(9).fillColor('#000').text(p.score, x + boxW - scoreW + 4, y + pairH / 2 - 6, { width: scoreW - 8, lineBreak: false, ellipsis: true });
+      };
       b.rounds.forEach((r, ri) => {
         const x = 40 + ri * colW;
-        doc.font('B').fontSize(8).text(r.name, x, y0 - 12, { width: colW - 8, lineBreak: false });
-        const span = (pairH + gap) * 2 ** ri; // шаг пары в этом раунде
+        doc.font('B').fontSize(8).fillColor('#000').text(r.name, x, y0 - 12, { width: boxW, lineBreak: false });
+        const span = (pairH + gap) * 2 ** ri;
         r.pairs.forEach((p, k) => {
           const y = y0 + k * span + (span - pairH) / 2;
-          doc.rect(x, y, colW - 8, pairH).stroke(p.winner ? '#0e7a52' : '#999');
-          doc.font(p.winner === 'a' ? 'B' : 'R').fontSize(8).text(p.a, x + 4, y + 4, { width: colW - 16, lineBreak: false, ellipsis: true });
-          doc.font(p.winner === 'b' ? 'B' : 'R').fontSize(8).text(p.b, x + 4, y + 16, { width: colW - 16, lineBreak: false, ellipsis: true });
-          doc.font('R').fontSize(7).fillColor('#555').text(p.score || (p.pending ? 'счёт: ______________' : ''), x + 4, y + 29, { width: colW - 16, lineBreak: false }).fillColor('#000');
+          const empty = !(p.a !== '—' || p.b !== '—');
+          drawPair(x, y, empty ? null : p, empty);
+          // Соединительная линия к следующему кругу
+          if (ri < b.rounds.length) doc.moveTo(x + boxW, y + pairH / 2).lineTo(x + boxW + 10, y + pairH / 2).lineWidth(0.5).stroke('#999');
         });
       });
-      const xw = 40 + b.rounds.length * colW; const spanW = (pairH + gap) * 2 ** b.rounds.length;
-      doc.font('B').fontSize(8).text('Победитель', xw, y0 - 12, { lineBreak: false });
-      const yw = y0 + (spanW / 2 - pairH) / 2;
-      doc.rect(xw, yw, colW - 8, 22).stroke('#0e7a52');
-      doc.font('B').fontSize(8).text(b.champion || '—', xw + 4, yw + 7, { width: colW - 16, lineBreak: false, ellipsis: true });
-      doc.x = 40; doc.y = y0 + totalH; doc.moveDown(0.6);
+      const xw = 40 + b.rounds.length * colW;
+      doc.font('B').fontSize(8).fillColor('#000').text('Победитель', xw, y0 - 12, { lineBreak: false });
+      // Ячейка победителя — на уровне финальной пары.
+      const spanFinal = (pairH + gap) * 2 ** (b.rounds.length - 1);
+      const yw = y0 + (spanFinal - pairH) / 2 + pairH / 2 - 15;
+      doc.rect(xw, yw, boxW, 30).lineWidth(1).stroke('#0e7a52');
+      if (b.champion) doc.font('B').fontSize(10).text(b.champion, xw + 6, yw + 10, { width: boxW - 12, lineBreak: false, ellipsis: true });
+      else doc.moveTo(xw + 6, yw + 22).lineTo(xw + boxW - 6, yw + 22).lineWidth(0.6).stroke('#333');
+      doc.lineWidth(1);
+      doc.x = 40; doc.y = y0 + totalH; doc.moveDown(0.4);
     }
     if (model.results.length) table('Результаты', ['Место', 'Игрок', 'Город'], model.results, [50, 260, 160]);
     doc.font('R').fontSize(7).fillColor('#777').text(model.footer, 40, doc.page.height - 30, { lineBreak: false });
@@ -153,16 +175,19 @@ export async function tournamentDocx(model) {
   for (const g of model.groups) { kids.push(P(g.title, { bold: true, size: 24, after: 80 }), tbl(g.header, g.rows), P('', { after: 160 })); }
   for (const b of model.brackets) {
     kids.push(P(b.title, { bold: true, size: 24, after: 80 }));
-    // Сетка в Word — таблицей: раунды столбцами, каждая пара — три строки (игрок, игрок, счёт).
+    // Сетка в Word — таблицей: раунды столбцами, каждая пара — три строки:
+    // «Игрок 1: …», «Игрок 2: …», «Счёт: …» (пустое — линия под ручку).
     const rounds = b.rounds; const maxPairs = rounds[0].pairs.length;
     const header = [...rounds.map((r) => r.name), 'Победитель'];
     const rows = [];
+    const line = (k, pick) => rounds.map((r) => { const p = r.pairs[Math.floor(k / (maxPairs / r.pairs.length))]; if (!p) return ''; return k % (maxPairs / r.pairs.length) === 0 ? pick(p) : ''; });
+    const slot = (name, win) => `${win ? '✔ ' : ''}${name === '—' ? '________________' : name}`;
     for (let k = 0; k < maxPairs; k++) {
-      const line = (pick) => rounds.map((r) => { const p = r.pairs[Math.floor(k / (r.pairs.length ? maxPairs / r.pairs.length : 1))]; if (!p) return ''; const idx = k % (maxPairs / r.pairs.length); return idx === 0 ? pick(p) : ''; });
-      rows.push([...line((p) => (p.winner === 'a' ? '✔ ' : '') + p.a), k === 0 ? (b.champion || '—') : '']);
-      rows.push([...line((p) => (p.winner === 'b' ? '✔ ' : '') + p.b), '']);
-      rows.push([...line((p) => p.score || (p.pending ? 'счёт: ____________' : '')), '']);
+      rows.push([...line(k, (p) => `Игрок 1: ${slot(p.a, p.winner === 'a')}`), k === 0 ? (b.champion || '________________') : '']);
+      rows.push([...line(k, (p) => `Игрок 2: ${slot(p.b, p.winner === 'b')}`), '']);
+      rows.push([...line(k, (p) => `Счёт: ${p.score || '________________'}`), '']);
     }
+    kids.push(P('Заполнение: впишите счёт по сетам (например 6:3 6:4), отметьте победителя; в следующем круге впишите его фамилию.', { color: '555555', size: 18, after: 80 }));
     kids.push(tbl(header, rows), P('', { after: 160 }));
   }
   if (model.results.length) { kids.push(P('Результаты', { bold: true, size: 24, after: 80 }), tbl(['Место', 'Игрок', 'Город'], model.results)); }
