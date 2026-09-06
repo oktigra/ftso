@@ -99,13 +99,22 @@ body, .site-header, section, footer, .card, .btn, .badge, .status, .stat, .photo
 .brand-name{font-family:'Manrope',sans-serif; font-weight:700; font-size:11.5px; letter-spacing:.06em; line-height:1.1; color:#0d5236;}
 .brand-sub{display:block; font-family:'Inter',sans-serif; font-weight:400; font-size:6.5px; line-height:1.25; letter-spacing:0; color:#4f6b60; white-space:nowrap;}
 :root[data-theme="dark"] .brand-name{color:#fff;} :root[data-theme="dark"] .brand-sub{color:#b9c9c2;}
-/* Мяч: один прогон при загрузке и повтор по наведению; бесконечного цикла в шапке нет. */
-.ftso-ball{transform:translate(240px,111px); animation:ftsoBallFly 5.2s cubic-bezier(.4,.05,.6,.95) 1;}
+/* Мяч (решение владельца 06.09.2026 — компромисс вместо разовой анимации из ТЗ):
+   цикл 18 с — пролёт туда-обратно ~5 с, затем ~13 с покоя в центре. Не мельтешит в шапке,
+   но живёт. По наведению — пролёт сразу. При prefers-reduced-motion стоит в центре. */
+.ftso-ball{transform:translate(240px,111px); animation:ftsoBallCycle 18s cubic-bezier(.4,.05,.6,.95) infinite;}
 .brand:hover .ftso-ball{animation:ftsoBallFly 5.2s cubic-bezier(.4,.05,.6,.95) 1;}
 @keyframes ftsoBallFly{
   0%{ transform:translate(92px,111px) rotate(0deg); }
   50%{ transform:translate(388px,111px) rotate(480deg); }
   100%{ transform:translate(240px,111px) rotate(720deg); }
+}
+@keyframes ftsoBallCycle{
+  0%{ transform:translate(240px,111px) rotate(0deg); }
+  6%{ transform:translate(92px,111px) rotate(-160deg); }
+  20%{ transform:translate(388px,111px) rotate(320deg); }
+  29%{ transform:translate(240px,111px) rotate(560deg); }
+  100%{ transform:translate(240px,111px) rotate(560deg); }
 }
 @media (max-width:1360px){ .brand{margin-right:8px;} }
 /* Крупный знак с ореолом (футер, «О Федерации») */
