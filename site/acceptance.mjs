@@ -2770,6 +2770,10 @@ await check('вопросы и ответы: блок в подвале публ
   const faq = await http('/faq');
   eq(faq.status, 200, '/faq');
   eq((faq.text.match(/class="faq-item"/g) || []).length, FAQ.length, 'на /faq должны быть все вопросы');
+  assert(FAQ.length >= 12, `вопросов должно быть не меньше 12, сейчас ${FAQ.length}`);
+  for (const item of FAQ) assert(item.q.length > 8 && item.a.length > 40, `слишком короткий вопрос/ответ: ${item.q}`);
+  assert(/href="\/courts">«Корты»/.test(faq.text) && /href="\/coaches">«Тренеры»/.test(faq.text), 'ссылки на справочники в ответах не подставились');
+  assert(!/<a href="[^"]*"><a /.test(faq.text), 'вложенные ссылки в ответах');
   assert(!/class="footer-faq"[\s\S]*class="footer-faq"/.test(faq.text), 'на /faq блок не должен дублироваться в подвале');
   assert(/"@type":"FAQPage"/.test(faq.text) && new RegExp(`"name":"${FAQ[0].q.replace('?', '\\?')}"`).test(faq.text), 'нет разметки FAQPage');
   assert(/href="\/organizers">«Организаторам»/.test(faq.text) && /href="mailto:info@ftso67\.ru"/.test(faq.text), 'ссылки внутри ответов не подставились');

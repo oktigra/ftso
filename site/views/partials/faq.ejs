@@ -8,7 +8,13 @@ const list = (typeof faqShort !== 'undefined' && faqShort) ? faq.slice(0, 4) : f
   <% list.forEach(function (item) { %>
     <details class="faq-item">
       <summary><%= item.q %></summary>
-      <p><%- item.a.replace(/«Организаторам»/g, '<a href="/organizers">«Организаторам»</a>').replace(/«Документы»/g, '<a href="/documents">«Документы»</a>').replace(/info@ftso67\.ru/g, '<a href="mailto:info@ftso67.ru">info@ftso67.ru</a>') %></p>
+      <%
+      const links = [['«Организаторам»', '/organizers'], ['«Документы»', '/documents'], ['«Корты»', '/courts'], ['«Клубы»', '/clubs'], ['«Тренеры»', '/coaches']];
+      let html = item.a.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+      links.forEach(function (l) { html = html.split(l[0]).join('<a href="' + l[1] + '">' + l[0] + '</a>'); });
+      html = html.replace(/info@ftso67\.ru/g, '<a href="mailto:info@ftso67.ru">info@ftso67.ru</a>');
+      %>
+      <p><%- html %></p>
     </details>
   <% }); %>
   <% if (typeof faqShort !== 'undefined' && faqShort) { %>
