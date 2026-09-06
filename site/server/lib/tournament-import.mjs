@@ -178,7 +178,13 @@ export function importTournament(db, text, { userId = null } = {}) {
             const a = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(bid, r, 2 * k)?.player_id || null;
             const b = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(bid, r, 2 * k + 1)?.player_id || null;
             if (!a && !b) continue;
-            if (!a || !b) { db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, ?, ?, ?)').run(bid, r + 1, k, a || b); continue; }
+            if (!a || !b) {
+              // Свободная позиция — только в первом круге (bye). Дальше пустой слот = недоигранная пара
+              // предыдущего круга: никого не продвигаем, иначе игрок «выиграет» несыгранный матч.
+              if (r === 0) db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, ?, ?, ?)').run(bid, r + 1, k, a || b);
+              else report.warnings.push(`${s.title}: круг ${r + 1}, пара ${k + 1} — соперник не определён (предыдущая пара не сыграна)`);
+              continue;
+            }
             const m = roundMatches.find((x) => { const ids = [pid(x.a), pid(x.b)]; return ids.includes(a) && ids.includes(b); });
             if (!m || m.skipped) { report.warnings.push(`${s.title}: пара ${r === R - 1 ? 'финала' : 'круга ' + (r + 1)} не сыграна — сетка оставлена открытой`); continue; }
             const sc = normScore(m.score) || 'неявка 2';

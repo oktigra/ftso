@@ -2593,6 +2593,12 @@ await check('импорт турнира из текста: сетка с bye/о
   eq(res.filter((r) => r.discipline === 'single').map((r) => `${r.place}:${r.n}`).join(','), '1:Импантонов,2:Импшульц,3:Импкостылев,4:Импстепаньков,5:Импгапеев,5:Имппoлетаев,5:Имптретьяков', 'места одиночки');
   eq(res.filter((r) => r.discipline === 'double').map((r) => `${r.place}:${r.n}`).join(','), '1:Импермаков,1:Имппестов,2:Импакаев,2:Импгруздин', 'места пар');
   eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t.id).n, 10, 'матчей: 6 сетки (одна пара bye) + 1 за 3 место + 3 группы');
+  // Недоигранный полуфинал не должен «продвигать» соперника как bye: места — только из «Итог».
+  const open = await http('/admin/tournaments/import', { method: 'POST', form: { _csrf, text: ['Турнир: Открытая сетка', 'Даты: 2026-08-05', 'Сетка: Д | пол: F', '1/2: Открытова Одна — Открытова Две 6-0 6-0 → Открытова Одна', '1/2: Открытова Три — Открытова Четыре не сыгран', 'Итог: 1 Открытова Три, 2 Открытова Одна'].join('\n') }, jar });
+  eq(open.status, 200, 'импорт с недоигранным полуфиналом');
+  const ot = db.prepare("SELECT id FROM tournaments WHERE name = 'Открытая сетка'").get().id;
+  eq(db.prepare("SELECT p.full_name FROM results r JOIN players p ON p.id = r.player_id WHERE r.tournament_id = ? AND r.place = 1").get(ot).full_name, 'Открытова Три', 'первое место должно быть из «Итог», а не из ложного bye');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(ot); db.prepare("DELETE FROM players WHERE full_name LIKE 'Открытова %'").run();
   const ret = db.prepare("SELECT m.score FROM matches m JOIN players w ON w.id = m.winner_player_id WHERE m.tournament_id = ? AND w.full_name = 'Импкостылев' AND m.stage LIKE 'b:%'").get(t.id);
   eq(ret.score, '4:6 2:5 отк.', 'отказ записан от победителя (снявшийся — проигравший)');
   assert(/новых игроков 14/.test(ok.text) && /Открыть результаты/.test(ok.text), 'отчёт не показан');
