@@ -67,9 +67,26 @@ function headerAccount(db, req) {
 /** Домены Метрики для CSP: скрипт — .ru, хит визита и cookie-sync — .com. */
 export const METRIKA_HOSTS = ['https://mc.yandex.ru', 'https://mc.yandex.com'];
 
+/**
+ * ПЛАШКА «САЙТ В РАЗРАБОТКЕ» (06.09.2026, второй случай пропажи).
+ * Раньше гасла от ЛЮБОЙ строки в results — тестовый или ещё не опубликованный турнир
+ * снимал её молча. Теперь: переключатель в админке (site_settings.dev_notice =
+ * on | off | auto), по умолчанию auto — плашка висит, пока нет результатов
+ * ОПУБЛИКОВАННОГО турнира. DEV_NOTICE=1 в .env по-прежнему включает принудительно.
+ */
+export function devNoticeMode(db) {
+  const row = db.prepare("SELECT value FROM site_settings WHERE key = 'dev_notice'").get();
+  return ['on', 'off', 'auto'].includes(row?.value) ? row.value : 'auto';
+}
+
 export function devNoticeOn(db, config) {
   if (config.devNotice) return true;
-  return !db.prepare('SELECT 1 AS ok FROM results LIMIT 1').get();
+  const mode = devNoticeMode(db);
+  if (mode === 'on') return true;
+  if (mode === 'off') return false;
+  return !db
+    .prepare('SELECT 1 AS ok FROM results r JOIN tournaments t ON t.id = r.tournament_id WHERE t.is_published = 1 LIMIT 1')
+    .get();
 }
 
 export function createApp(config) {

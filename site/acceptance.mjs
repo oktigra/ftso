@@ -6078,11 +6078,32 @@ await check('плашка «режим разработки»: держится 
   empty.exec(readFileSync('./db/schema.sql', 'utf8'));
   eq(devNoticeOn(empty, { devNotice: false }), true, 'на пустой базе плашка должна стоять');
   empty.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Первый Игрок','Смоленск','M')").run();
-  empty.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Первый турнир', date('now'), 'B')").run();
+  // ЧЕРНОВИК (в т.ч. тестовый турнир) плашку НЕ гасит — 06.09.2026 из-за этого она пропала дважды.
+  empty.prepare("INSERT INTO tournaments (name, end_date, category, is_published) VALUES ('Черновик турнира', date('now'), 'B', 0)").run();
   empty.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (1, 1, 1)').run();
-  eq(devNoticeOn(empty, { devNotice: false }), false, 'с первым результатом плашка должна уйти');
+  eq(devNoticeOn(empty, { devNotice: false }), true, 'результат ЧЕРНОВИКА не должен снимать плашку');
+  empty.prepare("UPDATE tournaments SET is_published = 1 WHERE id = 1").run();
+  eq(devNoticeOn(empty, { devNotice: false }), false, 'с первым результатом опубликованного турнира плашка должна уйти');
   eq(devNoticeOn(empty, { devNotice: true }), true, 'DEV_NOTICE=1 держит плашку и на наполненном сайте');
+  // Переключатель админки: on — всегда, off — никогда, auto — как считалось.
+  const { devNoticeMode } = await import('./server/app.mjs');
+  eq(devNoticeMode(empty), 'auto', 'по умолчанию режим auto');
+  empty.prepare("INSERT INTO site_settings (key, value) VALUES ('dev_notice', 'on')").run();
+  eq(devNoticeOn(empty, { devNotice: false }), true, 'режим on — плашка всегда');
+  empty.prepare("UPDATE site_settings SET value = 'off' WHERE key = 'dev_notice'").run();
+  empty.prepare("UPDATE tournaments SET is_published = 0 WHERE id = 1").run();
+  eq(devNoticeOn(empty, { devNotice: false }), false, 'режим off — плашки нет даже на пустом сайте');
   empty.close();
+  // Переключатель в админке доступен и сохраняется.
+  {
+    const { jar } = await login(ADMIN.user, ADMIN.pass);
+    const dash = await http('/admin', { jar });
+    assert(/action="\/admin\/dev-notice"/.test(dash.text) && /name="mode"/.test(dash.text), 'в сводке нет переключателя плашки');
+    eq((await http('/admin/dev-notice', { method: 'POST', form: { _csrf: tokenFrom(dash.text), mode: 'off' }, jar })).status, 302, 'сохранение режима');
+    eq(db.prepare("SELECT value FROM site_settings WHERE key = 'dev_notice'").get().value, 'off', 'режим не сохранён');
+    db.prepare("DELETE FROM site_settings WHERE key = 'dev_notice'").run();
+    db.prepare('DELETE FROM write_attempts').run();
+  }
   // Тестовая база наполнена — на главной плашки нет, при этом в админку она не лезет никогда.
   assert(!/режиме разработки/.test((await http('/')).text), 'на наполненном сайте плашка осталась');
   return 'пустая база → плашка; первый результат → ушла; DEV_NOTICE=1 → всегда; тестовый сайт наполнен — без плашки';

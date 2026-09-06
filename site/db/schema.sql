@@ -491,6 +491,13 @@ CREATE TABLE IF NOT EXISTS news (
 );
 CREATE INDEX IF NOT EXISTS idx_news_published ON news (is_published, published_at DESC);
 
+-- НАСТРОЙКИ САЙТА по ключу (переключатели админки; тексты — в site_texts).
+CREATE TABLE IF NOT EXISTS site_settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- ТЕКСТЫ САЙТА по ключу (заголовки/подводки главной, «О Федерации»), правятся в админке.
 CREATE TABLE IF NOT EXISTS site_texts (
   key        TEXT PRIMARY KEY,

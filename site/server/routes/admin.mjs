@@ -9,6 +9,7 @@ import { mountTournamentSheets } from '../lib/tournament-sheet-routes.mjs';
 import { protocolKeyFromLabel } from '../lib/tournament-export.mjs';
 import { postInBackground } from '../lib/max-post.mjs';
 import { importTournament } from '../lib/tournament-import.mjs';
+import { devNoticeMode, devNoticeOn } from '../app.mjs';
 import { ERASED_LABEL } from '../lib/rating-service.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
@@ -152,6 +153,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     res.render('admin/dashboard', {
       title: 'Админка — ФТСО',
       counts,
+      devNoticeAdmin: { mode: devNoticeMode(db), shown: devNoticeOn(db, config), forced: config.devNotice },
       standings,
       statusText: standings ? statusLabel(standings.status) : null,
       lock: lockState(db),
@@ -665,6 +667,20 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         return next(err);
       }
     },
+  );
+
+  // ПЛАШКА «САЙТ В РАЗРАБОТКЕ»: авто / всегда / выключить (решение владельца 06.09.2026).
+  app.post(
+    '/admin/dev-notice',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const mode = ['on', 'off', 'auto'].includes(req.body.mode) ? req.body.mode : 'auto';
+      db.prepare("INSERT INTO site_settings (key, value, updated_at) VALUES ('dev_notice', ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at").run(mode);
+      logAction(db, actorId(req), 'site.dev_notice', null, { mode });
+      const what = { on: 'показывается всегда', off: 'выключена', auto: 'автоматически — до первого результата опубликованного турнира' }[mode];
+      flash(req, res, 'ok', `Плашка на сайте: ${what}.`, '/admin');
+    }),
   );
 
   // Опубликовать / снять с публикации — одной кнопкой в строке.
