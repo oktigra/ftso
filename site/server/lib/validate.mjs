@@ -15,7 +15,7 @@ export class ValidationError extends Error {
 // здесь, жёсткого CHECK в схеме нет.
 export const AGE_GROUPS = ['до 19', '19-34', '35-44', '45-54', '55+'];
 export const SEXES = ['M', 'F'];
-export const CATEGORIES = ['A', 'B'];
+export const CATEGORIES = ['A', 'B', 'C']; // C — прочие/любительские турниры (06.09.2026), коэффициент в rating/rating.mjs
 // Типы турниров по ТЗ п. 4.3: командные встречи, первенства, иные турниры.
 export const TOURNAMENT_KINDS = ['team', 'championship', 'other'];
 export const TOURNAMENT_KIND_RU = { team: 'Командная встреча', championship: 'Первенство', other: 'Турнир' };

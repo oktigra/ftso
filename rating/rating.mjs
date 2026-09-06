@@ -13,7 +13,7 @@ export const DEFAULT_CONFIG = {
     { maxPlace: 16, points: 10 }, // 9-16 -> 10
   ],
   pointsBeyondTable: 0, // место больше последнего maxPlace
-  categoryCoef: { A: 2, B: 1 },
+  categoryCoef: { A: 2, B: 1, C: 0.5 }, // C — любительские/клубные турниры (06.09.2026): половина очков
   countBest: 6, // сколько лучших турниров в зачёт
   windowDays: 364, // 52 недели
   ratingStatus: 'preliminary', // вручную: "preliminary" первый год, потом "final"

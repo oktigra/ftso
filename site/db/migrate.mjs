@@ -134,6 +134,30 @@ function upgradeMatches(db) {
   return true;
 }
 
+/** Пересборка таблицы с CHECK (category IN ('A','B')) → ('A','B','C'); данные и колонки — как были. */
+function relaxCategoryCheck(db, table) {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
+  if (!row || !row.sql.includes("category IN ('A','B'))")) return false;
+  const newSql = row.sql.replace(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?\w+"?/, `CREATE TABLE ${table}_new`).replace("category IN ('A','B'))", "category IN ('A','B','C'))");
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => `"${c.name}"`).join(', ');
+  const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL").all(table).map((r) => r.sql);
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.transaction(() => {
+      db.exec(newSql);
+      db.exec(`INSERT INTO ${table}_new (${cols}) SELECT ${cols} FROM ${table}`);
+      db.exec(`DROP TABLE ${table}`);
+      db.exec(`ALTER TABLE ${table}_new RENAME TO ${table}`);
+      for (const sql of indexes) db.exec(sql);
+    })();
+    const bad = db.prepare('PRAGMA foreign_key_check').all();
+    if (bad.length) throw new Error(`после пересборки ${table} нарушены внешние ключи: ${JSON.stringify(bad.slice(0, 3))}`);
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
+  return true;
+}
+
 /**
  * ЭТАП МАТЧА (06.09.2026): stage 'manual' / 'g:<group>' / 'b:<bracket>' и уникальность
  * «турнир + победитель + проигравший + разряд + этап» — те же двое могут встретиться в
@@ -220,6 +244,11 @@ export function migrate() {
   //     представителю: они ссылаются на consents.guardian_id, поэтому раньше
   //     шага 2 просто не создадутся («no such column»).
   db.exec(readFileSync(resolve(HERE, 'schema.sql'), 'utf8'));
+  // КАТЕГОРИЯ C (06.09.2026, решение владельца): CHECK (category IN ('A','B')) в tournaments и
+  // tournament_requests не правится ALTER'ом — пересборка по штатной процедуре SQLite:
+  // foreign_keys OFF (иначе DROP родителя каскадно унесёт результаты и матчи), копия, переименование.
+  relaxCategoryCheck(db, 'tournaments');
+  relaxCategoryCheck(db, 'tournament_requests');
   const rebuilt = upgradeConsents(db);
   const accountsRebuilt = upgradePlayerAccounts(db);
   // Флаг публикуемости для баз, созданных до журнала согласий. Дефолт 0:
