@@ -43,10 +43,16 @@
          кабинет игрока/представителя; когда человек уже вошёл — «Кабинет».
          Вход в админку здесь НЕ показывается намеренно — только /login. */
       %>
-      <a class="btn btn--secondary btn--login" href="<%= cabinetSignedIn ? '/cabinet' : '/cabinet/login' %>">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-        <span class="btn-label"><%= cabinetSignedIn ? 'Кабинет' : 'Вход' %></span>
-      </a>
+      <% if (headerAccount) { %>
+        <a class="btn btn--secondary btn--login btn--account" href="<%= headerAccount.href %>" title="<%= headerAccount.title %>" aria-label="<%= headerAccount.title %>">
+          <span class="avatar-initials" aria-hidden="true"><%= headerAccount.initials %></span>
+        </a>
+      <% } else { %>
+        <a class="btn btn--secondary btn--login" href="/cabinet/login">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+          <span class="btn-label">Вход</span>
+        </a>
+      <% } %>
       <a class="btn btn--primary btn--register" href="/register">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0"/><line x1="18" y1="8" x2="18" y2="14"/><line x1="15" y1="11" x2="21" y2="11"/></svg>
         <span class="btn-label">Регистрация</span>
