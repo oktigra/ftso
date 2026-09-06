@@ -92,10 +92,27 @@ body, .site-header, section, footer, .card, .btn, .badge, .status, .stat, .photo
 .header-inner{display:flex; align-items:center; gap:1rem; min-height:72px;}
 .brand{display:flex; align-items:center; gap:.7rem; color:var(--text); font-family:'Manrope',sans-serif;}
 .brand:hover{color:var(--text);}
-.brand-mark{width:44px; height:44px; border-radius:13px; background:linear-gradient(135deg,#0e7a52,#123d68); display:grid; place-items:center; box-shadow:var(--shadow-sm); flex:none;}
-.brand-mark svg{width:26px; height:26px;}
-.brand-name{font-weight:800; font-size:1.05rem; letter-spacing:-.01em; line-height:1.05;}
-.brand-sub{display:block; font-family:'Inter',sans-serif; font-weight:500; font-size:.72rem; color:var(--muted); letter-spacing:.01em;}
+/* ЛОГОТИП (docs/logo-spec.md, 06.09.2026): компактный знак 80×37, подпись строкой справа, зазор 6 px */
+.brand{gap:6px; margin-right:20px;} /* + gap шапки = ≥35 px до первого пункта навигации (ТЗ) */
+.brand-mark{width:80px; height:37px; display:block; border-radius:0; background:none; box-shadow:none; flex:none;}
+.brand-mark svg{width:80px; height:37px; display:block;}
+.brand-name{font-family:'Manrope',sans-serif; font-weight:700; font-size:11.5px; letter-spacing:.06em; line-height:1.1; color:#0d5236;}
+.brand-sub{display:block; font-family:'Inter',sans-serif; font-weight:400; font-size:6.5px; line-height:1.25; letter-spacing:0; color:#4f6b60; white-space:nowrap;}
+:root[data-theme="dark"] .brand-name{color:#fff;} :root[data-theme="dark"] .brand-sub{color:#b9c9c2;}
+/* Мяч: один прогон при загрузке и повтор по наведению; бесконечного цикла в шапке нет. */
+.ftso-ball{transform:translate(240px,111px); animation:ftsoBallFly 5.2s cubic-bezier(.4,.05,.6,.95) 1;}
+.brand:hover .ftso-ball{animation:ftsoBallFly 5.2s cubic-bezier(.4,.05,.6,.95) 1;}
+@keyframes ftsoBallFly{
+  0%{ transform:translate(92px,111px) rotate(0deg); }
+  50%{ transform:translate(388px,111px) rotate(480deg); }
+  100%{ transform:translate(240px,111px) rotate(720deg); }
+}
+@media (max-width:1360px){ .brand{margin-right:8px;} }
+/* Крупный знак с ореолом (футер, «О Федерации») */
+.logo-seal{filter:drop-shadow(0 0 18px rgba(13,82,54,.55)); max-width:100%; height:auto;}
+.brand--seal{display:inline-block; padding:.2rem 0;}
+.fed-seal{margin:0 0 1rem;} .fed-seal img{max-width:280px;}
+:root[data-theme="dark"] .logo-seal{filter:drop-shadow(0 0 16px rgba(46,207,143,.45));}
 /* Разделов 12 (по договору), а не 6 как в макете: шесть основных — пилюлями в ряд,
    как в дизайне, остальные — под «Ещё». nowrap держит ОДИН ряд высотой 72px. */
 .nav-menu{display:flex; align-items:center; gap:.25rem; margin:0 auto; list-style:none; padding:0; flex-wrap:nowrap;}
@@ -313,7 +330,10 @@ tbody tr:hover{background:var(--surface-2);}
   .btn--register, .btn--login{padding:.55rem;}
   .header-actions{gap:.35rem;}
   .header-inner{gap:.6rem;}
-  .brand-sub{display:none;}
+  .brand-sub{display:none;} .brand-name{font-size:12px;}
+  /* Телефон: знак меньше и без правого отступа — иначе шапка не влезает в 360 px */
+  .brand{margin-right:0; gap:5px;}
+  .brand-mark, .brand-mark svg{width:62px; height:29px;}
 }
 /* Печатная версия рейтинга (/rating/print): на экране — простая страница, на бумаге — только таблица. */
 .print-sheet{padding:1.5rem 0 3rem;}

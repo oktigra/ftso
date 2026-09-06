@@ -2733,6 +2733,33 @@ await check('партнёры: полоса под первым экраном �
   return 'приглашение всегда; логотип со ссылкой на главной и в подвале; выключенный скрыт и 404; тексты правятся; удаление чистит файл';
 });
 
+await check('логотип ФТСО (ТЗ дизайна): знак 80×37 инлайном в шапке с анимацией мяча, крупный знак в подвале и «О Федерации», favicon и OG из нового знака', async () => {
+  const home = await http('/');
+  assert(/class="brand-mark"[\s\S]{0,200}viewBox="0 0 480 222"[^>]*width="80" height="37"/.test(home.text), 'в шапке нет инлайн-знака 80×37');
+  assert(/class="ftso-ball"/.test(home.text), 'мяч не инлайнится (анимация не заработает)');
+  assert(/Федерация тенниса<br>Смоленской области/.test(home.text), 'подпись не в две строки');
+  assert(!/ФЕДЕРАЦИЯ ТЕННИСА/.test(home.text.split('</header>')[0]), 'круговая надпись в шапке запрещена ТЗ');
+  const foot = await http('/contacts');
+  assert(/class="logo-seal" src="\/static\/img\/logo\/ftso-seal\.svg"/.test(foot.text) && /alt="Федерация тенниса Смоленской области"/.test(foot.text), 'в подвале нет основного знака с alt');
+  assert(/logo-seal/.test((await http('/federation')).text), 'на «О Федерации» нет основного знака');
+  assert(/rel="icon" href="\/static\/img\/logo\/ftso-favicon\.svg"/.test(home.text), 'favicon не переключён на новый знак');
+  // файлы отдаются и это SVG/PNG нужных размеров
+  for (const f of ['ftso-seal.svg', 'ftso-mark.svg', 'ftso-mark-animated.svg', 'ftso-favicon.svg']) {
+    const r = await http(`/static/img/logo/${f}`);
+    eq(r.status, 200, `не отдаётся ${f}`);
+    assert(/viewBox="0 0 (480 222|64 64)"/.test(r.text), `${f}: чужой viewBox`);
+    assert(!/c2pa|<metadata>/.test(r.text), `${f}: остались метаданные c2pa`);
+  }
+  const og = Buffer.from(await (await fetch(inst.base + '/static/img/og-ftso.png')).arrayBuffer());
+  const sharpMod = (await import('sharp')).default;
+  const meta = await sharpMod(og).metadata();
+  eq(`${meta.width}×${meta.height}`, '1200×630', 'OG-картинка не 1200×630');
+  const css = (await http('/static/css/site.css')).text;
+  assert(/@keyframes ftsoBallFly/.test(css) && /animation:ftsoBallFly 5\.2s[^;]*1;/.test(css), 'в CSS нет одноразовой анимации мяча');
+  assert(/\.logo-seal\{filter:drop-shadow/.test(css), 'нет ореола у основного знака');
+  return 'шапка: инлайн-знак 80×37 с мячом и подписью; подвал и «О Федерации»: основной знак с ореолом; favicon и OG 1200×630 из нового знака';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
@@ -3639,14 +3666,14 @@ await check('аудит WGR 03.09.2026: robots, sitemap, llms, favicon, canonica
   eq((await http('/llms.txt')).status, 200, 'llms.txt');
   const ico = await http('/favicon.ico');
   eq(ico.status, 200, 'favicon.ico');
-  eq((await http('/static/img/favicon.svg')).status, 200, 'favicon.svg');
+  eq((await http('/static/img/logo/ftso-favicon.svg')).status, 200, 'ftso-favicon.svg');
   const og = await http('/static/img/og-ftso.png');
   eq(og.status, 200, 'og-картинка');
 
   const home = await http('/');
   assert(home.text.includes('<link rel="canonical" href="https://ftso67.ru/">'), 'canonical на главной');
   for (const tag of ['og:title', 'og:description', 'og:image', 'og:url']) assert(home.text.includes(`property="${tag}"`), `нет ${tag}`);
-  assert(home.text.includes('<link rel="icon" href="/static/img/favicon.svg"'), 'ссылки на значок нет');
+  assert(home.text.includes('<link rel="icon" href="/static/img/logo/ftso-favicon.svg"'), 'ссылки на значок нет');
   assert(home.text.includes('application/ld+json') && home.text.includes('"@type":"SportsOrganization"'), 'JSON-LD организации на главной');
   assert(home.text.includes('ОГРН 1176733009243, ИНН 6732145252'), 'в подвале нет ОГРН/ИНН');
   eq(home.headers.get('permissions-policy'), 'camera=(), microphone=(), geolocation=(), payment=(), usb=()', 'Permissions-Policy');

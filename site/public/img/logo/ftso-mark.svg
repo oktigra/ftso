@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 222" width="480" height="222" role="img" aria-label="ФТСО">
+  <rect x="3" y="3" width="474" height="216" rx="26" fill="#0d5236"></rect>
+  <g fill="none" stroke="#2ecf8f" stroke-width="7">
+    <rect x="26" y="24" width="428" height="174"></rect>
+    <path d="M26 46 H454 M26 176 H454 M104 46 V176 M376 46 V176 M104 111 H376 M240 20 V202"></path>
+  </g>
+  <circle cx="240" cy="111" r="62" fill="#f4f7f4"></circle>
+  <path d="M196 67 A 70 70 0 0 1 196 155" fill="none" stroke="#0d5236" stroke-width="7" stroke-linecap="round"></path>
+  <path d="M284 67 A 70 70 0 0 0 284 155" fill="none" stroke="#0d5236" stroke-width="7" stroke-linecap="round"></path>
+</svg>
