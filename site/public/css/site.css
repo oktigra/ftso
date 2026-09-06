@@ -313,14 +313,26 @@ tbody tr:hover{background:var(--surface-2);}
 .t-row.t-row--ed .ro{display:none;} .t-row.t-row--ed .ed{display:inline-block;}
 .t-row.t-row--ed input[data-age-custom][hidden]{display:none;}
 @media print{
+  /* ПЕЧАТЬ (замечания владельца 06.09): всё чёрным, без слипания букв, альбом, рамки контрастные */
+  @page{size:A4 landscape; margin:12mm;}
   .print-toolbar{display:none;}
-  .bracket{overflow:visible; flex-wrap:nowrap;} .bracket__pair{break-inside:avoid;} .bracket__round{min-width:10rem;}
-  .bracket__pair, .bracket__slot{border-color:#999; background:#fff;} .bracket__slot--win{background:#e8f3ec; font-weight:700;}
-  body{background:#fff; color:#000;}
+  body{background:#fff !important; color:#000 !important;}
+  .print-sheet *{color:#000 !important; letter-spacing:0 !important; text-shadow:none !important; word-spacing:normal !important;}
+  .print-sheet h1{font-size:20pt; margin:0 0 2pt;} .print-sheet h2{font-size:13pt; margin:10pt 0 4pt;} .print-sheet h3{font-size:11pt;}
+  .print-sheet .muted{font-size:9.5pt;}
   .print-sheet{padding:0;}
-  .print-table th, .print-table td{border-color:#999;}
-  .print-table th{background:#eee;}
-  .print-table tr{page-break-inside:avoid;}
+  .bracket{overflow:visible !important; display:flex; flex-wrap:nowrap; gap:6mm; align-items:stretch;}
+  .bracket__round{min-width:0; flex:1 1 0; gap:3mm;} .bracket__pairs{gap:4mm;}
+  .bracket__title{font-size:8pt; text-transform:uppercase;}
+  .bracket__pair{border:1.2pt solid #000 !important; border-radius:3pt; background:#fff !important; padding:2pt; break-inside:avoid; gap:2pt;}
+  .bracket__pair--done{border-width:1.2pt;}
+  .bracket__slot{border:0.7pt solid #555; border-radius:2pt; background:#fff !important; font-size:10.5pt; padding:3pt 5pt; white-space:normal; overflow:visible;}
+  .bracket__slot--win{border:2pt solid #000 !important; background:#eaeaea !important; font-weight:700;}
+  .bracket__score{font-size:9pt; padding:1pt 5pt;}
+  .print-table{font-size:10pt;} .print-table th, .print-table td{border:0.7pt solid #000 !important; padding:3pt 5pt;}
+  .print-table th{background:#e6e6e6 !important;} .print-table tr{page-break-inside:avoid;}
+  .group-table td.group-win{background:#e6e6e6 !important;} .group-table td.group-loss{background:#fff !important;}
+  .print-foot{margin-top:8pt; font-size:8pt;}
 }
 /* mobile performance — тушим тяжёлые для телефона эффекты */
 @media (max-width:960px){
@@ -555,7 +567,8 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .avatar-initials{display:inline-grid; place-items:center; width:32px; height:32px; border-radius:999px; background:var(--primary); color:#fff; font-family:'Manrope',sans-serif; font-weight:800; font-size:.85rem; letter-spacing:.02em;}
 .btn--max{margin-top:.5rem;}
 .bracket{display:flex; gap:1rem; overflow-x:auto; padding:.5rem 0; align-items:stretch;}
-.bracket__round{display:flex; flex-direction:column; justify-content:space-around; gap:.6rem; min-width:15rem;}
+.bracket__round{display:flex; flex-direction:column; gap:.6rem; min-width:15rem;}
+.bracket__pairs{flex:1; display:flex; flex-direction:column; justify-content:space-around; gap:.6rem;}
 .bracket__title{font-family:'Manrope',sans-serif; font-size:.78rem; font-weight:700; text-transform:uppercase; color:var(--muted);}
 .bracket__pair{border:1px solid var(--border); border-radius:.7rem; background:var(--surface); padding:.35rem; display:flex; flex-direction:column; gap:.25rem;}
 .bracket__pair--done{border-color:var(--primary);}
