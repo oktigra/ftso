@@ -27,6 +27,8 @@
             <% navMore.forEach(function (item) { %>
               <li><a href="<%= item.path %>"<%= currentPath === item.path ? ' aria-current="page"' : '' %>><%= item.title %></a></li>
             <% }); %>
+            <li><a href="/organizers"<%= currentPath === '/organizers' ? ' aria-current="page"' : '' %>>Организаторам</a></li>
+            <li class="nav-search"><form method="get" action="/search" role="search"><input type="search" name="q" placeholder="Поиск по сайту ↵" aria-label="Поиск по сайту — Enter для поиска" maxlength="80" enterkeyhint="search"></form></li>
           </ul>
         </li>
       </ul>

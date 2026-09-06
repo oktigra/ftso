@@ -13,6 +13,7 @@ import {
 } from '../lib/validate.mjs';
 import { DIRECTORIES, listDirectory, directoryFilterOptions } from '../lib/directories.mjs';
 import { descriptionFrom } from '../lib/seo.mjs';
+import { siteSearch } from '../lib/search.mjs';
 import { siteText, paragraphs } from '../lib/texts.mjs';
 import { listGroups, scoreFor } from '../lib/groups.mjs';
 import { listBrackets } from '../lib/brackets.mjs';
@@ -115,6 +116,11 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
   // --- турниры -------------------------------------------------------------
   // ОРГАНИЗАТОРАМ И СЕКРЕТАРЯМ (06.09.2026): одна страница, где собрано всё, что уже есть —
   // заявка на проведение, протокол, как результаты попадают в рейтинг, FAQ.
+  app.get('/search', (req, res) => {
+    const q = String(req.query.q || '').trim().slice(0, 80);
+    res.render('search', { title: q ? `«${q}» — поиск — ФТСО` : 'Поиск по сайту — ФТСО', metaDescription: 'Поиск по турнирам, игрокам, новостям, тренерам, кортам и клубам Федерации тенниса Смоленской области.', result: siteSearch(db, q), section: null });
+  });
+
   app.get('/organizers', (req, res) => {
     res.render('organizers', {
       title: 'Организаторам и секретарям турниров — ФТСО',
