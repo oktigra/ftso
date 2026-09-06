@@ -1,0 +1,31 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<main id="top">
+  <section class="section-pad">
+    <div class="container stack">
+      <h1>Поиск по сайту</h1>
+      <form method="get" action="/search" class="filters" role="search">
+        <div class="field field--wide"><label for="sq">Что ищем</label>
+          <input id="sq" type="search" name="q" value="<%= result.q %>" maxlength="80" placeholder="турнир, фамилия, город, корт…" autofocus></div>
+        <div class="field"><button class="btn btn--primary" type="submit">Найти</button></div>
+      </form>
+      <% if (result.q.length < 2) { %>
+        <p class="muted">Введите хотя бы две буквы.</p>
+      <% } else if (!result.total) { %>
+        <div class="panel notice">По запросу «<%= result.q %>» ничего не найдено.</div>
+      <% } else { %>
+        <% result.groups.forEach(function (g) { %>
+          <div class="panel">
+            <h2><%= g.title %> <span class="muted">(<%= g.items.length %><%= g.more ? '+' : '' %>)</span></h2>
+            <ul class="search-list">
+              <% g.items.forEach(function (i) { %><li><a href="<%= i.href %>"><%= i.title %></a><% if (i.note) { %> <span class="muted">— <%= i.note %></span><% } %></li><% }); %>
+            </ul>
+          </div>
+        <% }); %>
+      <% } %>
+    </div>
+  </section>
+</main>
+
+<%- include('partials/footer') %>

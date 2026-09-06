@@ -2370,6 +2370,26 @@ await check('главная: роль-кнопки, карточки турни�
   return 'кнопки ×4, карточки (будущий первым), топ-10 с табами, лента появляется с матчем и исчезает без';
 });
 
+await check('поиск по сайту: турниры, игроки, новости, тренеры, корты, клубы; регистр кириллицы и ё; черновики и обезличенные не ищутся', async () => {
+  const { siteSearch } = await import('./server/lib/search.mjs');
+  const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, city) VALUES ('Поисковый кубок Ёлки', date('now','-2 day'), 'B', 'Гагарин')").run().lastInsertRowid);
+  const d = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, city, is_published) VALUES ('Скрытый поисковый', date('now','-2 day'), 'B', 'Гагарин', 0)").run().lastInsertRowid);
+  const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Поисков Пётр Ёлкин', 'Гагарин', 'M')").run().lastInsertRowid);
+  db.prepare("INSERT INTO courts (name, city, address) VALUES ('Корт Поисковый', 'Гагарин', 'ул. Ёлочная, 1')").run();
+  const r = siteSearch(db, 'ЕЛК');
+  assert(r.groups.some((g) => g.title === 'Турниры' && g.items.some((i) => i.title === 'Поисковый кубок Ёлки')), 'турнир не найден без учёта регистра/ё');
+  assert(r.groups.some((g) => g.title === 'Игроки' && g.items.some((i) => i.href === `/player/${pid}`)), 'игрок не найден');
+  assert(siteSearch(db, 'ёлочн').groups.some((g) => g.title === 'Корты'), 'корт не найден по адресу');
+  assert(!JSON.stringify(r).includes('Скрытый поисковый'), 'черновик турнира попал в поиск');
+  const page = await http('/search?q=' + encodeURIComponent('гагарин'));
+  eq(page.status, 200, '/search');
+  assert(/Поисковый кубок Ёлки/.test(page.text) && /Поисков Пётр Ёлкин/.test(page.text), 'на странице нет результатов по городу');
+  assert(/ничего не найдено/.test((await http('/search?q=' + encodeURIComponent('zzzqqq'))).text), 'нет сообщения о пустом результате');
+  assert(/name="q"[^>]*placeholder="Поиск по сайту/.test((await http("/")).text), "в меню «Ещё» нет строки поиска");
+  db.prepare('DELETE FROM tournaments WHERE id IN (?, ?)').run(t, d); db.prepare('DELETE FROM players WHERE id = ?').run(pid); db.prepare("DELETE FROM courts WHERE name = 'Корт Поисковый'").run();
+  return `ЕЛК → турнир, игрок, корт (ё/регистр); черновик скрыт; страница и строка в меню`;
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });
