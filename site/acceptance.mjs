@@ -6078,34 +6078,35 @@ await check('плашка «режим разработки»: держится 
   empty.exec(readFileSync('./db/schema.sql', 'utf8'));
   eq(devNoticeOn(empty, { devNotice: false }), true, 'на пустой базе плашка должна стоять');
   empty.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Первый Игрок','Смоленск','M')").run();
-  // ЧЕРНОВИК (в т.ч. тестовый турнир) плашку НЕ гасит — 06.09.2026 из-за этого она пропала дважды.
-  empty.prepare("INSERT INTO tournaments (name, end_date, category, is_published) VALUES ('Черновик турнира', date('now'), 'B', 0)").run();
-  empty.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (1, 1, 1)').run();
-  eq(devNoticeOn(empty, { devNotice: false }), true, 'результат ЧЕРНОВИКА не должен снимать плашку');
-  empty.prepare("UPDATE tournaments SET is_published = 1 WHERE id = 1").run();
-  eq(devNoticeOn(empty, { devNotice: false }), false, 'с первым результатом опубликованного турнира плашка должна уйти');
-  eq(devNoticeOn(empty, { devNotice: true }), true, 'DEV_NOTICE=1 держит плашку и на наполненном сайте');
-  // Переключатель админки: on — всегда, off — никогда, auto — как считалось.
+  // РЕШЕНИЕ ВЛАДЕЛЬЦА 06.09.2026: плашка висит, пока её не снимут вручную. Наполнение,
+  // результаты и публикация турниров её НЕ гасят (дважды пропадала из-за тестового турнира).
   const { devNoticeMode } = await import('./server/app.mjs');
-  eq(devNoticeMode(empty), 'auto', 'по умолчанию режим auto');
-  empty.prepare("INSERT INTO site_settings (key, value) VALUES ('dev_notice', 'on')").run();
-  eq(devNoticeOn(empty, { devNotice: false }), true, 'режим on — плашка всегда');
-  empty.prepare("UPDATE site_settings SET value = 'off' WHERE key = 'dev_notice'").run();
-  empty.prepare("UPDATE tournaments SET is_published = 0 WHERE id = 1").run();
-  eq(devNoticeOn(empty, { devNotice: false }), false, 'режим off — плашки нет даже на пустом сайте');
+  eq(devNoticeMode(empty), 'on', 'по умолчанию плашка включена');
+  empty.prepare("INSERT INTO tournaments (name, end_date, category, is_published) VALUES ('Опубликованный', date('now'), 'B', 1)").run();
+  empty.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (1, 1, 1)').run();
+  eq(devNoticeOn(empty, { devNotice: false }), true, 'результат ОПУБЛИКОВАННОГО турнира не должен снимать плашку сам');
+  empty.prepare("INSERT INTO site_settings (key, value) VALUES ('dev_notice', 'off')").run();
+  eq(devNoticeOn(empty, { devNotice: false }), false, 'после снятия вручную плашки нет');
+  eq(devNoticeOn(empty, { devNotice: true }), true, 'DEV_NOTICE=1 держит плашку даже при снятой');
+  empty.prepare("UPDATE site_settings SET value = 'on' WHERE key = 'dev_notice'").run();
+  eq(devNoticeOn(empty, { devNotice: false }), true, 'плашку можно вернуть');
   empty.close();
-  // Переключатель в админке доступен и сохраняется.
+  // Кнопка в сводке: снять и вернуть.
   {
     const { jar } = await login(ADMIN.user, ADMIN.pass);
     const dash = await http('/admin', { jar });
-    assert(/action="\/admin\/dev-notice"/.test(dash.text) && /name="mode"/.test(dash.text), 'в сводке нет переключателя плашки');
-    eq((await http('/admin/dev-notice', { method: 'POST', form: { _csrf: tokenFrom(dash.text), mode: 'off' }, jar })).status, 302, 'сохранение режима');
+    assert(/action="\/admin\/dev-notice"/.test(dash.text) && /Снять плашку/.test(dash.text), 'в сводке нет кнопки «Снять плашку»');
+    const _c = tokenFrom(dash.text);
+    eq((await http('/admin/dev-notice', { method: 'POST', form: { _csrf: _c, mode: 'off' }, jar })).status, 302, 'снятие');
     eq(db.prepare("SELECT value FROM site_settings WHERE key = 'dev_notice'").get().value, 'off', 'режим не сохранён');
+    assert(/Вернуть плашку/.test((await http('/admin', { jar })).text), 'после снятия нет кнопки «Вернуть плашку»');
+    eq((await http('/admin/dev-notice', { method: 'POST', form: { _csrf: _c, mode: 'on' }, jar })).status, 302, 'возврат');
     db.prepare("DELETE FROM site_settings WHERE key = 'dev_notice'").run();
     db.prepare('DELETE FROM write_attempts').run();
   }
   // Тестовая база наполнена — на главной плашки нет, при этом в админку она не лезет никогда.
-  assert(!/режиме разработки/.test((await http('/')).text), 'на наполненном сайте плашка осталась');
+  // На тестовом инстансе плашка не снята — она и должна висеть (ручной режим).
+  assert(/режиме разработки/.test((await http('/')).text), 'плашка должна висеть, пока её не сняли вручную');
   return 'пустая база → плашка; первый результат → ушла; DEV_NOTICE=1 → всегда; тестовый сайт наполнен — без плашки';
 });
 
