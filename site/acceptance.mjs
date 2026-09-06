@@ -2586,7 +2586,7 @@ await check('импорт турнира из текста: сетка с bye/о
   const res = db.prepare("SELECT p.full_name AS n, r.place, r.discipline FROM results r JOIN players p ON p.id = r.player_id WHERE r.tournament_id = ? ORDER BY r.discipline, r.place, p.full_name").all(t.id);
   eq(res.filter((r) => r.discipline === 'single').map((r) => `${r.place}:${r.n}`).join(','), '1:Импантонов,2:Импшульц,3:Импкостылев,4:Импстепаньков,5:Импгапеев,5:Имппoлетаев,5:Имптретьяков', 'места одиночки');
   eq(res.filter((r) => r.discipline === 'double').map((r) => `${r.place}:${r.n}`).join(','), '1:Импермаков,1:Имппестов,2:Импакаев,2:Импгруздин', 'места пар');
-  eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t.id).n, 11, 'матчей: 7 сетки + 1 за 3 место + 3 группы');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t.id).n, 10, 'матчей: 6 сетки (одна пара bye) + 1 за 3 место + 3 группы');
   const ret = db.prepare("SELECT m.score FROM matches m JOIN players w ON w.id = m.winner_player_id WHERE m.tournament_id = ? AND w.full_name = 'Импкостылев' AND m.stage LIKE 'b:%'").get(t.id);
   eq(ret.score, '4:6 2:5 отк.', 'отказ записан от победителя (снявшийся — проигравший)');
   assert(/новых игроков 14/.test(ok.text) && /Открыть результаты/.test(ok.text), 'отчёт не показан');
