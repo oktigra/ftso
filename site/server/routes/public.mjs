@@ -22,6 +22,7 @@ import {
   publishedNews,
   newsById,
   newsAttachments,
+  NEWS_CATEGORIES,
   tournamentList,
   tournamentFilterOptions,
   homeStats,
@@ -78,8 +79,10 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
     const q = String(req.query.q || '').trim().slice(0, 80);
     res.render('news-list', {
       title: 'Новости — ФТСО',
-      news: publishedNews(db, 50, q),
+      news: publishedNews(db, 50, q, String(req.query.category || '')),
       q,
+      category: NEWS_CATEGORIES[String(req.query.category || '')] ? String(req.query.category) : '',
+      categories: NEWS_CATEGORIES,
       section: sectionFor('/news'),
     });
   });

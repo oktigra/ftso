@@ -271,6 +271,7 @@ export function migrate() {
   for (const c of ['city', 'courts_count', 'season', 'club', 'contact']) addColumnIfMissing(db, 'courts', c, 'TEXT');
   for (const c of ['city', 'map_url']) addColumnIfMissing(db, 'clubs', c, 'TEXT');
   addColumnIfMissing(db, 'news', 'author', 'TEXT'); // ТЗ 4.2 — автор материала
+  addColumnIfMissing(db, 'news', 'category', "TEXT NOT NULL DEFAULT 'federation'"); // категория (06.09.2026)
   // 05.09.2026: в стартовом списке кортов слово «уточнить» попало в поля покрытия/числа
   // кортов и всплыло вариантом фильтра на витрине — чистим в NULL (примечание остаётся).
   db.prepare("UPDATE courts SET surface = NULL WHERE surface = 'уточнить'").run();
@@ -282,6 +283,7 @@ export function migrate() {
     const spec = DIRECTORIES[key];
     if (db.prepare(`SELECT 1 FROM ${spec.table} LIMIT 1`).get()) applyDirectorySeed(db, spec, { insert: false });
   }
+  for (const t of ['coaches', 'courts', 'clubs']) { addColumnIfMissing(db, t, 'hours', 'TEXT'); addColumnIfMissing(db, t, 'prices', 'TEXT'); } // режим работы, цены (06.09.2026)
   // ТЗ 4.5/4.6 «фото» у тренеров, кортов, клубов.
   for (const t of ['coaches', 'courts', 'clubs']) addColumnIfMissing(db, t, 'photo_upload_id', 'INTEGER REFERENCES uploads(id) ON DELETE SET NULL');
   addColumnIfMissing(db, 'users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');

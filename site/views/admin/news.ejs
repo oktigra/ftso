@@ -14,6 +14,8 @@
       <div class="field"><label for="n-body">Текст</label><textarea id="n-body" name="body" rows="6" maxlength="20000" required></textarea></div>
       <div class="field"><label for="n-date">Дата публикации</label><input id="n-date" name="published_at" placeholder="ГГГГ-ММ-ДД"></div>
       <div class="field"><label for="n-author">Автор</label><input id="n-author" name="author" maxlength="120" placeholder="пусто — Федерация"></div>
+      <div class="field"><label for="n-cat">Категория</label>
+        <select id="n-cat" name="category"><% Object.keys(categories).forEach(function (k) { %><option value="<%= k %>"<%= k === 'federation' ? ' selected' : '' %>><%= categories[k] %></option><% }); %></select></div>
       <div class="field"><label for="n-pub">Публикация</label>
         <select id="n-pub" name="is_published">
           <option value="0" selected>черновик</option>
@@ -42,6 +44,8 @@
             <input id="d-<%= n.id %>" name="published_at" placeholder="ГГГГ-ММ-ДД" value="<%= n.published_at || '' %>"></div>
           <div class="field"><label for="a-<%= n.id %>">Автор</label>
             <input id="a-<%= n.id %>" name="author" maxlength="120" value="<%= n.author || '' %>" placeholder="пусто — Федерация"></div>
+          <div class="field"><label for="c-<%= n.id %>">Категория</label>
+            <select id="c-<%= n.id %>" name="category"><% Object.keys(categories).forEach(function (k) { %><option value="<%= k %>"<%= (n.category || 'federation') === k ? ' selected' : '' %>><%= categories[k] %></option><% }); %></select></div>
           <div class="field"><label for="p-<%= n.id %>">Публикация</label>
             <select id="p-<%= n.id %>" name="is_published">
               <option value="0"<%= n.is_published ? '' : ' selected' %>>черновик</option>

@@ -14,8 +14,13 @@
         <label for="news-q">Поиск по новостям</label>
         <input id="news-q" type="search" name="q" value="<%= q %>" maxlength="80" placeholder="слово из заголовка или текста">
       </div>
+      <div class="field"><label for="news-cat">Категория</label>
+        <select id="news-cat" name="category">
+          <option value="">все</option>
+          <% Object.keys(categories).forEach(function (k) { %><option value="<%= k %>"<%= category === k ? ' selected' : '' %>><%= categories[k] %></option><% }); %>
+        </select></div>
       <div class="field"><button class="btn btn--secondary" type="submit">Найти</button></div>
-      <% if (q) { %><div class="field"><a class="btn btn--secondary" href="/news">Сбросить</a></div><% } %>
+      <% if (q || category) { %><div class="field"><a class="btn btn--secondary" href="/news">Сбросить</a></div><% } %>
     </form>
     <% if (!news.length) { %>
       <div class="panel notice"><%= q ? 'По запросу «' + q + '» ничего не найдено.' : 'Новостей пока нет.' %></div>
@@ -25,6 +30,7 @@
           <article class="news-card fx-card">
             <% if (n.cover_upload_id) { %><a href="/news/<%= n.id %>" class="news-card-cover"><img src="/news/<%= n.id %>/cover" alt="" loading="lazy"></a><% } else { %><%- include('partials/court-card') %><% } %>
             <span class="news-date"><%= n.published_at || n.created_at.slice(0, 10) %></span>
+            <span class="tag"><%= categories[n.category] || 'Федерация' %></span>
             <h2 class="news-card-title"><a href="/news/<%= n.id %>"><%= n.title %></a></h2>
             <p><%= n.summary || '' %></p>
             <a class="link-more" href="/news/<%= n.id %>">Читать <span aria-hidden="true">→</span></a>
