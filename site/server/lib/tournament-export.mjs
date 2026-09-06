@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import PDFDocument from 'pdfkit';
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, HeadingLevel } from 'docx';
 import { xlsxFromRows } from './xlsx.mjs';
+import { scoreFor } from './groups.mjs';
 
 const FONT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../assets/fonts');
 const FONT = readFileSync(resolve(FONT_DIR, 'DejaVuSans.ttf'));
@@ -15,9 +16,9 @@ const KIND_RU = { team: 'Командная встреча', championship: 'Пе
 
 /** Общая «модель листа» из данных турнира: заголовок, группы (таблицы), сетки (по раундам), результаты. */
 export function sheetModel({ tournament, groups, brackets, results }) {
-  // Счёт с точки зрения ПРОИГРАВШЕЙ стороны: сеты переворачиваются, «w/o» → «-wo».
-  const flip = (s) => (s === 'w/o' ? '-wo' : s.split(' ').map((x) => { const m = /^(\d+)[:\-](\d+)(\(\d+\))?$/.exec(x); return m ? `${m[2]}:${m[1]}${m[3] || ''}` : x; }).join(' '));
-  const fromA = (score, aWon) => (score === 'w/o' && aWon ? 'wo' : aWon ? score : flip(score));
+  // Счёт с точки зрения Игрока 1 / строки — единый показ (неявка N, … отказ N).
+  const flip = (s) => scoreFor(s, false);
+  const fromA = (score, aWon) => scoreFor(score, aWon);
   return {
     title: tournament.name,
     subtitle: [
@@ -67,7 +68,7 @@ export function sheetModel({ tournament, groups, brackets, results }) {
       })))),
       ...brackets.flatMap((b) => b.rounds.flatMap((r) => r.pairs.filter((p) => p.aId && p.bId).map((p) => ({
         where: `Сетка «${b.name}», ${r.name}, пара ${p.k + 1}`, key: `b:${b.id}:${r.r}:${p.k}`, aId: p.aId, a: p.a.full_name, bId: p.bId, b: p.b.full_name,
-        score: p.winner ? (p.bye ? 'без игры' : fromA(p.score || '', p.winner === p.aId)) : '',
+        score: p.winner ? (p.bye ? 'без игры' : fromA(p.scoreRaw || '', p.winner === p.aId)) : '',
       })))),
     ],
     results: results.map((r) => [String(r.place), `${r.name}${r.discipline === 'double' ? ' (парный)' : ''}`, r.city || '']),
@@ -230,12 +231,12 @@ export function tournamentProtocolXlsx(model) {
     ['', 'Организатор', 'Федерация тенниса Смоленской области · ftso67.ru'],
     ['', 'Главный судья', ''],
     ['', 'Секретарь турнира', ''],
-    ['', 'Как заполнять', 'Сеты — с точки зрения Игрока 1 (6:3, 7:6(5)); либо сразу «Счёт (итог)»: «6:3 6:4», «wo» — Игрок 1 выиграл без игры, «-wo» — проиграл. Пустая строка пропускается. Колонку «Код пары» не менять.'],
+    ['', 'Как заполнять', 'Сеты — с точки зрения Игрока 1 (6:3, 7:6(5)); либо сразу «Счёт (итог)»: «6:3 6:4». Неявка — «неявка 2» (не явился Игрок 2) или «неявка 1». Снялся — «6:3 2:1 отказ 2». Пустая строка пропускается. Колонку «Код пары» не менять.'],
     [],
     PROTOCOL_HEADER,
   ];
   const rows = model.pending.map((m, i) => {
-    const sets = m.score && !/wo/.test(m.score) ? m.score.split(' ') : [];
+    const sets = m.score && !/неявка|отказ|wo/.test(m.score) ? m.score.split(' ') : [];
     return [i + 1, m.where, `${m.a} (#${m.aId})`, `${m.b} (#${m.bId})`, sets[0] || '', sets[1] || '', sets[2] || '', m.score, '', protocolKeyLabel(m.key)];
   });
   if (!rows.length) rows.push(['', 'Пар для заполнения нет — посейте сетку или заполните группы', '', '', '', '', '', '', '', '']);

@@ -43,7 +43,7 @@
     <h2>Круговые группы</h2>
     <%
     /* СЕТКА, СЛОЙ 1: группа «каждый с каждым». Клетка = счёт с точки зрения игрока
-       СТРОКИ («6:3 3:6 10:8»; «wo» — выиграл без игры, «-wo» — проиграл). Победитель
+       СТРОКИ («6:3 3:6 10:8»; «неявка 2» — соперник не явился; «6:3 2:1 отказ 2» — снялся). Победитель
        считается по сетам, места — по победам → личная встреча → сеты → геймы. */
     %>
     <form method="post" action="/admin/tournaments/<%= tournament.id %>/groups" class="inline-form">
@@ -77,7 +77,7 @@
                           <form method="post" action="/admin/tournaments/<%= tournament.id %>/groups/<%= g.id %>/cell" class="cell-form">
                             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                             <input type="hidden" name="a" value="<%= r.id %>"><input type="hidden" name="b" value="<%= c.id %>">
-                            <input name="score" value="<%= cell ? (cell.won ? cell.score : (cell.score === 'w/o' ? '-wo' : cell.score.split(' ').map(function (s) { var m = /^(\d+)[:\-](\d+)(\(\d+\))?$/.exec(s); return m ? m[2] + ':' + m[1] + (m[3] || '') : s; }).join(' '))) : '' %>" maxlength="60" placeholder="6:3 6:4" aria-label="Счёт <%= r.full_name %> — <%= c.full_name %>">
+                            <input name="score" value="<%= cell ? cell.shown : '' %>" maxlength="60" placeholder="6:3 6:4" aria-label="Счёт <%= r.full_name %> — <%= c.full_name %>">
                           </form>
                         </td>
                       <% } %>
@@ -90,7 +90,7 @@
               </tbody>
             </table>
           </div>
-          <p class="muted">Счёт вводится с точки зрения игрока в строке: «6:3 6:4», «6:3 3:6 10:8», «wo» — выиграл без игры, «-wo» — проиграл без игры. Enter в клетке сохраняет. Пустая клетка — матч удалён.</p>
+          <p class="muted">Счёт вводится с точки зрения игрока в строке: «6:3 6:4», «6:3 3:6 10:8», «7:6(5)». Неявка соперника — «неявка 2», своя — «неявка 1». Снялся — «6:3 2:1 отказ 2» (кто снялся — номером). Enter в клетке сохраняет. Пустая клетка — матч удалён.</p>
           <div class="inline-form">
             <form method="post" action="/admin/tournaments/<%= tournament.id %>/groups/<%= g.id %>/places">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -123,14 +123,14 @@
         <input id="proto-file" type="file" name="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"></div>
       <button class="btn btn--primary btn--small" type="submit">Загрузить протокол</button>
     </form>
-    <p class="muted">В протоколе все несыгранные пары групп и сетки. Счёт пишется от игрока A: «6:3 6:4», «6:3 3:6 10:8», «wo» — A выиграл без игры, «-wo» — проиграл. Пустая строка — пропускается. Колонку «Ключ» не трогать. После загрузки сетка продвигается — для следующего круга скачайте протокол заново.</p>
+    <p class="muted">В протоколе все несыгранные пары групп и сетки. Счёт пишется от Игрока 1: сеты по колонкам или итогом «6:3 6:4»; неявка — «неявка 2» / «неявка 1»; снялся — «6:3 2:1 отказ 2». Пустая строка — пропускается. Колонку «Ключ» не трогать. После загрузки сетка продвигается — для следующего круга скачайте протокол заново.</p>
   </div>
 
   <div class="panel" id="brackets">
     <h2>Олимпийка (сетка на выбывание)</h2>
     <%
     /* СЕТКА, СЛОЙ 2. Раунды столбцами; в паре — счёт с точки зрения ВЕРХНЕГО игрока
-       («6:3 6:4», «wo», «-wo») или «bye», если второго нет. Отмена снимает и всё дальше. */
+       («6:3 6:4», «неявка 2», «6:3 2:1 отказ 2») или «bye», если второго нет. Отмена снимает и всё дальше. */
     %>
     <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -215,7 +215,7 @@
           <% }); %>
           <div class="bracket__round"><div class="bracket__title">Победитель</div><div class="bracket__pairs"><div class="bracket__pair"><div class="bracket__slot bracket__slot--win"><%= b.champion ? b.champion.full_name : '—' %></div></div></div></div>
         </div>
-        <p class="muted">Счёт — с точки зрения верхнего игрока пары; «wo»/«-wo» — без игры; «bye» — если второго нет. Места: 1, 2, 3 (полуфиналисты), 5 (четвертьфиналисты), 9, 17.</p>
+        <p class="muted">Счёт — с точки зрения верхнего игрока пары: «6:3 6:4»; неявка — «неявка 2» / «неявка 1»; снялся — «6:3 2:1 отказ 2»; «bye» — если второго нет. Места: 1, 2, 3 (полуфиналисты), 5 (четвертьфиналисты), 9, 17.</p>
         <div class="inline-form">
           <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/places">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">

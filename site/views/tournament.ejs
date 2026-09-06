@@ -69,7 +69,7 @@
                     <td class="player"><% if (r.anonymized_at) { %>Игрок удалён<% } else { %><a href="/player/<%= r.id %>"><%= r.full_name %></a><% } %></td>
                     <% g.members.forEach(function (c) { %>
                       <% if (r.id === c.id) { %><td class="group-self">—</td><% } else { const cell = g.cells[r.id + ':' + c.id]; %>
-                        <td class="<%= cell ? (cell.won ? 'group-win' : 'group-loss') : '' %>"><%= cell ? (cell.won ? cell.score : cell.score.split(' ').map(function (s) { var m = /^(\d+)[:\-](\d+)(\(\d+\))?$/.exec(s); return m ? m[2] + ':' + m[1] + (m[3] || '') : s; }).join(' ')) : '' %></td>
+                        <td class="<%= cell ? (cell.won ? 'group-win' : 'group-loss') : '' %>"><%= cell ? cell.shown : '' %></td>
                       <% } %>
                     <% }); %>
                     <td><%= g.stats[r.id].wins %></td>
