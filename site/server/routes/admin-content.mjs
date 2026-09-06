@@ -259,7 +259,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
     guard((req, res, next) => {
       const spec = directoryByKey(req.params.key);
       if (!spec) return next();
-      const data = directoryInput(spec, req.body);
+      const data = directoryInput(spec, req.body, { db });
       const id = createDirectoryRow(db, spec, data);
       logAction(db, req.session.user.id, `${spec.key}.create`, id, data);
       flash(req, res, 'ok', 'Запись добавлена.', `/admin/directories/${spec.key}`);
@@ -274,7 +274,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       const spec = directoryByKey(req.params.key);
       if (!spec) return next();
       const id = intAtLeast(req.params.id, 'id');
-      const data = directoryInput(spec, req.body);
+      const data = directoryInput(spec, req.body, { db });
       updateDirectoryRow(db, spec, id, data);
       logAction(db, req.session.user.id, `${spec.key}.update`, id, data);
       flash(req, res, 'ok', 'Запись обновлена.', `/admin/directories/${spec.key}`);

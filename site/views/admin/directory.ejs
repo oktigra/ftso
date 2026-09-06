@@ -23,12 +23,13 @@
         <span class="muted">корты и клубы области по открытым источникам на 05.09.2026; уже добавленные названия пропускаются, пометки «уточнить» — проверить</span>
       </form>
     <% } %>
+    <datalist id="players-list"><% (typeof players !== 'undefined' ? players : []).forEach(function (p) { %><option value="<%= p.full_name %>"></option><% }); %></datalist>
     <form method="post" action="/admin/directories/<%= spec.key %>" class="stacked-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <% spec.fields.forEach(function (f) { %>
         <div class="field">
           <label for="new-<%= f.name %>"><%= f.label %><%= f.required ? ' *' : '' %></label>
-          <input id="new-<%= f.name %>" name="<%= f.name %>" maxlength="<%= f.max %>"<%= f.required ? ' required' : '' %>>
+          <input id="new-<%= f.name %>" name="<%= f.name %>" maxlength="<%= f.max %>"<%= f.required ? ' required' : '' %><%= f.player ? ' list="players-list" placeholder="если тренер сам играет — фамилия"' : '' %>>
         </div>
       <% }); %>
       <% if (spec.personal) { %>
@@ -75,8 +76,8 @@
               <td><%= row.id %></td>
               <% spec.fields.forEach(function (f) { %>
                 <td><input form="edit-<%= spec.key %>-<%= row.id %>" name="<%= f.name %>"
-                           maxlength="<%= f.max %>"<%= f.required ? ' required' : '' %>
-                           value="<%= row[f.name] || '' %>"></td>
+                           maxlength="<%= f.max %>"<%= f.required ? ' required' : '' %><%= f.player ? ' list="players-list"' : '' %>
+                           value="<%= f.player ? (row.player ? row.player.full_name : '') : (row[f.name] || '') %>"></td>
               <% }); %>
               <% if (spec.personal) { %>
                 <td><input form="edit-<%= spec.key %>-<%= row.id %>" name="basis" maxlength="200" required value="<%= row.basis || '' %>"></td>

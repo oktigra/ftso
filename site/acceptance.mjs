@@ -2667,6 +2667,33 @@ await check('подводки справочников (правятся в «Т
   return 'подводки четырёх справочников из «Текстов» (правятся и сбрасываются); взнос и срок заявки сохраняются и видны на карточке';
 });
 
+await check('тренер = игрок: связь записей (не слияние) — поле в карточке, ссылка на профиль, метка «Тренер», обезличивание снимает связь', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Тренеров Игрок Иванович', 'Смоленск', 'M')").run().lastInsertRowid);
+  const page = await http('/admin/directories/coaches', { jar });
+  const _csrf = tokenFrom(page.text);
+  assert(/id="players-list"/.test(page.text) && /name="player"/.test(page.text), 'в карточке тренера нет поля «Игрок в базе» с подсказкой');
+  const base = { _csrf, full_name: 'Тренеров Игрок Иванович', city: 'Смоленск', basis: 'согласие от 06.09.2026', document_date: '2026-09-06' };
+  // Незнакомая фамилия — отказ, запись не создаётся.
+  eq((await http('/admin/directories/coaches', { method: 'POST', form: { ...base, player: 'Ктотонезнакомый' }, jar })).status, 302, 'ответ на незнакомого игрока');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM coaches WHERE full_name = 'Тренеров Игрок Иванович'").get().n, 0, 'при неизвестном игроке карточка не должна создаваться');
+  eq((await http('/admin/directories/coaches', { method: 'POST', form: { ...base, player: 'Тренеров Игрок Иванович', club: 'ТК «Алпина»' }, jar })).status, 302, 'создание карточки со связью');
+  const c = db.prepare("SELECT id, player_id FROM coaches WHERE full_name = 'Тренеров Игрок Иванович'").get();
+  eq(c.player_id, pid, 'связь не записана');
+  assert(new RegExp(`href="/player/${pid}">профиль игрока`).test((await http('/coaches')).text), 'на витрине тренеров нет ссылки на профиль');
+  assert(/class="tag" href="\/coaches">Тренер · ТК «Алпина»/.test((await http(`/player/${pid}`)).text), 'в профиле игрока нет метки «Тренер»');
+  // Связь можно снять пустым полем.
+  eq((await http(`/admin/directories/coaches/${c.id}/update`, { method: 'POST', form: { ...base, player: '', club: 'ТК «Алпина»' }, jar })).status, 302, 'снятие связи');
+  eq(db.prepare('SELECT player_id FROM coaches WHERE id = ?').get(c.id).player_id, null, 'связь не снята');
+  // Обезличивание игрока (ст. 21) карточку тренера не трогает, связь исчезает.
+  db.prepare('UPDATE coaches SET player_id = ? WHERE id = ?').run(pid, c.id);
+  db.prepare("UPDATE players SET anonymized_at = datetime('now') WHERE id = ?").run(pid);
+  assert(!/профиль игрока/.test((await http('/coaches')).text), 'после обезличивания ссылка на профиль должна пропасть');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM coaches WHERE id = ?").get(c.id).n, 1, 'карточка тренера должна остаться');
+  db.prepare('DELETE FROM coaches WHERE id = ?').run(c.id); db.prepare('DELETE FROM players WHERE id = ?').run(pid); db.prepare('DELETE FROM write_attempts').run();
+  return 'связь пишется по фамилии, незнакомый отбит, ссылки в обе стороны, снятие и обезличивание не рвут карточку';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

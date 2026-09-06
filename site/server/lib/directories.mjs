@@ -4,6 +4,7 @@
 //
 // Раздел описывается ДАННЫМИ (таблица, поля, порядок), а код общий.
 import { str, isoDate, ValidationError } from './validate.mjs';
+import { resolvePlayer } from './registrations.mjs';
 
 /**
  * personal: true — в справочнике есть ФИО живых людей. Публикация ФИО это
@@ -31,6 +32,9 @@ export const DIRECTORIES = {
       { name: 'contact', label: 'Контакт', max: 160 },
       { name: 'hours', label: 'Режим работы', max: 120 },
       { name: 'prices', label: 'Цены', max: 200 },
+      // Тренер часто и сам играет: необязательная СВЯЗЬ с записью игрока (не слияние —
+      // основания публикации разные). Хранится в отдельном столбце player_id.
+      { name: 'player', label: 'Игрок в базе (фамилия или #номер)', max: 140, player: true },
       { name: 'note', label: 'Примечание', max: 500 },
     ],
   },
@@ -97,13 +101,24 @@ export const DIRECTORIES = {
 export const directoryByKey = (key) => DIRECTORIES[key] || null;
 
 /** Разбор формы по описанию раздела. Ничего лишнего из тела не берётся. */
-export function directoryInput(spec, body) {
+export function directoryInput(spec, body, { db = null } = {}) {
   const data = {};
   for (const field of spec.fields) {
+    if (field.player) continue; // ниже: связь с игроком пишется в столбец player_id
     data[field.name] = str(body[field.name], field.label, {
       max: field.max,
       required: Boolean(field.required),
     });
+  }
+  const pf = spec.fields.find((f) => f.player);
+  if (pf) {
+    const raw = String(body[pf.name] || '').trim();
+    if (!raw || !db) data.player_id = null;
+    else {
+      const id = resolvePlayer(db, raw, { ValidationError });
+      if (!id) throw new ValidationError(`Игрок «${raw}» не найден в базе — оставьте поле пустым, заведите его в «Игроках» или укажите «#номер»`);
+      data.player_id = id;
+    }
   }
   if (spec.personal) {
     // Публикация ФИО без названного основания невозможна — это не формальность,
@@ -115,7 +130,7 @@ export function directoryInput(spec, body) {
 }
 
 const columnsOf = (spec) =>
-  spec.fields.map((f) => f.name).concat(spec.personal ? ['basis', 'document_date'] : []);
+  spec.fields.map((f) => (f.player ? 'player_id' : f.name)).concat(spec.personal ? ['basis', 'document_date'] : []);
 
 /**
  * Список раздела с фильтрами по полям, помеченным filter:true (ТЗ 4.5/4.6:
@@ -128,9 +143,17 @@ export function listDirectory(db, spec, filters = {}) {
   for (const f of spec.fields) {
     if (f.filter && filters[f.name]) { where.push(`${f.name} = ?`); args.push(filters[f.name]); }
   }
-  return db
+  const rows = db
     .prepare(`SELECT * FROM ${spec.table} ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${spec.orderBy}`)
     .all(...args);
+  if (spec.fields.some((f) => f.player)) {
+    const get = db.prepare('SELECT id, full_name, anonymized_at FROM players WHERE id = ?');
+    for (const r of rows) {
+      const p = r.player_id ? get.get(r.player_id) : null;
+      r.player = p && !p.anonymized_at ? p : null; // обезличенный игрок связь не показывает
+    }
+  }
+  return rows;
 }
 
 /** Значения для селектов фильтров — только те, что реально есть в разделе. */
