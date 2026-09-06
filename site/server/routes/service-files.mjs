@@ -37,6 +37,7 @@ export default function mountServiceFiles(app, { db, config, root }) {
     const add = (path, lastmod, priority) => urls.push({ loc: site + path, lastmod, priority });
     for (const s of SECTIONS.filter((x) => x.live)) add(s.path, null, s.path === '/' ? '1.0' : '0.7');
     add('/organizers', null, '0.6'); // страница организаторам (вне 12 разделов ТЗ)
+    add('/faq', null, '0.6');
     add('/privacy', null, '0.3');
     add('/consent', null, '0.3');
     db.prepare("SELECT id, COALESCE(published_at, date(created_at)) AS d FROM news WHERE is_published = 1 ORDER BY id")

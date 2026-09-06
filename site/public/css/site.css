@@ -647,6 +647,11 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .rating-chart .rc-label{fill:var(--muted); font-size:11px; font-family:'Inter',sans-serif;}
 .rating-history{max-width:24rem;}
 /* Форма обратной связи в подвале — цвета темы */
+.footer-faq{margin:1.5rem 0 0; padding-top:1.2rem; border-top:1px solid var(--border);}
+.footer-faq h4{margin:0 0 .6rem;}
+.footer-faq .faq-item{border-bottom:1px solid var(--border); padding:.45rem 0;}
+.footer-faq summary{cursor:pointer; font-weight:600; font-size:.94rem;}
+.footer-faq p{margin:.5rem 0 .2rem; color:var(--muted); font-size:.92rem; max-width:60rem;}
 .footer-feedback{margin:1.5rem 0 1rem; padding:1.25rem 1.4rem; background:var(--surface); border:1px solid var(--border); border-radius:1.2rem;}
 .footer-feedback h4{margin:0 0 .8rem;}
 .footer-feedback__form{display:grid; grid-template-columns:1fr 1fr; gap:.8rem 1rem; align-items:start;}

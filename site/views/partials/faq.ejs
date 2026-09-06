@@ -1,0 +1,17 @@
+<%
+/* ВОПРОСЫ И ОТВЕТЫ в подвале: первые четыре раскрывающихся пункта, остальное — на /faq.
+   Не показывается в админке, кабинете и на самой странице /faq. */
+const list = (typeof faqShort !== 'undefined' && faqShort) ? faq.slice(0, 4) : faq;
+%>
+<div class="footer-faq">
+  <h4>Вопросы и ответы</h4>
+  <% list.forEach(function (item) { %>
+    <details class="faq-item">
+      <summary><%= item.q %></summary>
+      <p><%- item.a.replace(/«Организаторам»/g, '<a href="/organizers">«Организаторам»</a>').replace(/«Документы»/g, '<a href="/documents">«Документы»</a>').replace(/info@ftso67\.ru/g, '<a href="mailto:info@ftso67.ru">info@ftso67.ru</a>') %></p>
+    </details>
+  <% }); %>
+  <% if (typeof faqShort !== 'undefined' && faqShort) { %>
+    <p class="table-foot"><a class="link-more" href="/faq">Все вопросы <span aria-hidden="true">→</span></a></p>
+  <% } %>
+</div>

@@ -1,0 +1,23 @@
+<%
+/* Разметка FAQPage — чтобы вопросы показывались в выдаче поисковиков. */
+const ld = { '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: faq.map(function (i) { return { '@type': 'Question', name: i.q, acceptedAnswer: { '@type': 'Answer', text: i.a } }; }) };
+%>
+<%- include('partials/head') %>
+<script type="application/ld+json"><%- JSON.stringify(ld) %></script>
+<%- include('partials/header') %>
+
+<main id="top">
+  <section class="section-pad">
+    <div class="container stack">
+      <h1>Вопросы и ответы</h1>
+      <p class="lead">Коротко о том, как устроен сайт Федерации: рейтинг, регистрация, турниры и документы.</p>
+      <div class="panel"><%- include('partials/faq', { faq, faqShort: false }) %></div>
+      <p class="inline-form">
+        <a class="btn btn--primary" href="/organizers">Организаторам и секретарям</a>
+        <a class="btn btn--secondary" href="/contacts">Задать свой вопрос</a>
+      </p>
+    </div>
+  </section>
+</main>
+
+<%- include('partials/footer') %>
