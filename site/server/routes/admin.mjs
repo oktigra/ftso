@@ -5,6 +5,7 @@ import { listGroups, setCell, writeGroupPlaces } from '../lib/groups.mjs';
 import { listBrackets, seed, unseed, decide, undo, bracketPlaces, BRACKET_SIZES, seedFromGroups, placesWithGroups, seedByRating, swapSeeds } from '../lib/brackets.mjs';
 import { rowsFromXlsx as protoRowsFromXlsx } from '../lib/xlsx.mjs';
 import { mountTournamentSheets } from '../lib/tournament-sheet-routes.mjs';
+import { protocolKeyFromLabel } from '../lib/tournament-export.mjs';
 import { ERASED_LABEL } from '../lib/rating-service.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
@@ -928,12 +929,19 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         let rows;
         try { rows = file.buffer[0] === 0x50 && file.buffer[1] === 0x4b ? protoRowsFromXlsx(file.buffer) : rowsFromCsv(file.buffer); }
         catch (e) { throw new ValidationError(`Не удалось прочитать файл: ${e.message}`); }
-        const head = (rows[0] || []).map((c) => c.toLowerCase());
-        const iKey = head.findIndex((c) => c === 'ключ'); const iScore = head.findIndex((c) => /^счёт|^счет/.test(c));
-        if (iKey < 0 || iScore < 0) throw new ValidationError('Это не протокол сайта: нет колонок «Счёт» и «Ключ». Скачайте протокол заново.');
+        // Шапка таблицы — строка с колонкой «Код пары» (протокол ред. 06.09) или «Ключ» (старый).
+        const hi = rows.findIndex((r) => r.some((c) => /^код пары|^ключ$/i.test(String(c || '').trim())));
+        if (hi < 0) throw new ValidationError('Это не протокол сайта: нет колонки «Код пары». Скачайте протокол заново.');
+        const head = rows[hi].map((c) => String(c || '').trim().toLowerCase());
+        const iKey = head.findIndex((c) => /^код пары|^ключ$/.test(c));
+        const iScore = head.findIndex((c) => /^счёт|^счет/.test(c));
+        const iSets = [1, 2, 3].map((n) => head.findIndex((c) => c.startsWith(`${n}-й сет`)));
         const done = []; const errors = []; let skipped = 0;
-        for (const r of rows.slice(1)) {
-          const key = (r[iKey] || '').trim(); const score = (r[iScore] || '').trim();
+        for (const r of rows.slice(hi + 1)) {
+          const key = protocolKeyFromLabel(r[iKey]);
+          // Счёт: «Счёт (итог)» либо сборка из колонок сетов.
+          let score = iScore >= 0 ? String(r[iScore] || '').trim() : '';
+          if (!score && iSets[0] >= 0) score = iSets.map((i) => (i >= 0 ? String(r[i] || '').trim() : '')).filter(Boolean).join(' ');
           if (!key) continue;
           if (!score) { skipped++; continue; }
           const m = /^([gb]):(\d+):(\d+):(\d+)$/.exec(key);
