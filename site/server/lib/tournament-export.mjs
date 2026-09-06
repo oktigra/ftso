@@ -27,6 +27,7 @@ export function sheetModel({ tournament, groups, brackets, results }) {
       tournament.city || null,
       `категория ${tournament.category}`,
       tournament.age_group || null,
+      tournament.sex ? ({ M: 'мужчины / юноши', F: 'женщины / девушки', X: 'смешанный' })[tournament.sex] : null,
     ].filter(Boolean).join(' · '),
     groups: groups.map((g) => ({
       title: `Группа ${g.name} (${g.kind === 'double' ? 'парный' : 'одиночный'})`,

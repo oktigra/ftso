@@ -29,6 +29,12 @@
           <% Object.keys(kindRu).forEach(function (k) { %><option value="<%= k %>"<%= k === 'other' ? ' selected' : '' %>><%= kindRu[k] %></option><% }); %>
         </select>
       </div>
+      <div class="field"><label for="t-sex">Пол</label>
+        <select id="t-sex" name="sex">
+          <option value="">—</option>
+          <% Object.keys(sexRu).forEach(function (k) { %><option value="<%= k %>"><%= sexRu[k] %></option><% }); %>
+        </select>
+      </div>
       <div class="field"><label for="t-age">Возраст</label>
         <select id="t-age" name="age_group" data-age-select>
           <option value="">—</option>
@@ -58,7 +64,7 @@
     %>
     <div class="table-scroll">
       <table class="admin-table admin-table--edit">
-        <thead><tr><th>ID</th><th>Статус</th><th>Название</th><th>Начало</th><th>Завершение</th><th>Кат.</th><th>Город</th><th>Тип</th><th>Возраст</th><th>Записей</th><th>Действия</th></tr></thead>
+        <thead><tr><th>ID</th><th>Статус</th><th>Название</th><th>Начало</th><th>Завершение</th><th>Кат.</th><th>Город</th><th>Тип</th><th>Пол</th><th>Возраст</th><th>Записей</th><th>Действия</th></tr></thead>
         <tbody>
           <% tournaments.forEach(function (t) { %>
             <tr class="t-row" data-editable>
@@ -76,6 +82,12 @@
               <td><span class="ro"><%= kindRu[t.kind] || '—' %></span>
                 <select class="ed" form="edit-tournament-<%= t.id %>" name="kind">
                   <% Object.keys(kindRu).forEach(function (k) { %><option value="<%= k %>"<%= t.kind === k ? ' selected' : '' %>><%= kindRu[k] %></option><% }); %>
+                </select>
+              </td>
+              <td><span class="ro"><%= t.sex ? sexRu[t.sex] : '—' %></span>
+                <select class="ed" form="edit-tournament-<%= t.id %>" name="sex">
+                  <option value=""<%= !t.sex ? ' selected' : '' %>>—</option>
+                  <% Object.keys(sexRu).forEach(function (k) { %><option value="<%= k %>"<%= t.sex === k ? ' selected' : '' %>><%= sexRu[k] %></option><% }); %>
                 </select>
               </td>
               <td><span class="ro"><%= t.age_group || '—' %></span>

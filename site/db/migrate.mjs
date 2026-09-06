@@ -265,6 +265,7 @@ export function migrate() {
   addColumnIfMissing(db, 'tournaments', 'kind', "TEXT NOT NULL DEFAULT 'other'");
   addColumnIfMissing(db, 'tournaments', 'age_group', 'TEXT');
   addColumnIfMissing(db, 'tournaments', 'is_published', 'INTEGER NOT NULL DEFAULT 1'); // черновик/опубликован (06.09.2026)
+  addColumnIfMissing(db, 'tournaments', 'sex', 'TEXT'); // пол участников M/F/X (06.09.2026)
   // ТЗ 4.5/4.6 — поля справочников и фильтры (05.09.2026).
   for (const c of ['city', 'specialization', 'qualification', 'groups']) addColumnIfMissing(db, 'coaches', c, 'TEXT');
   for (const c of ['city', 'courts_count', 'season', 'club', 'contact']) addColumnIfMissing(db, 'courts', c, 'TEXT');
