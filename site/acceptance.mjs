@@ -660,7 +660,7 @@ await check('валидация админки: место 0 / -1 / abc откл
   return `отклонены: ${msgs.join(', ')}; сервер жив`;
 });
 
-await check('валидация админки: дата 2026-13-40 и категория C отклоняются', async () => {
+await check('валидация админки: дата 2026-13-40 и категория Z отклоняются', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const page = await http('/admin/tournaments', { jar });
   const _csrf = tokenFrom(page.text);
@@ -668,13 +668,13 @@ await check('валидация админки: дата 2026-13-40 и кате�
 
   await http('/admin/tournaments', { method: 'POST', form: { _csrf, name: 'Кривая дата', end_date: '2026-13-40', category: 'A' }, jar });
   await http('/admin/tournaments', { method: 'POST', form: { _csrf, name: 'Кривая дата 2', end_date: '2026-02-30', category: 'A' }, jar });
-  await http('/admin/tournaments', { method: 'POST', form: { _csrf, name: 'Кривая категория', end_date: '2026-05-01', category: 'C' }, jar });
+  await http('/admin/tournaments', { method: 'POST', form: { _csrf, name: 'Кривая категория', end_date: '2026-05-01', category: 'Z' }, jar });
 
   const after = db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n;
   eq(after, before, 'кривые турниры не должны были создаться');
   const alive = await http('/');
   eq(alive.status, 200, 'сервер жив');
-  return '2026-13-40, 2026-02-30 и категория C отклонены';
+  return '2026-13-40, 2026-02-30 и категория Z отклонены';
 });
 
 await check('загрузка файлов идёт ТОЛЬКО через общий слой', async () => {
@@ -1060,7 +1060,7 @@ await check('схема отвергает битые данные на уров
     rejects('место -1', 'INSERT INTO results (tournament_id, player_id, place) VALUES (1,1,-1)'),
     rejects('дата 2026-13-40', "INSERT INTO tournaments (name, end_date, category) VALUES ('x','2026-13-40','A')"),
     rejects('дата 2026-02-30', "INSERT INTO tournaments (name, end_date, category) VALUES ('x','2026-02-30','A')"),
-    rejects('категория C', "INSERT INTO tournaments (name, end_date, category) VALUES ('x','2026-05-01','C')"),
+    rejects('категория Z', "INSERT INTO tournaments (name, end_date, category) VALUES ('x','2026-05-01','Z')"),
     rejects('пол X', "INSERT INTO players (full_name, city, sex) VALUES ('x','y','X')"),
   ];
   // обратный матч — ДРУГАЯ строка, должен пройти
@@ -2559,6 +2559,12 @@ await check('миграция на живой базе: схема релиза 
   assert(cols.includes('hours') && cols.includes('prices'), `после миграции нет колонок: ${cols.join(',')}`);
   eq(after.prepare("SELECT COUNT(*) AS n FROM courts WHERE name = 'Старый корт'").get().n, 1, 'данные кортов потеряны');
   eq(after.prepare("SELECT stage FROM matches WHERE tournament_id = ?").get(t).stage, 'manual', 'старый матч должен получить этап manual');
+  eq(after.prepare("SELECT COUNT(*) AS n FROM tournaments WHERE id = ?").get(t).n, 1, 'турнир пропал при пересборке категории');
+  eq(after.prepare("SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?").get(t).n, 1, 'матч пропал при пересборке tournaments (каскад)');
+  after.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('C после миграции', '2026-08-02', 'C')").run();
+  eq(after.prepare("SELECT COUNT(*) AS n FROM tournaments WHERE id = ?").get(t).n, 1, 'турнир пропал при пересборке категории');
+  eq(after.prepare("SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?").get(t).n, 1, 'матч пропал при пересборке tournaments (каскад)');
+  after.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('C после миграции', '2026-08-02', 'C')").run();
   after.close(); rmSync(dir, { recursive: true, force: true });
   return `схема ${OLD_SHA} + данные → migrate без ошибок; hours/prices есть; данные и матчи целы`;
 });
@@ -2593,6 +2599,23 @@ await check('импорт турнира из текста: сетка с bye/о
   assert(!/Импортный ветеранский/.test((await http('/tournaments')).text), 'черновик виден на витрине');
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(t.id); db.prepare("DELETE FROM players WHERE full_name LIKE 'Имп%'").run(); db.prepare('DELETE FROM write_attempts').run();
   return 'сетка 8 с bye, отказом и матчем за 3-е, группа, пары → черновик; 15 игроков, 11 матчей, места 1/2/3/4/5 и пар; ошибка — без записи';
+});
+
+await check('категория C: принимается формой, коэффициент ×0,5 в движке, показана в правилах на витрине', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/tournaments', { jar })).text);
+  eq((await http('/admin/tournaments', { method: 'POST', form: { _csrf, name: 'Клубный кубок C', end_date: '2026-07-20', category: 'C', kind: 'other', action: 'publish' }, jar })).status, 302, 'турнир категории C');
+  const t = db.prepare("SELECT id, category FROM tournaments WHERE name = 'Клубный кубок C'").get();
+  eq(t && t.category, 'C', 'категория C не сохранилась');
+  const { RATING_CONFIG } = await import('./server/lib/rating-service.mjs');
+  eq(RATING_CONFIG.categoryCoef.C, 0.5, 'коэффициент C');
+  const { computeStandings } = await import('../rating/rating.mjs');
+  const out = computeStandings({ tournaments: [{ id: 1, name: 'C', endDate: '2026-07-20', category: 'C' }], results: [{ playerId: 7, playerName: 'Тест', tournamentId: 1, place: 1 }], matches: [], config: { ...RATING_CONFIG, asOf: '2026-08-01' } });
+  const pts = (out.players || out.standings || [])[0]?.ratingPoints;
+  eq(pts, 50, `1 место в C = 100 × 0,5 (получено ${pts})`);
+  assert(/C × 0\.5/.test((await http('/rating')).text), 'на /rating нет коэффициента C');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t.id); db.prepare('DELETE FROM write_attempts').run();
+  return 'C сохраняется, ×0,5 в движке (100 → 50), показана на витрине';
 });
 
 await check('rate-limit на /register срабатывает', async () => {
