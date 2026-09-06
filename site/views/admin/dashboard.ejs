@@ -7,6 +7,23 @@
   <%- include('_shell') %>
 
   <div class="admin-grid">
+  <div class="panel">
+    <h2>Плашка «идёт наполнение» на сайте</h2>
+    <p class="muted">Сейчас на сайте: <strong><%= devNoticeAdmin.shown ? 'показывается' : 'не показывается' %></strong><%= devNoticeAdmin.forced ? ' (принудительно через DEV_NOTICE в .env)' : '' %>.
+      Режим «автоматически» снимает плашку, когда появится первый результат <strong>опубликованного</strong> турнира; черновики и тестовые турниры её не гасят.
+      Текст плашки — на публичных страницах, в админке она не показывается.</p>
+    <form method="post" action="/admin/dev-notice" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="dn-mode">Режим</label>
+        <select id="dn-mode" name="mode">
+          <option value="auto"<%= devNoticeAdmin.mode === 'auto' ? ' selected' : '' %>>автоматически</option>
+          <option value="on"<%= devNoticeAdmin.mode === 'on' ? ' selected' : '' %>>показывать всегда</option>
+          <option value="off"<%= devNoticeAdmin.mode === 'off' ? ' selected' : '' %>>выключить</option>
+        </select></div>
+      <button class="btn btn--secondary btn--small" type="submit">Сохранить</button>
+    </form>
+  </div>
+
     <div class="panel"><b><%= counts.players %></b><div class="muted">игроков</div></div>
     <div class="panel"><b><%= counts.tournaments %></b><div class="muted">турниров</div></div>
     <div class="panel"><b><%= counts.results %></b><div class="muted">результатов</div></div>
