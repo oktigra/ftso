@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 222" width="480" height="222" role="img" aria-label="Федерация тенниса Смоленской области">
+  <rect x="3" y="3" width="474" height="216" rx="16" fill="#0d5236"></rect>
+  <g fill="none" stroke="#2ecf8f" stroke-width="2" opacity="0.85">
+    <rect x="26" y="24" width="428" height="174"></rect>
+    <path d="M26 46 H454 M26 176 H454 M104 46 V176 M376 46 V176 M104 111 H376 M240 20 V202"></path>
+  </g>
+  <circle cx="240" cy="111" r="96" fill="#0d5236"></circle>
+  <circle cx="240" cy="111" r="96" fill="none" stroke="#2ecf8f" stroke-width="1.5"></circle>
+  <circle cx="240" cy="111" r="52" fill="#f4f7f4"></circle>
+  <text x="242" y="112" text-anchor="middle" dominant-baseline="central" font-family="Jost, Helvetica, sans-serif" font-weight="600" font-size="26" letter-spacing="1" fill="#0d5236">ФТСО</text>
+  <path id="ringTop" d="M169 137 A 76 76 0 1 1 311 137" fill="none"></path>
+  <path id="ringBottom" d="M167 84 A 78 78 0 1 0 313 84" fill="none"></path>
+  <text font-family="Jost, Helvetica, sans-serif" font-weight="500" font-size="15" letter-spacing="1.2" fill="#ffffff"><textPath href="#ringTop" startOffset="50%" text-anchor="middle">ФЕДЕРАЦИЯ ТЕННИСА</textPath></text>
+  <text font-family="Jost, Helvetica, sans-serif" font-weight="500" font-size="15" letter-spacing="1.2" fill="#ffffff"><textPath href="#ringBottom" startOffset="50%" text-anchor="middle">СМОЛЕНСКОЙ ОБЛАСТИ</textPath></text>
+</svg>
