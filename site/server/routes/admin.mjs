@@ -4,6 +4,8 @@ import { rowsFromXlsx, rowsFromCsv, protocolTextFromRows } from '../lib/xlsx.mjs
 import { listGroups, setCell, writeGroupPlaces } from '../lib/groups.mjs';
 import { listBrackets, seed, unseed, decide, undo, bracketPlaces, BRACKET_SIZES, seedFromGroups, placesWithGroups, seedByRating, swapSeeds } from '../lib/brackets.mjs';
 import { rowsFromXlsx as protoRowsFromXlsx } from '../lib/xlsx.mjs';
+import { mountTournamentSheets } from '../lib/tournament-sheet-routes.mjs';
+import { ERASED_LABEL } from '../lib/rating-service.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
 import { logAction, recentActions } from '../lib/action-log.mjs';
@@ -902,6 +904,10 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     logAction(db, req.session.user.id, 'bracket.delete', tid, { bracket: bid });
     return 'Сетка удалена (сыгранные матчи остались).';
   });
+
+  // СЕТКА/ПРОТОКОЛ/ПЕЧАТЬ ДЛЯ АДМИНКИ — любые турниры, включая черновики (замер агента 06.09:
+  // секретарь ведёт турнир черновиком до публикации, витринные адреса отдавали 404).
+  mountTournamentSheets(app, { db, prefix: '/admin/tournaments', publishedOnly: false, erasedLabel: ERASED_LABEL, middlewares: [requireRole(...DATA_ROLES)] });
 
   // ОБРАТНАЯ ЗАЛИВКА ПРОТОКОЛА (решение владельца 06.09.2026): секретарь скачал
   // protocol.xlsx, вписал счёт, загрузил — счёт разносится по группам (setCell) и
