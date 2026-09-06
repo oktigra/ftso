@@ -52,6 +52,13 @@
           </select>
         </div>
         <div class="field">
+          <label for="tf-sex">Пол</label>
+          <select id="tf-sex" name="sex">
+            <option value="">все</option>
+            <% Object.keys(sexRu).forEach(function (k) { %><option value="<%= k %>"<%= filters.sex === k ? ' selected' : '' %>><%= sexRu[k] %></option><% }); %>
+          </select>
+        </div>
+        <div class="field">
           <label for="tf-kind">Тип</label>
           <select id="tf-kind" name="kind">
             <option value="">все</option>
@@ -69,7 +76,7 @@
       <div class="table-scroll">
         <table>
           <caption class="visually-hidden">Список турниров Федерации</caption>
-          <thead><tr><th scope="col">Даты</th><th scope="col">Турнир</th><th scope="col">Город</th><th scope="col">Тип</th><th scope="col">Возраст</th><th scope="col">Кат.</th><th scope="col">Статус</th><th scope="col">Участников</th></tr></thead>
+          <thead><tr><th scope="col">Даты</th><th scope="col">Турнир</th><th scope="col">Город</th><th scope="col">Тип</th><th scope="col">Возраст</th><th scope="col">Пол</th><th scope="col">Кат.</th><th scope="col">Статус</th><th scope="col">Участников</th></tr></thead>
           <tbody>
             <% tournaments.forEach(function (t) { %>
               <tr>
@@ -78,6 +85,7 @@
                 <td><%= t.city || '—' %></td>
                 <td><%= kindRu[t.kind] || '—' %></td>
                 <td><%= t.age_group || '—' %></td>
+                <td><%= t.sex ? ({ M: 'муж.', F: 'жен.', X: 'смеш.' })[t.sex] : '—' %></td>
                 <td><span class="badge badge--<%= t.category.toLowerCase() %>"><%= t.category %></span></td>
                 <td><span class="tag tag--<%= t.status %>"><%= statusRu[t.status] %></span></td>
                 <td><%= t.participants %></td>

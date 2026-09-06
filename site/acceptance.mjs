@@ -1520,6 +1520,11 @@ await check('турниры (ТЗ 4.3): поля город/начало/тип/
   eq(names((await http('/tournaments?category=A')).text).join(','), 'Фильтр Текущий', 'фильтр категория');
   eq(names((await http('/tournaments?age=' + encodeURIComponent('взрослые'))).text).length, 2, 'фильтр возраст');
   eq(names((await http('/tournaments?kind=team')).text).join(','), 'Фильтр Прошлый', 'фильтр тип');
+  // Пол турнира (как у РТТ/БТФ): поле и фильтр.
+  eq((await http(`/admin/tournaments/${db.prepare("SELECT id FROM tournaments WHERE name = 'Фильтр Текущий'").get().id}/update`, { method: 'POST', form: { _csrf, name: 'Фильтр Текущий', end_date: d(2), start_date: d(-1), city: 'Смоленск', kind: 'championship', age_group: 'до 12', category: 'A', sex: 'F' }, jar })).status, 302, 'пол в правке');
+  eq(names((await http('/tournaments?sex=F')).text).join(','), 'Фильтр Текущий', 'фильтр пол');
+  assert(/name="sex"/.test(all.text), 'на списке нет фильтра пола');
+  assert(/женщины \/ девушки/.test((await http(`/tournaments/${db.prepare("SELECT id FROM tournaments WHERE name = 'Фильтр Текущий'").get().id}`)).text), 'пол не показан в карточке');
   eq(names((await http('/tournaments?month=' + d(30).slice(0, 7))).text).includes('Фильтр Будущий'), true, 'фильтр месяц');
   eq(names((await http("/tournaments?status=' OR 1=1 --&kind=<b>")).text).length, 3, 'чужие значения фильтров сбрасываются в «все»');
   const card = await http(`/tournaments/${db.prepare("SELECT id FROM tournaments WHERE name = 'Фильтр Текущий'").get().id}`);

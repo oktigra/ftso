@@ -9,7 +9,7 @@ import { OPERATOR, LEGAL_VERSION, LEGAL_VERSION_LABEL, PUBLIC_DOCUMENTS } from '
 import { feedbackInput, createFeedback } from '../lib/feedback.mjs';
 import { queueMail } from '../lib/mailer.mjs';
 import {
-  ValidationError, CATEGORIES, TOURNAMENT_KINDS, TOURNAMENT_KIND_RU, TOURNAMENT_STATUSES, TOURNAMENT_STATUS_RU,
+  ValidationError, CATEGORIES, TOURNAMENT_KINDS, TOURNAMENT_KIND_RU, TOURNAMENT_STATUSES, TOURNAMENT_STATUS_RU, TOURNAMENT_SEX_RU,
 } from '../lib/validate.mjs';
 import { DIRECTORIES, listDirectory, directoryFilterOptions } from '../lib/directories.mjs';
 import { descriptionFrom } from '../lib/seo.mjs';
@@ -118,6 +118,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       age: q('age'),
       status: TOURNAMENT_STATUSES.includes(q('status')) ? q('status') : '',
       kind: TOURNAMENT_KINDS.includes(q('kind')) ? q('kind') : '',
+      sex: ['M', 'F', 'X'].includes(q('sex')) ? q('sex') : '',
     };
     res.render('tournaments-list', {
       title: 'Турниры — ФТСО',
@@ -126,6 +127,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       options: tournamentFilterOptions(db),
       kindRu: TOURNAMENT_KIND_RU,
       statusRu: TOURNAMENT_STATUS_RU,
+      sexRu: TOURNAMENT_SEX_RU,
       categories: CATEGORIES,
       section: sectionFor('/tournaments'),
     });
@@ -137,7 +139,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
   app.get('/tournaments/:id', (req, res, next) => {
     if (!/^\d+$/.test(req.params.id)) return next();
     const tournament = db
-      .prepare('SELECT id, name, end_date, start_date, category, city, kind, age_group FROM tournaments WHERE id = ? AND is_published = 1')
+      .prepare('SELECT id, name, end_date, start_date, category, city, kind, age_group, sex FROM tournaments WHERE id = ? AND is_published = 1')
       .get(Number(req.params.id));
     if (!tournament) return next(); // -> общий 404-обработчик
     res.status(200).render('tournament', {

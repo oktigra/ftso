@@ -11,7 +11,7 @@ const safeFile = (name) => name.replace(/[^\p{L}\p{N} _-]+/gu, '').trim().slice(
 
 export function mountTournamentSheets(app, { db, prefix, publishedOnly, erasedLabel, middlewares = [] }) {
   const load = (id) => db
-    .prepare(`SELECT id, name, end_date, start_date, category, city, kind, age_group FROM tournaments WHERE id = ?${publishedOnly ? ' AND is_published = 1' : ''}`)
+    .prepare(`SELECT id, name, end_date, start_date, category, city, kind, age_group, sex FROM tournaments WHERE id = ?${publishedOnly ? ' AND is_published = 1' : ''}`)
     .get(id);
   const model = (id) => {
     const tournament = load(id);

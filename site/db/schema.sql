@@ -66,6 +66,8 @@ CREATE TABLE IF NOT EXISTS tournaments (
   start_date TEXT,
   kind       TEXT NOT NULL DEFAULT 'other' CHECK (kind IN ('team','championship','other')),
   age_group  TEXT,
+  -- Пол участников (как у РТТ/БТФ): M — мужчины/юноши, F — женщины/девушки, X — смешанный, NULL — не задан.
+  sex        TEXT CHECK (sex IS NULL OR sex IN ('M','F','X')),
   -- ЧЕРНОВИК / ОПУБЛИКОВАН (06.09.2026): черновик виден только в админке — ни в календаре,
   -- ни на витрине, ни в sitemap, ни в рейтинге.
   is_published INTEGER NOT NULL DEFAULT 1 CHECK (is_published IN (0,1))
