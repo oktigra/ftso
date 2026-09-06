@@ -12,6 +12,7 @@ import { intAtLeast, str, ValidationError } from '../lib/validate.mjs';
 import { parseMultipart } from '../lib/multipart.mjs';
 import { SEO_PAGES, SEO_DEFAULTS, seoFor, saveSeo } from '../lib/seo.mjs';
 import { SITE_TEXTS, saveText } from '../lib/texts.mjs';
+import { postInBackground, postToMax, maxWhoAmI, maxFindChats, maxEnabled } from '../lib/max-post.mjs';
 import { DIRECTORY_SEED, applyDirectorySeed } from '../lib/directory-seed.mjs';
 import { storeUpload, deleteUpload, uploadById, sendUpload } from '../lib/uploads.mjs';
 import {
@@ -108,6 +109,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
           data.author,
           data.category,
         );
+      if (data.is_published) postInBackground(db, config, req.session.user.id, 'news.publish', { text: `📰 **${data.title}**${data.summary ? '\n' + data.summary : ''}`, url: `${req.protocol}://${req.get('host')}/news/${info.lastInsertRowid}`, button: 'Читать на сайте' });
       logAction(db, req.session.user.id, 'news.create', Number(info.lastInsertRowid), {
         title: data.title,
         is_published: data.is_published,
@@ -123,6 +125,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
     guard((req, res) => {
       const id = intAtLeast(req.params.id, 'id');
       const data = newsInput(req.body);
+      const wasPublished = db.prepare('SELECT is_published FROM news WHERE id = ?').get(id)?.is_published;
       const info = db
         .prepare(
           `UPDATE news SET title = ?, summary = ?, body = ?, is_published = ?,
@@ -132,6 +135,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
         .run(data.title, data.summary, data.body, data.is_published, data.published_at, data.author, data.category, id);
       if (!info.changes) throw new ValidationError('Новость не найдена');
       logAction(db, req.session.user.id, 'news.update', id, { is_published: data.is_published });
+      if (data.is_published && !wasPublished) postInBackground(db, config, req.session.user.id, 'news.publish', { text: `📰 **${data.title}**${data.summary ? '\n' + data.summary : ''}`, url: `${req.protocol}://${req.get('host')}/news/${id}`, button: 'Читать на сайте' });
       flash(req, res, 'ok', 'Новость обновлена.', '/admin/news');
     }),
   );
@@ -345,6 +349,22 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       flash(req, res, 'ok', 'Запись удалена.', `/admin/directories/${spec.key}`);
     }),
   );
+
+  // --- АВТОПОСТ В MAX: состояние, проверка бота, поиск канала, тестовый пост (супер-админ) ---
+  const SUPER = rolesFor('users');
+  app.get('/admin/max', requireRole(...SUPER), (req, res) => {
+    res.render('admin/max', { title: 'MAX — админка ФТСО', maxOn: maxEnabled(config), hasToken: Boolean(config.maxBotToken), chatId: config.maxChatId, result: null });
+  });
+  app.post('/admin/max/check', requireRole(...SUPER), limitWrites, async (req, res) => {
+    const who = await maxWhoAmI(config);
+    const chats = await maxFindChats(config);
+    res.render('admin/max', { title: 'MAX — админка ФТСО', maxOn: maxEnabled(config), hasToken: Boolean(config.maxBotToken), chatId: config.maxChatId, result: { who, chats } });
+  });
+  app.post('/admin/max/test', requireRole(...SUPER), limitWrites, guard(async (req, res) => {
+    const r = await postToMax(config, { text: 'Проверка связи: сайт ftso67.ru → канал MAX ✅', url: `${req.protocol}://${req.get('host')}/`, button: 'Открыть сайт' });
+    logAction(db, req.session.user.id, r.ok ? 'max.post' : 'max.post.failed', null, { kind: 'test', status: r.status, error: r.error });
+    flash(req, res, r.ok ? 'ok' : 'error', r.ok ? 'Тестовый пост ушёл в канал.' : `Не ушло: ${r.error || 'HTTP ' + r.status}`, '/admin/max');
+  }));
 
   // --- ТЕКСТЫ САЙТА (ТЗ п. 5 «управление страницами») ------------------------
   app.get('/admin/texts', requireRole(...CONTENT_ROLES), (req, res) => {

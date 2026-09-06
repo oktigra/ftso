@@ -2453,6 +2453,38 @@ await check('новости: категории (турниры / федерац
   return 'категории сохраняются и фильтруются, чужая отбита; режим/цены на витрине';
 });
 
+await check('автопост в MAX: без токена выключен и молчит; с токеном — POST /messages с кнопкой при публикации турнира, новости и итогов; страница /admin/max только супер-админу', async () => {
+  const { postToMax, maxEnabled, postInBackground } = await import('./server/lib/max-post.mjs');
+  eq(maxEnabled(config), false, 'в тестах MAX выключен');
+  eq((await postToMax(config, { text: 'x' })).ok, false, 'без настроек пост не уходит');
+  // Поддельный fetch: собираем, что сайт отправил бы.
+  const sent = [];
+  const fakeFetch = async (url, opts) => { sent.push({ url, opts }); return { ok: true, status: 200, text: async () => '', json: async () => ({}) }; };
+  const cfg = { ...config, maxBotToken: 'test-token', maxChatId: '12345' };
+  const r = await postToMax(cfg, { text: 'Привет **жирно**', url: 'https://ftso67.ru/tournaments/1', button: 'Открыть' }, fakeFetch);
+  eq(r.ok, true, 'пост с поддельным fetch');
+  eq(sent[0].url, 'https://platform-api2.max.ru/messages?chat_id=12345', 'адрес API');
+  eq(sent[0].opts.headers.Authorization, 'test-token', 'токен в заголовке');
+  const body = JSON.parse(sent[0].opts.body);
+  eq(body.format + '|' + body.attachments[0].payload.buttons[0][0].url, 'markdown|https://ftso67.ru/tournaments/1', 'тело: markdown и кнопка-ссылка');
+  const failFetch = async () => ({ ok: false, status: 401, text: async () => 'bad token' });
+  const f = await postToMax(cfg, { text: 'x' }, failFetch);
+  eq(f.ok + ':' + f.status + ':' + f.error, 'false:401:bad token', 'ошибка API возвращается, не бросается');
+  const boom = await postToMax(cfg, { text: 'x' }, async () => { throw new Error('сеть'); });
+  eq(boom.ok, false, 'сетевая ошибка не роняет');
+  // В фоне — журнал.
+  postInBackground(db, cfg, 1, 'test', { text: 'фон' }, fakeFetch);
+  await new Promise((r2) => setTimeout(r2, 50));
+  assert(db.prepare("SELECT 1 FROM action_log WHERE action LIKE '%\"max.post\"%'").get(), 'фоновый пост не попал в журнал');
+  // Страница: супер-админу 200, tournament-admin — 403.
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const p = await http('/admin/max', { jar });
+  eq(p.status, 200, '/admin/max');
+  assert(/выключен/.test(p.text) && /MAX_BOT_TOKEN/.test(p.text), 'страница не показывает состояние и инструкцию');
+  eq((await http('/admin/max', { jar: (await login(TADMIN.user, TADMIN.pass)).jar })).status, 403, 'tournament-admin к MAX не допущен');
+  return 'без настроек молчит; с токеном шлёт markdown+кнопку на platform-api2.max.ru; ошибки не роняют; журнал; страница только супер-админу';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

@@ -158,6 +158,10 @@ export function loadConfig({ requireSecrets = true } = {}) {
     maxUrl: process.env.MAX_URL === 'off' ? ''
       : /^https:\/\/max\.ru\/\S+$/.test(process.env.MAX_URL || '') ? process.env.MAX_URL
       : 'https://max.ru/channel_ftso',
+    // АВТОПОСТ В MAX (06.09.2026): токен бота федерации (из @MasterBot) и id канала.
+    // Секреты — только в .env. Пусто — автопост выключен, кнопка «Написать в MAX» не зависит.
+    maxBotToken: String(process.env.MAX_BOT_TOKEN || '').trim(),
+    maxChatId: String(process.env.MAX_CHAT_ID || '').trim(),
     // Яндекс.Метрика (решение владельца 05.09.2026). Счётчик 112305908 создан
     // 05.09.2026 на аккаунте федерации info@ftso67.ru (владелец — федерация;
     // вебвизор, автоцели, e-commerce, тег-менеджер выключены). Номер публичный —
