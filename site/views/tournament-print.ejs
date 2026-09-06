@@ -44,6 +44,7 @@
         <% b.rounds.forEach(function (round) { %>
           <div class="bracket__round">
             <div class="bracket__title"><%= round.name %></div>
+            <div class="bracket__pairs">
             <% round.pairs.forEach(function (p) { %>
               <div class="bracket__pair<%= p.winner ? ' bracket__pair--done' : '' %>">
                 <div class="bracket__slot<%= p.winner && p.winner === p.aId ? ' bracket__slot--win' : '' %>"><%= p.a ? p.a.full_name : '—' %></div>
@@ -52,8 +53,9 @@
               </div>
             <% }); %>
           </div>
+          </div>
         <% }); %>
-        <div class="bracket__round"><div class="bracket__title">Победитель</div><div class="bracket__pair"><div class="bracket__slot bracket__slot--win"><%= b.champion ? b.champion.full_name : '—' %></div></div></div>
+        <div class="bracket__round"><div class="bracket__title">Победитель</div><div class="bracket__pairs"><div class="bracket__pair"><div class="bracket__slot bracket__slot--win"><%= b.champion ? b.champion.full_name : '—' %></div></div></div></div>
       </div>
     <% }); %>
 

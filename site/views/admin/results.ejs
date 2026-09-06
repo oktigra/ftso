@@ -186,6 +186,7 @@
           <% b.rounds.forEach(function (round) { %>
             <div class="bracket__round">
               <div class="bracket__title"><%= round.name %></div>
+              <div class="bracket__pairs">
               <% round.pairs.forEach(function (p) { %>
                 <div class="bracket__pair<%= p.winner ? ' bracket__pair--done' : '' %>">
                   <div class="bracket__slot<%= p.winner && p.winner === p.aId ? ' bracket__slot--win' : '' %>">
@@ -210,8 +211,9 @@
                 </div>
               <% }); %>
             </div>
+            </div>
           <% }); %>
-          <div class="bracket__round"><div class="bracket__title">Победитель</div><div class="bracket__pair"><div class="bracket__slot bracket__slot--win"><%= b.champion ? b.champion.full_name : '—' %></div></div></div>
+          <div class="bracket__round"><div class="bracket__title">Победитель</div><div class="bracket__pairs"><div class="bracket__pair"><div class="bracket__slot bracket__slot--win"><%= b.champion ? b.champion.full_name : '—' %></div></div></div></div>
         </div>
         <p class="muted">Счёт — с точки зрения верхнего игрока пары; «wo»/«-wo» — без игры; «bye» — если второго нет. Места: 1, 2, 3 (полуфиналисты), 5 (четвертьфиналисты), 9, 17.</p>
         <div class="inline-form">
