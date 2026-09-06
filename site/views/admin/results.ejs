@@ -90,7 +90,7 @@
               </tbody>
             </table>
           </div>
-          <p class="muted">Счёт вводится с точки зрения игрока в строке: «6:3 6:4», «6:3 3:6 10:8», «7:6(5)». Неявка соперника — «неявка 2», своя — «неявка 1». Снялся — «6:3 2:1 отказ 2» (кто снялся — номером). Enter в клетке сохраняет. Пустая клетка — матч удалён.</p>
+          <p class="muted">Счёт вводится с точки зрения игрока в строке: «6:3 6:4», «6:3 3:6 10:8», «7:6(5)». Неявка соперника — «неявка 2», своя — «неявка 1», оба не явились — «неявка 1 и 2». Снялся — «6:3 2:1 отказ 2» (кто снялся — номером), оба снялись — «отказ 1 и 2». Enter в клетке сохраняет. Пустая клетка — матч удалён.</p>
           <div class="inline-form">
             <form method="post" action="/admin/tournaments/<%= tournament.id %>/groups/<%= g.id %>/places">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -188,7 +188,7 @@
               <div class="bracket__title"><%= round.name %></div>
               <div class="bracket__pairs">
               <% round.pairs.forEach(function (p) { %>
-                <div class="bracket__pair<%= p.winner ? ' bracket__pair--done' : '' %>">
+                <div class="bracket__pair<%= p.decided ? ' bracket__pair--done' : '' %>">
                   <div class="bracket__slot<%= p.winner && p.winner === p.aId ? ' bracket__slot--win' : '' %>">
                     <%= p.a ? p.a.full_name : '—' %>
                     <% if (round.r === 0 && p.aId && !p.winner) { %><form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/unseed" class="bracket__x"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="position" value="<%= 2 * p.k + 1 %>"><button type="submit" class="link-x" aria-label="Убрать">×</button></form><% } %>
@@ -197,7 +197,7 @@
                     <%= p.b ? p.b.full_name : '—' %>
                     <% if (round.r === 0 && p.bId && !p.winner) { %><form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/unseed" class="bracket__x"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="position" value="<%= 2 * p.k + 2 %>"><button type="submit" class="link-x" aria-label="Убрать">×</button></form><% } %>
                   </div>
-                  <% if (p.winner) { %>
+                  <% if (p.winner || p.void) { %>
                     <div class="bracket__score"><%= p.bye ? 'без игры' : (p.score || 'итог записан') %>
                       <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/undo" class="bracket__x"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="r" value="<%= round.r %>"><input type="hidden" name="k" value="<%= p.k %>"><button type="submit" class="btn btn--danger btn--small" data-confirm="Отменить итог пары? Снимется и всё, куда прошёл победитель.">отменить</button></form>
                     </div>
@@ -215,7 +215,7 @@
           <% }); %>
           <div class="bracket__round"><div class="bracket__title">Победитель</div><div class="bracket__pairs"><div class="bracket__pair"><div class="bracket__slot bracket__slot--win"><%= b.champion ? b.champion.full_name : '—' %></div></div></div></div>
         </div>
-        <p class="muted">Счёт — с точки зрения верхнего игрока пары: «6:3 6:4»; неявка — «неявка 2» / «неявка 1»; снялся — «6:3 2:1 отказ 2»; «bye» — если второго нет. Места: 1, 2, 3 (полуфиналисты), 5 (четвертьфиналисты), 9, 17.</p>
+        <p class="muted">Счёт — с точки зрения верхнего игрока пары: «6:3 6:4»; неявка — «неявка 2» / «неявка 1»; снялся — «6:3 2:1 отказ 2»; оба не явились или снялись — «неявка 1 и 2» / «отказ 1 и 2» (дальше никто не проходит, сопернику в следующем круге — «bye»); «bye» — если второго нет. Места: 1, 2, 3 (полуфиналисты), 5 (четвертьфиналисты), 9, 17.</p>
         <div class="inline-form">
           <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/places">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">

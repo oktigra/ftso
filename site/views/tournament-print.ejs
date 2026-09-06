@@ -46,10 +46,10 @@
             <div class="bracket__title"><%= round.name %></div>
             <div class="bracket__pairs">
             <% round.pairs.forEach(function (p) { %>
-              <div class="bracket__pair<%= p.winner ? ' bracket__pair--done' : '' %>">
+              <div class="bracket__pair<%= p.decided ? ' bracket__pair--done' : '' %>">
                 <div class="bracket__slot<%= p.winner && p.winner === p.aId ? ' bracket__slot--win' : '' %>"><%= p.a ? p.a.full_name : '—' %></div>
                 <div class="bracket__slot<%= p.winner && p.winner === p.bId ? ' bracket__slot--win' : '' %>"><%= p.b ? p.b.full_name : '—' %></div>
-                <div class="bracket__score"><%= p.winner ? (p.bye ? 'без игры' : (p.score || '')) : '' %></div>
+                <div class="bracket__score"><%= p.winner || p.void ? (p.bye ? 'без игры' : (p.score || '')) : '' %></div>
               </div>
             <% }); %>
           </div>

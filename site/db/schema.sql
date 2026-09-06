@@ -105,6 +105,19 @@ CREATE TABLE IF NOT EXISTS matches (
   UNIQUE (tournament_id, winner_player_id, loser_player_id, kind, stage)
 );
 
+-- НЕСОСТОЯВШИЕСЯ ВСТРЕЧИ (06.09.2026): оба не явились / оба снялись — победителя нет, матча
+-- в matches нет (в рейтинг не идёт), но встреча считается сыгранной: в группе — обоим по
+-- поражению, в сетке — пара закрыта, дальше никто не проходит.
+CREATE TABLE IF NOT EXISTS tournament_voids (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  stage         TEXT NOT NULL,            -- 'g:<group>' | 'b:<bracket>:<round>:<pair>'
+  a             INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  b             INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  reason        TEXT NOT NULL CHECK (reason IN ('wo','ret')),
+  UNIQUE (tournament_id, stage, a, b)
+);
+
 -- КРУГОВЫЕ ГРУППЫ ТУРНИРА (сетка, слой 1). Матчи группы — обычные строки matches.
 CREATE TABLE IF NOT EXISTS tournament_groups (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,

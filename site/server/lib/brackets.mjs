@@ -26,6 +26,7 @@ export function bracketView(db, tournamentId, b) {
   const ids = [...new Set(slots.map((s) => s.player_id))];
   const names = new Map(ids.length ? db.prepare(`SELECT id, full_name, city FROM players WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map((p) => [p.id, p]) : []);
   const scoreOf = (w, l) => db.prepare('SELECT score FROM matches WHERE tournament_id = ? AND stage = ? AND winner_player_id = ? AND loser_player_id = ?').get(tournamentId, `b:${b.id}`, w, l)?.score ?? null;
+  const voids = new Map(db.prepare("SELECT stage, reason FROM tournament_voids WHERE tournament_id = ? AND stage LIKE ?").all(tournamentId, `b:${b.id}:%`).map((v) => [v.stage, v.reason]));
   const rounds = [];
   const R = roundsOf(b.size);
   for (let r = 0; r < R; r++) {
@@ -36,7 +37,9 @@ export function bracketView(db, tournamentId, b) {
       const next = at.get(`${r + 1}:${k}`) || null;
       let score = null; let scoreRaw = null;
       if (next && a && c) { scoreRaw = scoreOf(next, next === a ? c : a); score = scoreFor(scoreRaw, true); }
-      pairs.push({ k, a: a && names.get(a), b: c && names.get(c), aId: a, bId: c, winner: next, score, scoreRaw, bye: Boolean(next && (!a || !c)) });
+      const voidReason = voids.get(`b:${b.id}:${r}:${k}`) || null;
+      if (voidReason) score = voidReason === 'ret' ? 'отказ 1 и 2' : 'неявка 1 и 2';
+      pairs.push({ k, a: a && names.get(a), b: c && names.get(c), aId: a, bId: c, winner: next, score, scoreRaw, bye: Boolean(next && (!a || !c)), void: voidReason, decided: Boolean(next || voidReason) });
     }
     rounds.push({ r, name: roundName(b.size, r), pairs });
   }
@@ -77,6 +80,7 @@ export function decide(db, tournamentId, bid, r, k, rawScore) {
   const a = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(b.id, r, 2 * k)?.player_id || null;
   const c = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(b.id, r, 2 * k + 1)?.player_id || null;
   if (db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(b.id, r + 1, k)) throw new ValidationError('Итог этой пары уже записан — сначала отмените его');
+  if (db.prepare('SELECT 1 FROM tournament_voids WHERE tournament_id = ? AND stage = ?').get(tournamentId, `b:${b.id}:${r}:${k}`)) throw new ValidationError('Пара закрыта как несостоявшаяся — сначала отмените её');
   const s = String(rawScore || '').trim();
   return db.transaction(() => {
     if (/^bye$/i.test(s)) {
@@ -88,6 +92,12 @@ export function decide(db, tournamentId, bid, r, k, rawScore) {
     }
     if (!a || !c) throw new ValidationError('В паре не хватает игрока: посейте второго или отметьте «bye»');
     const parsed = parseScore(s);
+    if (parsed && parsed.double) {
+      // Оба не явились / оба снялись: пара закрыта, дальше НИКТО не проходит — в следующем
+      // круге сопернику ставится «bye».
+      db.prepare('INSERT OR REPLACE INTO tournament_voids (tournament_id, stage, a, b, reason) VALUES (?, ?, ?, ?, ?)').run(tournamentId, `b:${b.id}:${r}:${k}`, Math.min(a, c), Math.max(a, c), parsed.double);
+      return { void: parsed.double };
+    }
     if (!parsed) throw new ValidationError('Введите счёт с точки зрения верхнего игрока («6:3 6:4», «неявка 2», «6:3 2:1 отказ 2») или «bye»');
     const w = parsed.rowWon ? a : c; const l = parsed.rowWon ? c : a;
     const score = parsed.score; // уже от победителя: «6:4 6:4», «неявка», «6:3 2:1 отк.»
@@ -102,7 +112,11 @@ export function decide(db, tournamentId, bid, r, k, rawScore) {
 export function undo(db, tournamentId, bid, r, k) {
   const b = bracketOf(db, tournamentId, bid);
   const w = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(b.id, r + 1, k)?.player_id;
-  if (!w) throw new ValidationError('Итог пары не записан');
+  if (!w) {
+    const v = db.prepare('DELETE FROM tournament_voids WHERE tournament_id = ? AND stage = ?').run(tournamentId, `b:${b.id}:${r}:${k}`);
+    if (!v.changes) throw new ValidationError('Итог пары не записан');
+    return;
+  }
   const a = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(b.id, r, 2 * k)?.player_id;
   const c = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(b.id, r, 2 * k + 1)?.player_id;
   db.transaction(() => {

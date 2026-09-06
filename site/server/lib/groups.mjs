@@ -19,6 +19,10 @@ export function parseScore(raw) {
   const s = String(raw || '').trim().replace(/\s+/g, ' ');
   if (!s) return null;
   const low = s.toLowerCase();
+  // оба не явились / оба снялись — победителя нет
+  if (/^(?:неявка|отказ|отк\.?)\s*(?:1\s*и\s*2|обоих|оба|двойн\w*)$/.test(low) || /^двойн\w*\s+(неявка|отказ)$/.test(low)) {
+    return { double: /отказ|отк/.test(low) ? 'ret' : 'wo', rowWon: null, sets: [0, 0], games: [0, 0], score: /отказ|отк/.test(low) ? 'отказ 1 и 2' : 'неявка 1 и 2' };
+  }
   // неявка
   let m = /^(?:-)?(?:неявка|w\/o|wo)(?:\s*(1|2))?$/.exec(low);
   if (m) {
@@ -93,7 +97,15 @@ export function groupTable(db, tournamentId, group) {
         WHERE tournament_id = ? AND stage = ? AND winner_player_id IN (${ids.map(() => '?').join(',')}) AND loser_player_id IN (${ids.map(() => '?').join(',')})`,
     ).all(tournamentId, `g:${group.id}`, ...ids, ...ids)
     : [];
+  const voids = ids.length
+    ? db.prepare(`SELECT a, b, reason FROM tournament_voids WHERE tournament_id = ? AND stage = ? AND a IN (${ids.map(() => '?').join(',')}) AND b IN (${ids.map(() => '?').join(',')})`).all(tournamentId, `g:${group.id}`, ...ids, ...ids)
+    : [];
   const cell = new Map(); // "a:b" → { won, score, sets, games } с точки зрения a
+  for (const v of voids) {
+    const label = v.reason === 'ret' ? 'отказ 1 и 2' : 'неявка 1 и 2';
+    cell.set(`${v.a}:${v.b}`, { won: false, void: true, score: label, shown: label, sets: [0, 0], games: [0, 0] });
+    cell.set(`${v.b}:${v.a}`, { won: false, void: true, score: label, shown: label, sets: [0, 0], games: [0, 0] });
+  }
   for (const m of matches) {
     let parsed = null;
     try { parsed = parseScore(m.score); } catch { parsed = null; }
@@ -127,9 +139,9 @@ export function groupTable(db, tournamentId, group) {
     cells: Object.fromEntries(cell),
     stats: Object.fromEntries(stats.map((s) => [s.id, { ...s, place: place.get(s.id) }])),
     order: sorted.map((s) => s.id),
-    playedTotal: matches.length,
+    playedTotal: matches.length + voids.length,
     total,
-    complete: members.length > 1 && matches.length === total,
+    complete: members.length > 1 && matches.length + voids.length === total,
     _byId: byId,
   };
 }
@@ -138,10 +150,17 @@ export function groupTable(db, tournamentId, group) {
 export function setCell(db, tournamentId, group, rowId, colId, rawScore) {
   if (rowId === colId) throw new ValidationError('Игрок не играет сам с собой');
   const del = db.prepare('DELETE FROM matches WHERE tournament_id = ? AND stage = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))');
+  const delVoid = db.prepare('DELETE FROM tournament_voids WHERE tournament_id = ? AND stage = ? AND a = ? AND b = ?');
   const parsed = parseScore(rawScore);
+  const [lo, hi] = rowId < colId ? [rowId, colId] : [colId, rowId];
   return db.transaction(() => {
     del.run(tournamentId, `g:${group.id}`, rowId, colId, colId, rowId);
+    delVoid.run(tournamentId, `g:${group.id}`, lo, hi);
     if (!parsed) return { cleared: true };
+    if (parsed.double) {
+      db.prepare('INSERT INTO tournament_voids (tournament_id, stage, a, b, reason) VALUES (?, ?, ?, ?, ?)').run(tournamentId, `g:${group.id}`, lo, hi, parsed.double);
+      return { void: parsed.double };
+    }
     const w = parsed.rowWon ? rowId : colId; const l = parsed.rowWon ? colId : rowId;
     // Счёт хранится с точки зрения ПОБЕДИТЕЛЯ (parseScore уже перевернул сеты).
     const score = parsed.score;
