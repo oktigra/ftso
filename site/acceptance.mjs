@@ -2171,15 +2171,19 @@ await check('протокол секретаря: пустая сетка в PDF
   const xl = await http(`/tournaments/${t}/protocol.xlsx`);
   eq(xl.status, 200, 'protocol.xlsx');
   const rows = rowsFromXlsx(Buffer.from(await (await fetch(inst.base + `/tournaments/${t}/protocol.xlsx`)).arrayBuffer()));
-  eq(rows[0].join('|'), 'Где|Игрок A|Игрок B|Счёт (от игрока A)|Ключ', 'шапка протокола');
-  eq(rows.length - 1, 5, 'пар к заполнению');
-  assert(rows.slice(1).every((r) => /^[gb]:\d+:\d+:\d+$/.test(r[4]) && r[3] === ''), 'ключи/пустой счёт');
-  // Секретарь заполняет: все пары группы и одну пару сетки; одну строку оставляет пустой.
+  eq(rows[0][1], 'ПРОТОКОЛ ТУРНИРА', 'заголовок протокола');
+  assert(rows.some((r) => r[1] === 'Главный судья') && rows.some((r) => r[1] === 'Секретарь турнира'), 'в шапке нет судьи/секретаря');
+  const hi = rows.findIndex((r) => r[9] === 'Код пары (не менять)');
+  eq(rows[hi].join('|'), '№|Этап|Игрок 1|Игрок 2|1-й сет|2-й сет|3-й сет|Счёт (итог)|Победитель|Код пары (не менять)', 'шапка таблицы протокола');
+  const body = rows.slice(hi + 1).filter((r) => /^(сетка|группа) /.test(r[9] || ''));
+  eq(body.length, 5, 'пар к заполнению');
+  assert(body.every((r) => r[7] === '' && (/^сетка \d+ · круг \d+ · пара \d+$/.test(r[9]) || /^группа \d+ · игроки #\d+ и #\d+$/.test(r[9]))), `коды пар/пустой счёт: ${body.map((r) => r[9]).join(' | ')}`);
+  // Секретарь заполняет: группу — сетами по колонкам, пару 1 сетки — итогом «-wo»; одну строку оставляет пустой.
   const filled = rows.map((r, i) => {
-    if (i === 0) return r;
-    const [where] = r;
-    if (/Группа/.test(where)) return [r[0], r[1], r[2], '6:2 6:2', r[4]];
-    if (/пара 1$/.test(where)) return [r[0], r[1], r[2], '-wo', r[4]];
+    if (i <= hi) return r;
+    const where = r[1] || '';
+    if (/Группа/.test(where)) return [r[0], r[1], r[2], r[3], '6:2', '6:2', '', '', '', r[9]];
+    if (/пара 1$/.test(where)) return [r[0], r[1], r[2], r[3], '', '', '', '-wo', '', r[9]];
     return r;
   });
   const up = await http(`/admin/tournaments/${t}/protocol/import`, {
@@ -2194,11 +2198,12 @@ await check('протокол секретаря: пустая сетка в PDF
   eq((await http(`/admin/tournaments/${t}/protocol/import`, { method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'file', filename: 'protocol.xlsx', type: 'application/octet-stream', buffer: xlsxFromRows(filled, { sheet: 'Протокол' }) }] }, jar })).status, 302, 'повтор');
   eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t).n, 4, 'повтор не должен дублировать');
   // Новый протокол — только оставшаяся пара 1/2 (пара 2); финал появится после неё.
-  const rows2 = rowsFromXlsx(Buffer.from(await (await fetch(inst.base + `/tournaments/${t}/protocol.xlsx`)).arrayBuffer()));
-  eq(rows2.length - 1, 5, 'в новом протоколе — 3 пары группы и 2 пары 1/2 (сыгранная со счётом, несыгранная — пустая)');
-  assert(rows2.slice(1).filter((r) => /Группа/.test(r[0])).every((r) => r[3] === '6:2 6:2'), 'счёт группы в новом протоколе не показан');
-  eq(rows2.slice(1).find((r) => /пара 1$/.test(r[0]))[3], '-wo', 'сыгранная пара сетки показана счётом от игрока A («-wo»)');
-  eq(rows2.slice(1).find((r) => /пара 2$/.test(r[0]))[3], '', 'несыгранная пара — пустой счёт');
+  const rows2all = rowsFromXlsx(Buffer.from(await (await fetch(inst.base + `/tournaments/${t}/protocol.xlsx`)).arrayBuffer()));
+  const rows2 = rows2all.filter((r) => /^(сетка|группа) /.test(r[9] || ''));
+  eq(rows2.length, 5, 'в новом протоколе — 3 пары группы и 2 пары 1/2 (сыгранная со счётом, несыгранная — пустая)');
+  assert(rows2.filter((r) => /Группа/.test(r[1])).every((r) => r[7] === '6:2 6:2' && r[4] === '6:2' && r[5] === '6:2'), 'счёт группы в новом протоколе не показан (итог и сеты)');
+  eq(rows2.find((r) => /пара 1$/.test(r[1]))[7], '-wo', 'сыгранная пара сетки показана счётом от Игрока 1 («-wo»)');
+  eq(rows2.find((r) => /пара 2$/.test(r[1]))[7], '', 'несыгранная пара — пустой счёт');
   // Чужой файл без ключей — отказ.
   const bad = await http(`/admin/tournaments/${t}/protocol/import`, { method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'file', filename: 'x.xlsx', type: 'application/octet-stream', buffer: xlsxFromRows([['Место', 'Игрок'], [1, 'Кто-то']]) }] }, jar });
   eq(bad.status, 302, 'чужой файл — ответ'); eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t).n, 4, 'чужой файл ничего не пишет');
