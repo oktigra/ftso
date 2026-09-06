@@ -2434,6 +2434,25 @@ await check('судья турнира: временная ссылка даёт
   return 'ссылка один раз; судья вписал счёт (журнал без user_id), результаты/чужой турнир/админка закрыты; отзыв гасит сессию и ссылку';
 });
 
+await check('новости: категории (турниры / федерация / обучение) — в форме, на карточке, фильтр; справочники: режим работы и цены', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/news', { jar })).text);
+  eq((await http('/admin/news', { method: 'POST', form: { _csrf, title: 'Категория турнир', body: 'Т', is_published: '1', published_at: '2026-09-06', category: 'tournament' }, jar })).status, 302, 'новость турнир');
+  eq((await http('/admin/news', { method: 'POST', form: { _csrf, title: 'Категория обучение', body: 'О', is_published: '1', published_at: '2026-09-06', category: 'education' }, jar })).status, 302, 'новость обучение');
+  eq((await http('/admin/news', { method: 'POST', form: { _csrf, title: 'Категория кривая', body: 'К', is_published: '1', category: 'nope' }, jar })).status, 302, 'ответ на чужую категорию');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM news WHERE title = 'Категория кривая'").get().n, 0, 'чужая категория не должна сохраняться');
+  const all = await http('/news');
+  assert(/name="category"/.test(all.text) && /<span class="tag">Турниры<\/span>/.test(all.text), 'на списке нет фильтра/метки категории');
+  const t = (await http('/news?category=tournament')).text;
+  assert(/Категория турнир/.test(t) && !/Категория обучение/.test(t), 'фильтр категории не работает');
+  const c = tokenFrom((await http('/admin/directories/courts', { jar })).text);
+  eq((await http('/admin/directories/courts', { method: 'POST', form: { _csrf: c, name: 'Корт с режимом', city: 'Смоленск', hours: 'ежедневно 8:00–22:00', prices: '900 ₽/ч' }, jar })).status, 302, 'корт');
+  const pub = (await http('/courts')).text;
+  assert(/Режим работы/.test(pub) && /ежедневно 8:00–22:00/.test(pub) && /900 ₽\/ч/.test(pub), 'режим/цены не показаны');
+  db.prepare("DELETE FROM news WHERE title LIKE 'Категория %'").run(); db.prepare("DELETE FROM courts WHERE name = 'Корт с режимом'").run(); db.prepare('DELETE FROM write_attempts').run();
+  return 'категории сохраняются и фильтруются, чужая отбита; режим/цены на витрине';
+});
+
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
   const page = await http('/register', { jar });

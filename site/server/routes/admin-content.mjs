@@ -28,6 +28,7 @@ import {
   allNews,
   newsById,
   newsAttachments,
+  NEWS_CATEGORIES,
   siteAsset,
   documentInput,
   galleryInput,
@@ -81,6 +82,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
   app.get('/admin/news', requireRole(...NEWS_ROLES), (req, res) => {
     res.render('admin/news', {
       title: 'Новости — админка ФТСО',
+      categories: NEWS_CATEGORIES,
       news: allNews(db).map((n) => ({ ...n, attachments: newsAttachments(db, n.id) })),
     });
   });
@@ -93,8 +95,8 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       const data = newsInput(req.body);
       const info = db
         .prepare(
-          `INSERT INTO news (title, summary, body, is_published, published_at, created_by, author)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO news (title, summary, body, is_published, published_at, created_by, author, category)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           data.title,
@@ -104,6 +106,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
           data.published_at,
           req.session.user.id,
           data.author,
+          data.category,
         );
       logAction(db, req.session.user.id, 'news.create', Number(info.lastInsertRowid), {
         title: data.title,
@@ -123,10 +126,10 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       const info = db
         .prepare(
           `UPDATE news SET title = ?, summary = ?, body = ?, is_published = ?,
-                           published_at = ?, author = ?, updated_at = datetime('now')
+                           published_at = ?, author = ?, category = ?, updated_at = datetime('now')
             WHERE id = ?`,
         )
-        .run(data.title, data.summary, data.body, data.is_published, data.published_at, data.author, id);
+        .run(data.title, data.summary, data.body, data.is_published, data.published_at, data.author, data.category, id);
       if (!info.changes) throw new ValidationError('Новость не найдена');
       logAction(db, req.session.user.id, 'news.update', id, { is_published: data.is_published });
       flash(req, res, 'ok', 'Новость обновлена.', '/admin/news');

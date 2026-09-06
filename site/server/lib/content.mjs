@@ -7,8 +7,11 @@ import { str, isoDate, oneOf, intAtLeast, ValidationError } from './validate.mjs
 
 // --- новости ---------------------------------------------------------------
 
+export const NEWS_CATEGORIES = { tournament: 'Турниры', federation: 'Федерация', education: 'Обучение' };
+
 export function newsInput(body) {
   return {
+    category: body.category ? oneOf(body.category, 'Категория', Object.keys(NEWS_CATEGORIES)) : 'federation',
     title: str(body.title, 'Заголовок', { max: 200 }),
     summary: str(body.summary, 'Короткое описание', { max: 500, required: false }),
     body: str(body.body, 'Текст', { max: 20000 }),
@@ -30,13 +33,14 @@ export function newsAttachments(db, newsId) {
     .all(newsId);
 }
 
-export function publishedNews(db, limit = 50, q = '') {
+export function publishedNews(db, limit = 50, q = '', category = '') {
+  const cat = NEWS_CATEGORIES[category] ? category : '';
   const rows = db
     .prepare(
-      `SELECT * FROM news WHERE is_published = 1
+      `SELECT * FROM news WHERE is_published = 1 ${cat ? 'AND category = ?' : ''}
         ORDER BY COALESCE(published_at, date(created_at)) DESC, id DESC ${q ? '' : 'LIMIT ?'}`,
     )
-    .all(...(q ? [] : [limit]));
+    .all(...(cat ? [cat] : []), ...(q ? [] : [limit]));
   if (!q) return rows;
   // Поиск (ТЗ 4.2) — в JS, а не LIKE: SQLite не знает регистра кириллицы
   // («ракетки» и «РАКЕТКИ» для LIKE — разные строки). Новостей — сотни, не миллионы.
