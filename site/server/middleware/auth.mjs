@@ -30,10 +30,37 @@ export function currentUser(req) {
   return req.session && req.session.user ? req.session.user : null;
 }
 
+/**
+ * СУДЬЯ ТУРНИРА: сессия без учётной записи (req.session.judge = {tournamentId, tokenId,
+ * expiresAt}). Пускается только на маршруты ввода счёта СВОЕГО турнира — группы, сетка,
+ * протокол, файлы, страница результатов; всё остальное в админке — 403.
+ */
+const JUDGE_ALLOWED = [
+  ['GET', /^\/admin\/tournaments\/(\d+)\/results$/],
+  ['POST', /^\/admin\/tournaments\/(\d+)\/groups\/\d+\/(cell|members|members\/\d+\/delete)$/],
+  ['POST', /^\/admin\/tournaments\/(\d+)\/brackets\/\d+\/(decide|undo|seed|unseed|swap)$/],
+  ['POST', /^\/admin\/tournaments\/(\d+)\/protocol\/import$/],
+  ['GET', /^\/admin\/tournaments\/(\d+)\/(bracket\.pdf|bracket\.docx|protocol\.xlsx|print)$/],
+];
+export function judgeAllows(req) {
+  const j = req.session && req.session.judge;
+  if (!j || !j.expiresAt || j.expiresAt < new Date().toISOString()) return false;
+  for (const [method, re] of JUDGE_ALLOWED) {
+    if (req.method !== method) continue;
+    const m = re.exec(req.path);
+    if (m && Number(m[1]) === j.tournamentId) return true;
+  }
+  return false;
+}
+
 /** Требует вход + одну из ролей. Роль передаётся явно на каждом маршруте. */
 export function requireRole(...allowed) {
   return (req, res, next) => {
     const user = currentUser(req);
+    if (!user && judgeAllows(req)) {
+      res.locals.judgeMode = true;
+      return next();
+    }
     if (!user) {
       const back = encodeURIComponent(req.originalUrl);
       return res.redirect(`/login?next=${back}`);

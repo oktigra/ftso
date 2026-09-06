@@ -107,6 +107,19 @@ CREATE TABLE IF NOT EXISTS matches (
   UNIQUE (tournament_id, winner_player_id, loser_player_id, kind, stage)
 );
 
+-- СУДЬЯ ТУРНИРА (идея TennisNET, 06.09.2026): временная ссылка на ввод счёта ОДНОГО турнира —
+-- без учётной записи, только группы/сетка/протокол этого турнира, до срока годности.
+CREATE TABLE IF NOT EXISTS judge_tokens (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+  token         TEXT NOT NULL UNIQUE,
+  label         TEXT,
+  expires_at    TEXT NOT NULL,
+  created_by    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  revoked_at    TEXT
+);
+
 -- НЕСОСТОЯВШИЕСЯ ВСТРЕЧИ (06.09.2026): оба не явились / оба снялись — победителя нет, матча
 -- в matches нет (в рейтинг не идёт), но встреча считается сыгранной: в группе — обоим по
 -- поражению, в сетке — пара закрыта, дальше никто не проходит.

@@ -4,9 +4,23 @@
 <main id="top" class="admin-shell">
 <div class="container stack">
   <h1><%= tournament.name %></h1>
-  <%- include('_shell') %>
+  <% const judgeMode = typeof judge !== 'undefined' && judge && !(typeof user !== 'undefined' && user); %>
+  <% if (judgeMode) { %>
+    <div class="admin-bar">
+      <span class="tag">Судья турнира<%= judge.label ? ': ' + judge.label : '' %></span>
+      <span class="muted">доступ до <%= judge.expiresAt.slice(0, 10) %> · только группы, сетка и протокол этого турнира</span>
+      <form method="post" action="/judge/logout" class="inline-form"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn--secondary btn--small" type="submit">Выйти</button></form>
+    </div>
+    <% if (typeof flash !== 'undefined' && flash) { %><div class="flash flash--<%= flash.kind %>"><%= flash.text %></div><% } %>
+  <% } else { %>
+    <%- include('_shell') %>
+  <% } %>
   <p class="muted">Завершение <%= tournament.end_date %> · категория <%= tournament.category %> · потолок участников <%= maxParticipants %>.</p>
 
+  <datalist id="players-list">
+    <% players.forEach(function (p) { %><option value="<%= p.full_name %> (<%= p.city %>)"></option><% }); %>
+  </datalist>
+<% if (!judgeMode) { %>
   <div class="panel">
     <h2>Добавить результат</h2>
     <%
@@ -14,9 +28,6 @@
        (datalist), а не список на сотни фамилий. Если игрока в базе нет —
        заполняются три поля ниже, и он заводится этим же нажатием. */
     %>
-    <datalist id="players-list">
-      <% players.forEach(function (p) { %><option value="<%= p.full_name %> (<%= p.city %>)"></option><% }); %>
-    </datalist>
     <form method="post" action="/admin/tournaments/<%= tournament.id %>/results" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="field field--wide"><label for="r-player">Игрок</label>
@@ -39,6 +50,7 @@
     </form>
   </div>
 
+<% } %>
   <div class="panel" id="groups">
     <h2>Круговые группы</h2>
     <%
@@ -46,6 +58,7 @@
        СТРОКИ («6:3 3:6 10:8»; «неявка 2» — соперник не явился; «6:3 2:1 отказ 2» — снялся). Победитель
        считается по сетам, места — по победам → личная встреча → сеты → геймы. */
     %>
+    <% if (!judgeMode) { %>
     <form method="post" action="/admin/tournaments/<%= tournament.id %>/groups" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="field"><label for="g-name">Новая группа</label><input id="g-name" name="name" maxlength="40" placeholder="A" required></div>
@@ -53,6 +66,7 @@
         <select id="g-kind" name="kind"><option value="single">одиночный</option><option value="double">парный</option></select></div>
       <button class="btn btn--secondary btn--small" type="submit">Создать группу</button>
     </form>
+    <% } %>
     <% groups.forEach(function (g) { %>
       <div class="group-block">
         <h3>Группа <%= g.name %> <span class="muted">(<%= g.kind === 'double' ? 'парный' : 'одиночный' %>, сыграно <%= g.playedTotal %> из <%= g.total %>)</span></h3>
@@ -91,6 +105,7 @@
             </table>
           </div>
           <p class="muted">Счёт вводится с точки зрения игрока в строке: «6:3 6:4», «6:3 3:6 10:8», «7:6(5)». Неявка соперника — «неявка 2», своя — «неявка 1», оба не явились — «неявка 1 и 2». Снялся — «6:3 2:1 отказ 2» (кто снялся — номером), оба снялись — «отказ 1 и 2». Enter в клетке сохраняет. Пустая клетка — матч удалён.</p>
+          <% if (!judgeMode) { %>
           <div class="inline-form">
             <form method="post" action="/admin/tournaments/<%= tournament.id %>/groups/<%= g.id %>/places">
               <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -101,6 +116,7 @@
               <button class="btn btn--danger btn--small" type="submit" data-confirm="Удалить группу «<%= g.name %>»? Сыгранные матчи останутся.">Удалить группу</button>
             </form>
           </div>
+          <% } %>
         <% } %>
       </div>
     <% }); %>
@@ -126,12 +142,35 @@
     <p class="muted">В протоколе все несыгранные пары групп и сетки. Счёт пишется от Игрока 1: сеты по колонкам или итогом «6:3 6:4»; неявка — «неявка 2» / «неявка 1»; снялся — «6:3 2:1 отказ 2». Пустая строка — пропускается. Колонку «Ключ» не трогать. После загрузки сетка продвигается — для следующего круга скачайте протокол заново.</p>
   </div>
 
+  <% if (!judgeMode) { %>
+  <div class="panel" id="judges">
+    <h2>Доступ судье турнира</h2>
+    <p class="muted">Временная ссылка на ввод счёта только этого турнира: группы, сетка, протокол. Без учётной записи; действует 3 дня после завершения турнира (не меньше 3 дней от выдачи). Ссылка показывается один раз — передайте лично.</p>
+    <form method="post" action="/admin/tournaments/<%= tournament.id %>/judges" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field"><label for="jl">Кому (подпись)</label><input id="jl" name="label" maxlength="80" placeholder="главный судья"></div>
+      <button class="btn btn--primary btn--small" type="submit">Создать ссылку судье</button>
+    </form>
+    <% if (judges.length) { %>
+      <ul class="search-list">
+        <% judges.forEach(function (j) { %>
+          <li><%= j.label || 'судья' %> — выдана <%= j.created_at.slice(0, 10) %>, до <%= j.expires_at.slice(0, 10) %>
+            <% if (j.revoked_at) { %><span class="muted">(отозвана)</span><% } else { %>
+              <form method="post" action="/admin/tournaments/<%= tournament.id %>/judges/<%= j.id %>/revoke" class="inline-form"><input type="hidden" name="_csrf" value="<%= csrfToken %>"><button class="btn btn--danger btn--small" type="submit" data-confirm="Отозвать ссылку судьи?">Отозвать</button></form>
+            <% } %></li>
+        <% }); %>
+      </ul>
+    <% } %>
+  </div>
+  <% } %>
+
   <div class="panel" id="brackets">
     <h2>Олимпийка (сетка на выбывание)</h2>
     <%
     /* СЕТКА, СЛОЙ 2. Раунды столбцами; в паре — счёт с точки зрения ВЕРХНЕГО игрока
        («6:3 6:4», «неявка 2», «6:3 2:1 отказ 2») или «bye», если второго нет. Отмена снимает и всё дальше. */
     %>
+    <% if (!judgeMode) { %>
     <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="field"><label for="b-name">Новая сетка</label><input id="b-name" name="name" maxlength="40" placeholder="Основная" required></div>
@@ -141,10 +180,11 @@
         <select id="b-kind" name="kind"><option value="single">одиночный</option><option value="double">парный</option></select></div>
       <button class="btn btn--secondary btn--small" type="submit">Создать сетку</button>
     </form>
+    <% } %>
     <% brackets.forEach(function (b) { %>
       <div class="group-block">
         <h3>Сетка «<%= b.name %>» на <%= b.size %> <span class="muted">(<%= b.kind === 'double' ? 'парный' : 'одиночный' %>, посеяно <%= b.filled %> из <%= b.size %><%= b.champion ? ', победитель: ' + b.champion.full_name : '' %>)</span></h3>
-        <% if (!b.filled) { %>
+        <% if (!b.filled && !judgeMode) { %>
           <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/seed-by-rating" class="stacked-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <div class="field">
@@ -166,7 +206,7 @@
           <a class="btn btn--secondary btn--small" href="/admin/tournaments/<%= tournament.id %>/print" target="_blank" rel="noopener">Напечатать</a>
           <a class="btn btn--secondary btn--small" href="#protocol">Скачать / загрузить протокол — выше</a>
         </p>
-        <% if (!b.filled && groups.some(function (g) { return g.kind === b.kind; })) { %>
+        <% if (!b.filled && !judgeMode && groups.some(function (g) { return g.kind === b.kind; })) { %>
           <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/seed-from-groups" class="inline-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <div class="field"><label for="bg-<%= b.id %>">Из групп — лучших из каждой</label>
@@ -216,6 +256,7 @@
           <div class="bracket__round"><div class="bracket__title">Победитель</div><div class="bracket__pairs"><div class="bracket__pair"><div class="bracket__slot bracket__slot--win"><%= b.champion ? b.champion.full_name : '—' %></div></div></div></div>
         </div>
         <p class="muted">Счёт — с точки зрения верхнего игрока пары: «6:3 6:4»; неявка — «неявка 2» / «неявка 1»; снялся — «6:3 2:1 отказ 2»; оба не явились или снялись — «неявка 1 и 2» / «отказ 1 и 2» (дальше никто не проходит, сопернику в следующем круге — «bye»); «bye» — если второго нет. Места: 1, 2, 3 (полуфиналисты), 5 (четвертьфиналисты), 9, 17.</p>
+        <% if (!judgeMode) { %>
         <div class="inline-form">
           <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/places">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -232,10 +273,12 @@
             <button class="btn btn--danger btn--small" type="submit" data-confirm="Удалить сетку «<%= b.name %>»? Сыгранные матчи останутся.">Удалить сетку</button>
           </form>
         </div>
+        <% } %>
       </div>
     <% }); %>
   </div>
 
+<% if (!judgeMode) { %>
   <div class="panel">
     <h2>Массовый ввод из протокола</h2>
     <%
@@ -285,6 +328,8 @@
     </form>
   </div>
 
+<% } %>
+<% if (!judgeMode) { %>
   <div class="panel">
     <h2>Результаты (<%= results.length %>)</h2>
     <div class="table-scroll">
@@ -350,6 +395,7 @@
       </table>
     </div>
   </div>
+<% } %>
 </div>
 </main>
 
