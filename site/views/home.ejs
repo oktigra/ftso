@@ -186,8 +186,19 @@
       </div>
     <% } else { %>
       <%
-      /* ТОП-10 с переключателем «Все / Мужчины / Женщины» (как у ФТР): три таблицы в разметке,
-         переключение классом без перезагрузки; без JS видны все три подряд. */
+      /* ТОП-10 с переключателем «Все / Мужчины / Женщины» (как у ФТР): три списка в разметке,
+         переключение классом без перезагрузки; без JS видны все три подряд.
+         СТРОКИ — ПЛАСТИНЫ (ТЗ оформления 07.09.2026): при наведении и по фокусу
+         пластина приподнимается, а снизу поверх соседней раскрывается справка.
+         Справка собрана из того, что уже есть в снимке: город, возраст, лучший
+         результат из counted и число турниров в зачёте. Клуба у игрока в схеме
+         нет, поэтому его в справке нет тоже. */
+      const best = (p) => {
+        const list = Array.isArray(p.counted) ? p.counted : [];
+        if (!list.length) return null;
+        return list.reduce((a, b) => (b.place < a.place ? b : a), list[0]);
+      };
+      const placeRu = (n) => (n === 1 ? 'победа' : n === 2 ? 'финал' : n === 3 || n === 4 ? 'полуфинал' : `${n} место`);
       %>
       <div class="top-tabs" role="tablist" aria-label="Топ рейтинга">
         <button class="tag top-tab is-active" type="button" data-top-tab="all">Все</button>
@@ -195,22 +206,34 @@
         <button class="tag top-tab" type="button" data-top-tab="F">Женщины</button>
       </div>
       <% [['all', topBySex.all], ['M', topBySex.M], ['F', topBySex.F]].forEach(function (pair) { const key = pair[0], list = pair[1]; %>
-        <div class="table-scroll top-panel" data-top-panel="<%= key %>"<%= key === 'all' ? '' : ' hidden' %>>
+        <div class="rplates top-panel" data-top-panel="<%= key %>"<%= key === 'all' ? '' : ' hidden' %>>
           <% if (!list.length) { %><p class="muted">В этом рейтинге пока нет игроков.</p><% } else { %>
-          <table>
-            <thead><tr><th>Место</th><th>Игрок</th><th>Город</th><th>Очки</th><th>Изменение</th></tr></thead>
-            <tbody>
-              <% list.forEach(function (p, i) { %>
-                <tr>
-                  <td class="rank"><%= key === 'all' ? p.rank : i + 1 %></td>
-                  <td class="player<%= p.anonymized ? ' player--anonymized' : '' %>"><% if (p.anonymized) { %><%= p.playerName %><% } else { %><a href="/player/<%= p.playerId %>"><%= p.playerName %></a><% } %></td>
-                  <td><%= p.city || '—' %></td>
-                  <td class="pts"><%= p.ratingPoints %></td>
-                  <td class="chg chg--<%= p.change.kind %>"><%= p.change.label %></td>
-                </tr>
-              <% }); %>
-            </tbody>
-          </table>
+          <div class="rplates__head" aria-hidden="true">
+            <span>Место</span><span>Игрок</span><span>Город</span><span>Очки</span><span>Изменение</span>
+          </div>
+          <ol class="rplates__list">
+            <% list.forEach(function (p, i) { const b = best(p); %>
+              <li class="rplate<%= p.anonymized ? ' rplate--anonymized' : '' %>" tabindex="0">
+                <div class="rplate__row">
+                  <span class="rplate__place"><%= key === 'all' ? p.rank : i + 1 %></span>
+                  <span class="rplate__name"><% if (p.anonymized) { %><%= p.playerName %><% } else { %><a href="/player/<%= p.playerId %>"><%= p.playerName %></a><% } %></span>
+                  <span class="rplate__city"><%= p.city || '—' %></span>
+                  <span class="rplate__pts"><%= p.ratingPoints %></span>
+                  <span class="chg chg--<%= p.change.kind %>"><%= p.change.label %></span>
+                </div>
+                <% if (!p.anonymized) { %>
+                  <div class="rplate__info">
+                    <div class="rplate__chips">
+                      <% if (b) { %><span>лучший результат: <%= placeRu(b.place) %> · <%= b.name %></span><% } %>
+                      <% if (p.ageLabel && p.ageLabel !== '—') { %><span><%= p.ageLabel %></span><% } %>
+                      <% if (p.ageGroup) { %><span><%= p.ageGroup %></span><% } %>
+                      <% if (Array.isArray(p.counted) && p.counted.length) { %><span>в зачёте турниров: <%= p.counted.length %><%= p.totalInWindow && p.totalInWindow > p.counted.length ? ' из ' + p.totalInWindow : '' %></span><% } %>
+                    </div>
+                  </div>
+                <% } %>
+              </li>
+            <% }); %>
+          </ol>
           <% } %>
         </div>
       <% }); %>

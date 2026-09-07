@@ -2347,8 +2347,10 @@ await check('главная: роль-кнопки, карточки турни�
     assert(new RegExp(`href="${href}">${text}<`).test(home.text), `нет роль-кнопки «${text}»`);
   }
   assert(/data-top-tab="M"/.test(home.text) && /data-top-panel="F"/.test(home.text), 'нет табов топ-10');
-  const rowsAll = (home.text.match(/data-top-panel="all"[\s\S]*?<\/table>/) || [''])[0].split('<tr>').length - 2;
-  assert(rowsAll >= 1 && rowsAll <= 10, `в топ «Все» строк ${rowsAll}`);
+  const panelAll = (home.text.match(/data-top-panel="all"[\s\S]*?<\/ol>/) || [''])[0];
+  const rowsAll = (panelAll.match(/<li class="rplate/g) || []).length;
+  assert(rowsAll >= 1 && rowsAll <= 10, `в топ «Все» пластин ${rowsAll}`);
+  assert(/class="rplate__info"/.test(panelAll), 'у пластины нет справки об игроке');
   // Ящик турнира: будущий турнир появляется первым, у ящика три папки-ссылки.
   const future = new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10);
   const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, start_date, category, city) VALUES ('Карточка будущего', ?, ?, 'A', 'Рославль')").run(future, future).lastInsertRowid);
@@ -5356,9 +5358,25 @@ try {
     const newsOneColumn = await page.evaluate(
       () => getComputedStyle(document.querySelector('.news-grid')).gridTemplateColumns.split(' ').length === 1,
     );
-    const tableScrolls = await page.evaluate(() => {
+    // Таблица с прокруткой живёт на /rating: топ-10 на главной с 07.09.2026 —
+    // пластины, а не таблица, и горизонтально не скроллится по замыслу.
+    const rating = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await rating.goto(inst.base + '/rating', { waitUntil: 'networkidle' });
+    const tableScrolls = await rating.evaluate(() => {
       const box = document.querySelector('.table-scroll');
+      if (!box) return 'таблицы рейтинга нет на странице';
       return getComputedStyle(box).overflowX === 'auto' && box.scrollWidth > box.clientWidth;
+    });
+    const ratingNoHScroll = await rating.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+    );
+    await rating.close();
+    // Пластины рейтинга на главной: справка видна сразу, наводить на телефоне нечем.
+    const platesOpen = await page.evaluate(() => {
+      const info = document.querySelector('.rplate__info');
+      if (!info) return 'нет пластин';
+      const cs = getComputedStyle(info);
+      return cs.position === 'static' && cs.opacity === '1';
     });
     const noHScroll = await page.evaluate(
       () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
@@ -5370,9 +5388,10 @@ try {
     assert(menuOpen, 'меню не открылось по бургеру');
     assert(heroOneColumn, 'hero не свернулся в одну колонку');
     assert(newsOneColumn, 'новости не свернулись в одну колонку');
-    assert(tableScrolls, 'таблица не скроллится горизонтально');
-    assert(noHScroll, 'страница уезжает вбок по горизонтали');
-    return '390px: бургер работает, hero и новости в одну колонку, таблица скроллится, страница не уезжает вбок';
+    eq(tableScrolls, true, `таблица рейтинга не скроллится горизонтально: ${tableScrolls}`);
+    assert(platesOpen === true || platesOpen === 'нет пластин', `справка в пластине должна быть раскрыта на телефоне: ${platesOpen}`);
+    assert(noHScroll && ratingNoHScroll, 'страница уезжает вбок по горизонтали');
+    return '390px: бургер работает, hero и новости в одну колонку, таблица рейтинга скроллится, справка в пластинах раскрыта, страницы не уезжают вбок';
   });
 
   await check('новые экраны кабинета: адаптив и доступность за логином', async () => {

@@ -342,8 +342,30 @@ tbody tr:hover{background:var(--surface-2);}
 .tcard__date b{font-size:1.15rem; color:var(--primary);} .tcard__date span{font-size:.8rem; color:var(--muted);}
 .tcard__name{font-weight:700; margin-bottom:.25rem;} .tcard__meta{font-size:.85rem; color:var(--muted); margin-bottom:.45rem;}
 .tcard__tags{display:flex; gap:.4rem; flex-wrap:wrap;}
-.live-strip{padding:.9rem 0 0;} .live-strip__head{margin-bottom:.5rem;}
-.live-strip__row{display:flex; gap:.75rem; overflow-x:auto; padding-bottom:.5rem; scroll-snap-type:x mandatory;}
+/* ПЛАСТИНЫ РЕЙТИНГА (ТЗ оформления 07.09.2026): строки топ-10 — отдельные
+   пластины с зазором. При наведении и по фокусу пластина поднимается, слева
+   загорается зелёная кромка, снизу поверх соседней раскрывается справка.
+   Блок не меняет размеров: справка позиционирована абсолютно, соседи не едут. */
+.rplates{position:relative; padding:5px 6px 6px; background:var(--surface); border:1px solid var(--border); border-radius:1.25rem; box-shadow:var(--shadow-md);}
+.rplates__head, .rplate__row{display:grid; grid-template-columns:56px 1fr 8rem 5rem 6rem; gap:.75rem; align-items:center;}
+.rplates__head{padding:.7rem 1.25rem; font-family:'Manrope',sans-serif; font-size:.7rem; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--muted);}
+.rplates__list{list-style:none; margin:0; padding:0;}
+.rplate{position:relative; margin:5px 0; border:1px solid var(--border); border-radius:.65rem; background:linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%); box-shadow:inset 0 1px 0 var(--partner-inset), inset 0 -2px 0 var(--border); transition:transform .32s cubic-bezier(.16,.84,.24,1), box-shadow .32s ease;}
+.rplate:hover, .rplate:focus-visible, .rplate:focus-within{transform:translateY(-10px); z-index:3; box-shadow:-18px 24px 38px rgba(18,61,104,.18), inset 0 1px 0 var(--partner-inset);}
+.rplate::before{content:''; position:absolute; left:0; top:0; bottom:0; width:4px; border-radius:.65rem 0 0 .65rem; background:var(--primary); opacity:0; transition:opacity .26s ease;}
+.rplate:hover::before, .rplate:focus-visible::before, .rplate:focus-within::before{opacity:1;}
+.rplate__row{padding:.85rem 1.25rem;}
+.rplate__place{font-family:'Manrope',sans-serif; font-weight:600; color:var(--muted);}
+.rplate__name{font-weight:500; min-width:0; overflow-wrap:anywhere;}
+.rplate__city{color:var(--muted); font-size:.9rem;}
+.rplate__pts{text-align:right; font-family:'Manrope',sans-serif; font-weight:700;}
+.rplate__info{position:absolute; left:0; right:0; top:100%; max-height:0; opacity:0; overflow:hidden; pointer-events:none; background:linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 100%); border-radius:0 0 .6rem .6rem; transition:max-height .34s cubic-bezier(.16,.84,.24,1), opacity .26s ease;}
+.rplate:hover .rplate__info, .rplate:focus-visible .rplate__info, .rplate:focus-within .rplate__info{max-height:96px; opacity:1; box-shadow:0 7px 0 var(--border), -18px 26px 38px rgba(18,61,104,.16);}
+.rplate__chips{display:flex; flex-wrap:wrap; gap:.5rem; padding:.8rem 1.25rem .9rem;}
+.rplate__chips span{padding:.3rem .7rem; border-radius:999px; background:var(--surface-2); border:1px solid var(--border); color:var(--muted); font-size:.78rem; white-space:nowrap;}
+.rplate__chips span:first-child{background:var(--accent-soft); border-color:transparent; color:var(--primary); font-weight:600;}
+.rplate--anonymized .rplate__name{color:var(--muted); font-style:italic;}
+.live-strip{padding:.9rem 0 0;} .live-strip__head{margin-bottom:.5rem;}.live-strip__row{display:flex; gap:.75rem; overflow-x:auto; padding-bottom:.5rem; scroll-snap-type:x mandatory;}
 .live-card{flex:0 0 15rem; scroll-snap-align:start; background:var(--surface); border:1px solid var(--border); border-radius:1rem; padding:.7rem .85rem; font-size:.9rem;}
 .live-card__t{display:block; font-size:.75rem; color:var(--muted); text-decoration:none; margin-bottom:.35rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .live-card__p{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;} .live-card__p a{color:inherit; text-decoration:none;}
@@ -513,6 +535,16 @@ tbody tr:hover{background:var(--surface-2);}
   .tdrawer__face{order:1;}
   .tdrawer__folders{order:2; position:static; display:flex; gap:.5rem; padding:.6rem 0 0;}
   .tdrawer__folder{position:static; flex:1 1 0; height:auto; padding:.6rem .4rem; border-radius:.6rem; transform:none !important; transition-delay:0s !important;}
+  /* Пластины рейтинга: подъём снят, справка раскрыта сразу — на телефоне
+     наводить нечем, а прятать данные за жестом нельзя. */
+  .rplates__head{display:none;}
+  .rplates__head, .rplate__row{grid-template-columns:2.2rem 1fr 4.5rem;}
+  .rplate__city, .rplate__row .chg{display:none;}
+  .rplate{transition:none;}
+  .rplate:hover, .rplate:focus-within{transform:none; box-shadow:inset 0 1px 0 var(--partner-inset), inset 0 -2px 0 var(--border);}
+  .rplate__info{position:static; max-height:none; opacity:1; pointer-events:auto; box-shadow:none !important; background:transparent;}
+  .rplate__chips{padding:0 1.25rem .8rem;}
+  .rplate__chips span{white-space:normal;}
 }
 
 /* ------------------------------------------------------------------ */
