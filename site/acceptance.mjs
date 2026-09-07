@@ -2349,13 +2349,18 @@ await check('главная: роль-кнопки, карточки турни�
   assert(/data-top-tab="M"/.test(home.text) && /data-top-panel="F"/.test(home.text), 'нет табов топ-10');
   const rowsAll = (home.text.match(/data-top-panel="all"[\s\S]*?<\/table>/) || [''])[0].split('<tr>').length - 2;
   assert(rowsAll >= 1 && rowsAll <= 10, `в топ «Все» строк ${rowsAll}`);
-  // Карточки турниров: будущий турнир появляется первым.
+  // Ящик турнира: будущий турнир появляется первым, у ящика три папки-ссылки.
   const future = new Date(Date.now() + 5 * 864e5).toISOString().slice(0, 10);
   const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, start_date, category, city) VALUES ('Карточка будущего', ?, ?, 'A', 'Рославль')").run(future, future).lastInsertRowid);
   const h2 = (await http('/')).text;
-  const firstCard = (h2.match(/<a class="tcard fx-card" href="\/tournaments\/(\d+)"/) || [])[1];
-  eq(Number(firstCard), tid, 'ближайший турнир должен быть первой карточкой');
+  const firstCard = (h2.match(/<a class="tdrawer__face" href="\/tournaments\/(\d+)"/) || [])[1];
+  eq(Number(firstCard), tid, 'ближайший турнир должен быть первым ящиком');
   assert(/Рославль/.test(h2) && /предстоящий/.test(h2), 'в карточке нет города/статуса');
+  const boxes = h2.split('<div class="tdrawer__box">').slice(1);
+  const folders = (boxes[0] || '').split('<a class="tdrawer__face"')[0].match(/class="tdrawer__folder"/g) || [];
+  eq(folders.length, 3, `у ящика должно быть три папки, найдено ${folders.length}`);
+  assert(new RegExp(`href="/tournaments/${tid}#grid"`).test(h2), 'папка «Сетка» не ведёт на сетку турнира');
+  assert(!/<a class="tdrawer__face"[\s\S]{0,600}?<a /.test(h2), 'ссылка внутри ссылки: фасад не должен содержать вложенных ссылок');
   assert(!/<th>Дата<\/th><th>Турнир<\/th>/.test(h2), 'таблица турниров на главной должна уйти');
   // Лента: матч сетки за сегодня.
   const ids = ['Лентов Раз', 'Лентов Два'].map((n) => Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES (?, 'Смоленск', 'M')").run(n).lastInsertRowid));

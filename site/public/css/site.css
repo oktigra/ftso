@@ -307,6 +307,35 @@ tbody tr:hover{background:var(--surface-2);}
 .tourn-grid{display:grid; grid-template-columns:1.6fr 1fr; gap:clamp(1.25rem,3vw,2rem); align-items:start;}
 /* Главная: карточки турниров, лента «Сегодня на корте», топ-10 — только переменные темы */
 .tcards{display:grid; grid-template-columns:repeat(2,1fr); gap:.9rem;}
+/* ЯЩИК ТУРНИРА (ТЗ оформления 07.09.2026): в покое плоская карточка, при наведении
+   и по фокусу разворачивается в перспективу, из корпуса поднимаются три папки —
+   сетка, заявка, регламент. Каждая папка — отдельная ссылка, поэтому корпус НЕ
+   ссылка целиком: вложенные ссылки в разметке недопустимы. */
+.tdrawers{display:grid; grid-template-columns:repeat(2,1fr); gap:1.1rem;}
+.tdrawer{perspective:1100px; perspective-origin:62% 6%; padding:124px 6px 24px;}
+.tdrawer__box{position:relative; cursor:pointer; transform-style:preserve-3d; transform:rotateX(0deg) rotateY(0deg) translateZ(0px); transition:transform .56s cubic-bezier(.16,.84,.24,1);}
+.tdrawer__box::before, .tdrawer__box::after{content:''; position:absolute; inset:0; border-radius:1.25rem; background:var(--surface-2);}
+.tdrawer__box::before{transform:translateZ(-19px);}
+.tdrawer__box::after{transform:translateZ(-36px); box-shadow:-10px 14px 26px rgba(18,61,104,.16);}
+.tdrawer__box:hover, .tdrawer__box:focus-within{transform:rotateX(10deg) rotateY(-15deg) translateZ(92px);}
+.tdrawer__folders{position:absolute; inset:0; transform-style:preserve-3d;}
+.tdrawer__folder{position:absolute; left:5%; right:5%; top:0; height:calc(100% - 22px); box-sizing:border-box; display:flex; align-items:flex-start; justify-content:center; padding-top:9px; white-space:nowrap; text-decoration:none; font-family:'Manrope',sans-serif; font-size:.8rem; font-weight:700; color:var(--primary); background:var(--surface-2); border:1px solid var(--border); border-radius:.5rem .5rem 0 0; transition:transform .72s cubic-bezier(.16,.84,.24,1), background-color .14s ease;}
+.tdrawer__folder:hover{background:color-mix(in srgb, var(--primary) 9%, var(--surface-2));}
+.tdrawer__folder:nth-child(1){transform:translateZ(-7px) translateY(0);}
+.tdrawer__folder:nth-child(2){transform:translateZ(-23px) translateY(0); transition-delay:.09s;}
+.tdrawer__folder:nth-child(3){transform:translateZ(-39px) translateY(0); transition-delay:.18s;}
+.tdrawer__box:hover .tdrawer__folder:nth-child(1), .tdrawer__box:focus-within .tdrawer__folder:nth-child(1){transform:translateZ(-7px) translateY(-38px);}
+.tdrawer__box:hover .tdrawer__folder:nth-child(2), .tdrawer__box:focus-within .tdrawer__folder:nth-child(2){transform:translateZ(-23px) translateY(-74px);}
+.tdrawer__box:hover .tdrawer__folder:nth-child(3), .tdrawer__box:focus-within .tdrawer__folder:nth-child(3){transform:translateZ(-39px) translateY(-110px);}
+/* Фасад при наведении не меняется — у него собственный объём: диагональный
+   градиент, светлая кромка сверху, затемнение справа и по нижнему краю. */
+.tdrawer__face{position:relative; display:flex; flex-direction:column; gap:.6rem; padding:1.1rem 1.2rem 1.3rem; background:linear-gradient(158deg, var(--surface) 0%, var(--surface) 58%, var(--surface-2) 100%); border:1px solid var(--border); border-radius:1.25rem; box-shadow:inset 0 2px 0 var(--partner-inset), inset -3px 0 8px -3px rgba(18,61,104,.18), inset 0 -16px 22px -16px rgba(18,61,104,.22); color:var(--text); text-decoration:none;}
+.tdrawer__top{display:flex; align-items:center; justify-content:space-between; gap:.75rem;}
+.tdrawer__date{white-space:nowrap; font-family:'Manrope',sans-serif; font-size:.7rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--muted);}
+.tdrawer__name{font-family:'Manrope',sans-serif; font-size:1.15rem; font-weight:800; line-height:1.25;}
+.tdrawer__meta{font-size:.9rem; color:var(--muted);}
+.tdrawer__tags{display:flex; gap:.4rem; flex-wrap:wrap;}
+.tdrawer__handle{width:52px; height:6px; margin:.2rem auto 0; border-radius:3px; background:var(--border); box-shadow:inset 0 1px 0 var(--partner-inset);}
 .tcard{display:flex; gap:.9rem; align-items:flex-start; background:var(--surface); border:1px solid var(--border); border-radius:1.1rem; padding:1rem 1.1rem; color:var(--text); text-decoration:none;}
 .tcard:hover{border-color:var(--primary);}
 .tcard__date{flex:0 0 5.2rem; display:flex; flex-direction:column; font-family:'Manrope',sans-serif; line-height:1.1;}
@@ -475,6 +504,15 @@ tbody tr:hover{background:var(--surface-2);}
   .btn--primary:hover, .btn--secondary:hover{transform:none;}
   .photo:hover .ph-stripes, .photo:hover .photo__img{transform:none;}
   .photo__caption{position:static; opacity:1; transform:none; padding:.6rem .9rem; background:color-mix(in srgb, var(--surface) 88%, transparent); color:var(--text);}
+  /* Ящик турнира: перспектива снимается, папки становятся тремя ссылками под карточкой. */
+  .tdrawers{grid-template-columns:1fr; gap:.9rem;}
+  .tdrawer{perspective:none; padding:0;}
+  .tdrawer__box{transform:none; display:flex; flex-direction:column;}
+  .tdrawer__box:hover, .tdrawer__box:focus-within{transform:none;}
+  .tdrawer__box::before, .tdrawer__box::after{display:none;}
+  .tdrawer__face{order:1;}
+  .tdrawer__folders{order:2; position:static; display:flex; gap:.5rem; padding:.6rem 0 0;}
+  .tdrawer__folder{position:static; flex:1 1 0; height:auto; padding:.6rem .4rem; border-radius:.6rem; transform:none !important; transition-delay:0s !important;}
 }
 
 /* ------------------------------------------------------------------ */

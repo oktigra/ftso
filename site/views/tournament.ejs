@@ -90,7 +90,7 @@
     <% } %>
 
     <% if (brackets.length) { %>
-      <div class="panel">
+      <div class="panel" id="grid">
         <h2>Сетка плей-офф</h2>
         <% brackets.forEach(function (b) { %>
           <h3><%= b.name %> <span class="muted">(на <%= b.size %>, <%= b.kind === 'double' ? 'парный' : 'одиночный' %>)</span></h3>
