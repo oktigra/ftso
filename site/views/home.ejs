@@ -31,16 +31,21 @@
     <div class="hero-panel" data-parallax=".05">
       <%
       /* Фото — ЛОКАЛЬНАЯ заглушка 4:3, без хотлинков. Реальное фото заказчик
-         подставит, когда придёт модуль контента. */
+         подставит, когда придёт модуль контента. Подпись приходит ИЗ РАЗМЕТКИ
+         (правится в «Текстах»), а не из CSS: иначе она не переводится, не
+         индексируется и не читается скринридером. */
       %>
-      <div class="photo">
+      <figure class="photo">
         <% if (heroUploadId) { %>
           <img class="photo__img" src="/site/hero?v=<%= heroUploadId %>" alt="" width="1200" height="900">
         <% } else { %>
           <div class="ph-stripes"></div>
           <div class="ph-label"><span>фото · теннисный корт / матч · 4:3 · ~1200×900</span></div>
         <% } %>
-      </div>
+        <% if (heroUploadId && texts.photoCaption) { %>
+          <figcaption class="photo__caption"><%= texts.photoCaption %></figcaption>
+        <% } %>
+      </figure>
       <div class="info-card fx-card"><%- include('partials/court-card') %>
         <% if (nextEvent) { %>
           <div class="ic-item"><small>Ближайший турнир</small><b><a href="/tournaments/<%= nextEvent.id %>"><%= nextEvent.date %></a></b></div>
@@ -101,7 +106,11 @@
         const statusRu = { upcoming: 'предстоящий', ongoing: 'идёт', finished: 'завершён' };
         %>
         <% if (!homeTournaments.length) { %>
-          <div class="panel notice">Турниры пока не заведены.</div>
+          <div class="panel notice notice--invite">
+            <b>Календарь сезона собирается</b>
+            <span>Здесь появятся турниры Федерации: даты, город, категория и статус. Организаторы могут заявить соревнование в календарь.</span>
+            <a class="btn btn--secondary btn--small" href="/tournament-request">Заявить турнир</a>
+          </div>
         <% } else { %>
           <div class="tcards">
             <% homeTournaments.forEach(function (t) { %>
@@ -154,7 +163,11 @@
         Рейтинг ещё не рассчитан. Таблица появится после первого пересчёта в админке.
       </div>
     <% } else if (top5.length === 0) { %>
-      <div class="panel notice">В последнем снимке рейтинга нет игроков.</div>
+      <div class="panel notice notice--invite">
+        <b>Таблица заполняется</b>
+        <span>Рейтинг считается по итогам турниров Федерации: шесть лучших результатов за последние 52 недели. Зарегистрируйтесь, чтобы попасть в таблицу после первого турнира.</span>
+        <a class="btn btn--secondary btn--small" href="/register">Регистрация игрока</a>
+      </div>
     <% } else { %>
       <%
       /* ТОП-10 с переключателем «Все / Мужчины / Женщины» (как у ФТР): три таблицы в разметке,
@@ -203,7 +216,11 @@
       <h2>Актуальное</h2>
     </div>
     <% if (!news.length) { %>
-      <div class="panel notice">Новостей пока нет.</div>
+      <div class="panel notice notice--invite">
+        <b>Первые материалы сезона готовятся</b>
+        <span>Здесь будут отчёты о турнирах, изменения регламента и объявления Федерации. Есть о чём рассказать — напишите нам.</span>
+        <a class="btn btn--secondary btn--small" href="/contacts#feedback">Предложить новость</a>
+      </div>
     <% } else { %>
       <div class="news-grid">
         <% news.forEach(function (n) { %>

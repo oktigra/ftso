@@ -71,7 +71,15 @@
         <% if (anyFilter) { %><div class="field"><a class="btn btn--secondary" href="/tournaments">Сбросить</a></div><% } %>
     </form>
     <% if (!tournaments.length) { %>
-      <div class="panel notice"><%= anyFilter ? 'По выбранным фильтрам турниров нет.' : 'Турниры пока не заведены.' %></div>
+      <% if (anyFilter) { %>
+        <div class="panel notice">По выбранным фильтрам турниров нет.</div>
+      <% } else { %>
+        <div class="panel notice notice--invite">
+          <b>Календарь сезона собирается</b>
+          <span>Здесь появятся турниры Федерации: даты, город, категория и статус. Организаторы могут заявить соревнование в календарь.</span>
+          <a class="btn btn--secondary btn--small" href="/tournament-request">Заявить турнир</a>
+        </div>
+      <% } %>
     <% } else { %>
       <div class="table-scroll">
         <table>

@@ -77,7 +77,9 @@ a:hover{color:var(--primary-hover);}
 img{max-width:100%; display:block;}
 :focus-visible{outline:3px solid var(--primary); outline-offset:3px; border-radius:6px;}
 
-body, .site-header, section, footer, .card, .btn, .badge, .status, .stat, .photo, table, th, td, .hero-panel, .info-card, .reg-card, .news-card, .theme-menu__btn, .brand-mark, .nav-menu, .nav-menu a{
+/* Общий переход при смене темы. Кнопки СЮДА НЕ ВХОДЯТ: у .btn свой transition
+   .18s (см. блок buttons) — на кнопке общие .45s читались как залипание. */
+body, .site-header, section, footer, .card, .badge, .status, .stat, .photo, table, th, td, .hero-panel, .info-card, .reg-card, .news-card, .theme-menu__btn, .brand-mark, .nav-menu, .nav-menu a{
   transition:background-color .45s ease, color .45s ease, border-color .45s ease, box-shadow .45s ease, fill .45s ease, stroke .45s ease;
 }
 @media (prefers-reduced-motion: reduce){
@@ -95,19 +97,26 @@ body, .site-header, section, footer, .card, .btn, .badge, .status, .stat, .photo
 .section-pad--tight{padding-top:0;}
 
 /* buttons */
-.btn{display:inline-flex; align-items:center; gap:.5rem; font-family:'Manrope',sans-serif; font-weight:700; font-size:1rem; border-radius:999px; padding:.8rem 1.5rem; border:1.5px solid transparent; cursor:pointer; text-decoration:none; line-height:1; position:relative;}
+/* Свой transition .18s вместо общих .45s из строки смены темы: на кнопке
+   полусекундная перекраска читается как залипание (ТЗ оформления 07.09.2026).
+   Борт снизу и провал на всю его толщину при нажатии — :active раньше не было. */
+.btn{display:inline-flex; align-items:center; gap:.5rem; font-family:'Manrope',sans-serif; font-weight:700; font-size:1rem; border-radius:999px; padding:.8rem 1.5rem; border:1.5px solid transparent; cursor:pointer; text-decoration:none; line-height:1; position:relative; transition:background-color .18s ease, color .18s ease, border-color .18s ease, box-shadow .18s ease, transform .12s ease;}
 .btn::after{content:''; position:absolute; inset:0; border-radius:inherit; padding:1.5px; background:linear-gradient(135deg,#27b377,#69a7e4,#123d68); -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite:xor; mask-composite:exclude; opacity:.55; filter:drop-shadow(0 0 4px rgba(39,179,119,.45)); transition:opacity .3s ease, filter .3s ease; pointer-events:none;}
 .btn:hover::after{opacity:1; filter:drop-shadow(0 0 8px rgba(39,179,119,.6));}
-.btn--primary{background:var(--primary); color:#fff;}
-.btn--primary:hover{background:var(--primary-hover); color:#fff;}
-.btn--secondary{background:var(--surface); color:var(--text); border-color:var(--border); box-shadow:var(--shadow-sm);}
-.btn--secondary:hover{border-color:var(--primary); color:var(--primary);}
+.btn--primary{background:var(--primary); color:#fff; box-shadow:0 4px 0 color-mix(in srgb, var(--primary) 55%, #000), 0 9px 18px rgba(18,61,104,.2);}
+.btn--primary:hover{background:var(--primary-hover); color:#fff; transform:translateY(-1px); box-shadow:0 5px 0 color-mix(in srgb, var(--primary) 55%, #000), 0 14px 24px rgba(18,61,104,.26);}
+.btn--primary:active{transform:translateY(3px); box-shadow:0 1px 0 color-mix(in srgb, var(--primary) 55%, #000), inset 0 2px 6px rgba(0,0,0,.32);}
+.btn--secondary{background:var(--surface); color:var(--text); border-color:var(--border); box-shadow:0 4px 0 var(--border), var(--shadow-sm);}
+.btn--secondary:hover{border-color:var(--primary); color:var(--primary); transform:translateY(-1px); box-shadow:0 5px 0 var(--border), var(--shadow-md);}
+.btn--secondary:active{transform:translateY(3px); box-shadow:0 1px 0 var(--border), inset 0 2px 5px rgba(18,61,104,.16);}
 .btn--white{background:#fff; color:var(--accent);}
 .btn--white:hover{background:#eef3f7; color:var(--accent);}
+.btn--white:active, .btn--outline-white:active{transform:translateY(2px);}
 .btn--outline-white{background:transparent; color:#fff; border-color:rgba(255,255,255,.6);}
 .btn--outline-white:hover{background:rgba(255,255,255,.12); color:#fff; border-color:#fff;}
-.link-more{display:inline-flex; align-items:center; gap:.35rem; font-family:'Manrope',sans-serif; font-weight:700; color:var(--primary);}
-.link-more:hover{gap:.6rem;}
+/* Ссылка-стрелка: к разъезжающемуся gap добавляется подчёркивание от левого края. */
+.link-more{display:inline-flex; align-items:center; gap:.35rem; font-family:'Manrope',sans-serif; font-weight:700; color:var(--primary); background-image:linear-gradient(var(--primary), var(--primary)); background-repeat:no-repeat; background-position:0 100%; background-size:0 1.5px; transition:color .3s ease, gap .3s ease, background-size .22s ease-out;}
+.link-more:hover{gap:.6rem; background-size:100% 1.5px;}
 
 /* header */
 .site-header{position:sticky; top:0; z-index:50; background:color-mix(in srgb, var(--surface) 86%, transparent); backdrop-filter:saturate(1.4) blur(12px); border-bottom:1px solid var(--border);}
@@ -246,7 +255,13 @@ html[data-theme="warm"] .theme-menu__icon .i-warm{display:block;}
 .stat b{display:block; font-family:'Manrope',sans-serif; font-size:clamp(1.6rem,1.2rem + 1.4vw,2.1rem); font-weight:800; color:var(--text); line-height:1;}
 .stat span{font-size:.9rem; color:var(--muted); display:block; margin-top:.35rem;}
 .hero-panel{display:flex; flex-direction:column; gap:1rem;}
-.photo{aspect-ratio:4/3; border-radius:1.5rem; overflow:hidden; box-shadow:var(--shadow-lg); border:1px solid var(--border); position:relative; background:var(--surface-2); filter:var(--photo-filter);}
+.photo{aspect-ratio:4/3; border-radius:1.5rem; overflow:hidden; box-shadow:var(--shadow-lg); border:1px solid var(--border); position:relative; background:var(--surface-2); filter:var(--photo-filter); margin:0;}
+/* Кадр приближается внутри overflow:hidden, подпись наплывает снизу с градиентом
+   (ТЗ оформления 07.09.2026). Текст подписи — в figcaption разметки, не в CSS. */
+.photo .ph-stripes, .photo .photo__img{transition:transform .42s cubic-bezier(.2,.6,.2,1);}
+.photo:hover .ph-stripes, .photo:hover .photo__img{transform:scale(1.05);}
+.photo__caption{position:absolute; left:0; right:0; bottom:0; padding:2.2rem 1rem .9rem; background:linear-gradient(transparent, rgba(4,32,20,.82)); color:#fff; font-family:'Manrope',sans-serif; font-size:.9rem; font-weight:600; opacity:0; transform:translateY(8px); transition:opacity .26s ease, transform .26s ease; pointer-events:none;}
+.photo:hover .photo__caption, .photo:focus-within .photo__caption{opacity:1; transform:none;}
 .photo .ph-stripes{position:absolute; inset:0; background:repeating-linear-gradient(135deg, var(--surface-2), var(--surface-2) 14px, color-mix(in srgb,var(--accent) 8%, var(--surface-2)) 14px, color-mix(in srgb,var(--accent) 8%, var(--surface-2)) 28px);}
 .photo .photo__img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block;}
 .photo .ph-label{position:absolute; inset:0; display:grid; place-items:center; text-align:center;}
@@ -440,6 +455,15 @@ tbody tr:hover{background:var(--surface-2);}
   .group-table td.group-win{background:#e6e6e6 !important;} .group-table td.group-loss{background:#fff !important;}
   .print-foot{margin-top:8pt; font-size:8pt;}
 }
+/* ПОЯВЛЕНИЕ СЕКЦИЙ ПРИ ПРОКРУТКЕ (ТЗ оформления 07.09.2026). Класс вешает
+   app.js через IntersectionObserver; без JS класса .reveal нет и всё видно
+   сразу. При reduced-motion правило ниже возвращает блоки на место. */
+.reveal{opacity:0; transform:translateY(22px) scale(.994); transition:opacity .9s ease-out, transform 1s cubic-bezier(.16,.84,.24,1);}
+.reveal.is-in{opacity:1; transform:none;}
+@media (prefers-reduced-motion: reduce){
+  .reveal{opacity:1 !important; transform:none !important;}
+}
+
 /* mobile performance — тушим тяжёлые для телефона эффекты */
 @media (max-width:960px){
   body::before{display:none;}
@@ -448,6 +472,9 @@ tbody tr:hover{background:var(--surface-2);}
   .fx-card{will-change:auto;}
   .fx-card::after, .fx-court{display:none;}
   .stat, .info-card, .reg-card, .news-card, .table-scroll{box-shadow:var(--shadow-sm);}
+  .btn--primary:hover, .btn--secondary:hover{transform:none;}
+  .photo:hover .ph-stripes, .photo:hover .photo__img{transform:none;}
+  .photo__caption{position:static; opacity:1; transform:none; padding:.6rem .9rem; background:color-mix(in srgb, var(--surface) 88%, transparent); color:var(--text);}
 }
 
 /* ------------------------------------------------------------------ */
@@ -462,6 +489,14 @@ tbody tr:hover{background:var(--surface-2);}
 .muted{color:var(--muted);}
 .notice{background:var(--surface-2); border:1px solid var(--border); border-radius:1rem; padding:1rem 1.25rem; color:var(--muted);}
 .notice--warn{border-color:color-mix(in srgb,var(--accent) 35%, var(--border)); color:var(--text);}
+/* ПУСТОЕ СОСТОЯНИЕ КАК ПРИГЛАШЕНИЕ (ТЗ оформления 07.09.2026): вместо сухого
+   «Новостей пока нет» — заголовок, пояснение и действие. Пунктирная рамка
+   говорит «здесь пока пусто», подсветка по наведению — «сюда можно нажать». */
+.notice--invite{display:flex; flex-direction:column; gap:.45rem; align-items:flex-start; border:1px dashed var(--border); background:var(--surface); transition:border-color .18s ease, background-color .18s ease;}
+.notice--invite:hover{border-color:var(--primary); background:var(--surface-2);}
+.notice--invite b{font-family:'Manrope',sans-serif; font-size:1.05rem; font-weight:700; color:var(--text);}
+.notice--invite span{font-size:.95rem; line-height:1.55; color:var(--muted);}
+.notice--invite .btn{margin-top:.35rem;}
 
 .filters{display:flex; flex-wrap:wrap; gap:.75rem; align-items:flex-end; margin-bottom:1.25rem;}
 .field{display:flex; flex-direction:column; gap:.35rem; min-width:0;}

@@ -23,7 +23,15 @@
       <% if (q || category) { %><div class="field"><a class="btn btn--secondary" href="/news">Сбросить</a></div><% } %>
     </form>
     <% if (!news.length) { %>
-      <div class="panel notice"><%= q ? 'По запросу «' + q + '» ничего не найдено.' : 'Новостей пока нет.' %></div>
+      <% if (q) { %>
+        <div class="panel notice">По запросу «<%= q %>» ничего не найдено.</div>
+      <% } else { %>
+        <div class="panel notice notice--invite">
+          <b>Первые материалы сезона готовятся</b>
+          <span>Здесь будут отчёты о турнирах, изменения регламента и объявления Федерации. Есть о чём рассказать — напишите нам.</span>
+          <a class="btn btn--secondary btn--small" href="/contacts#feedback">Предложить новость</a>
+        </div>
+      <% } %>
     <% } else { %>
       <div class="news-grid">
         <% news.forEach(function (n) { %>

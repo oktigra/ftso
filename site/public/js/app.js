@@ -156,6 +156,34 @@
     }
   }
 
+  // --- появление секций при прокрутке --------------------------------------
+  // Секции въезжают снизу по одной, каждая один раз. Без IntersectionObserver
+  // и при reduced-motion класс .reveal не вешается вовсе — страница обычная.
+  var revealNodes = [];
+  function revealAll() {
+    revealNodes.forEach(function (n) { n.classList.add('is-in'); });
+  }
+  if (!reduce && 'IntersectionObserver' in window) {
+    revealNodes = Array.prototype.slice.call(document.querySelectorAll('main > section'));
+    if (revealNodes.length) {
+      revealNodes.forEach(function (n, i) {
+        n.classList.add('reveal');
+        n.style.transitionDelay = (i * 0.12).toFixed(2) + 's';
+      });
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          e.target.classList.add('is-in');
+          io.unobserve(e.target);
+        });
+      }, { rootMargin: '0px 0px -6% 0px', threshold: 0.04 });
+      revealNodes.forEach(function (n) { io.observe(n); });
+      // Страховка: если наблюдатель по какой-то причине не отработал, через
+      // 2,5 с показываем всё — пустая страница хуже любого эффекта.
+      setTimeout(revealAll, 2500);
+    }
+  }
+
   // --- меню «Цветовая тема» -------------------------------------------------
   var themeMenu = document.querySelector('[data-theme-menu]');
   if (themeMenu) {
@@ -188,8 +216,15 @@
     picks.forEach(function (b) {
       b.addEventListener('click', function () {
         closeTheme();
-        applyTheme(b.getAttribute('data-theme-pick'));
+        var next = b.getAttribute('data-theme-pick');
+        var changed = next !== currentTheme();
+        applyTheme(next);
         markCurrent();
+        // Смена темы — блоки гаснут и въезжают заново (ТЗ оформления 07.09.2026).
+        if (changed && !reduce && revealNodes.length) {
+          revealNodes.forEach(function (n) { n.classList.remove('is-in'); });
+          setTimeout(revealAll, 120);
+        }
       });
     });
     markCurrent();

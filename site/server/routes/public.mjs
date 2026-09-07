@@ -67,6 +67,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
         lead: siteText(db, 'home-lead'),
         tournamentsLead: siteText(db, 'home-tournaments-lead'),
         cabinetLead: siteText(db, 'home-cabinet-lead'),
+        photoCaption: siteText(db, 'home-photo-caption'),
       },
       stats: homeStats(db, standings),
       nextEvent: homeNextEvent(db),
