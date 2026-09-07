@@ -5118,7 +5118,7 @@ try {
     return `внешних запросов 0; загружены локально: ${[...new Set(fontsLoaded.map((f) => f.split(' ')[0]))].join(', ')}`;
   });
 
-  await check('тема переключается при ВКЛЮЧЁННОМ CSP и запоминается', async () => {
+  await check('три темы переключаются меню при ВКЛЮЧЁННОМ CSP и запоминаются', async () => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     const cspErrors = [];
@@ -5128,26 +5128,46 @@ try {
     await page.goto(inst.base + '/', { waitUntil: 'networkidle' });
 
     const before = await page.getAttribute('html', 'data-theme');
-    await page.click('[data-theme-toggle]');
-    await page.waitForFunction((b) => document.documentElement.getAttribute('data-theme') !== b, before);
-    const after = await page.getAttribute('html', 'data-theme');
+    // Фон каждой темы: атрибут мог бы поменяться и без применения CSS. Ждём
+    // ИМЕННО цвет, а не факт клика: смена темы едет переходом .45s, а «волна»
+    // добавляет каждому блоку задержку до 2.6 с — мгновенный замер поймал бы старый.
+    const WANT = { dark: 'rgb(21, 34, 45)', warm: 'rgb(232, 223, 205)', light: 'rgb(179, 188, 196)' };
+    const backgrounds = {};
+    for (const theme of ['dark', 'warm', 'light']) {
+      await page.click('[data-theme-menu-btn]');
+      await page.click(`[data-theme-pick="${theme}"]`);
+      await page.waitForFunction((t) => document.documentElement.getAttribute('data-theme') === t, theme);
+      await page.waitForFunction(
+        (want) => getComputedStyle(document.body).backgroundColor === want,
+        WANT[theme],
+        { timeout: 8000 },
+      );
+      backgrounds[theme] = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    }
+    // Останавливаемся на тёплой — её и проверяем на запоминание (анти-FOUC-скрипт
+    // раньше знал только light/dark и молча сбрасывал бы третью тему на светлую).
+    await page.click('[data-theme-menu-btn]');
+    await page.click('[data-theme-pick="warm"]');
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-theme') === 'warm');
     const stored = await page.evaluate(() => localStorage.getItem('ftso-theme'));
+    const marked = await page.getAttribute('[data-theme-pick="warm"]', 'aria-current');
 
     // Новый заход в том же контексте — тема должна восстановиться из localStorage.
     const page2 = await ctx.newPage();
     await page2.goto(inst.base + '/rating', { waitUntil: 'domcontentloaded' });
     const remembered = await page2.getAttribute('html', 'data-theme');
-
-    // Цвет фона действительно поменялся — значит CSS применился, а не только атрибут.
-    const bg = await page2.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    const warmBg = await page2.evaluate(() => getComputedStyle(document.body).backgroundColor);
     await ctx.close();
 
     assert(cspErrors.length === 0, `CSP заблокировал что-то нужное: ${cspErrors.join(' | ')}`);
-    assert(after !== before, 'тема не переключилась');
-    eq(stored, after, 'выбор не сохранён в localStorage');
-    eq(remembered, after, 'тема не восстановилась при следующем заходе');
-    assert(bg === 'rgb(21, 34, 45)', `фон тёмной темы ожидался #15222d, получен ${bg}`);
-    return `${before} -> ${after}, localStorage ftso-theme=${stored}, при новом заходе ${remembered}, фон ${bg}; нарушений CSP нет`;
+    eq(backgrounds.dark, 'rgb(21, 34, 45)', `фон тёмной темы ожидался #15222d, получен ${backgrounds.dark}`);
+    eq(backgrounds.warm, 'rgb(232, 223, 205)', `фон тёплой темы ожидался #e8dfcd, получен ${backgrounds.warm}`);
+    eq(backgrounds.light, 'rgb(179, 188, 196)', `фон светлой темы ожидался #b3bcc4, получен ${backgrounds.light}`);
+    eq(stored, 'warm', 'выбор тёплой темы не сохранён в localStorage');
+    eq(marked, 'true', 'активный пункт меню не отмечен aria-current');
+    eq(remembered, 'warm', 'тёплая тема не пережила переход на другую страницу');
+    eq(warmBg, 'rgb(232, 223, 205)', `после перезагрузки фон тёплой темы ожидался #e8dfcd, получен ${warmBg}`);
+    return `старт ${before}; фоны: тёмная ${backgrounds.dark}, тёплая ${backgrounds.warm}, светлая ${backgrounds.light}; ftso-theme=${stored} пережил переход на /rating; нарушений CSP нет`;
   });
 
   // Все публичные страницы разом: адаптив и доступность проверяются ОДНИМ
