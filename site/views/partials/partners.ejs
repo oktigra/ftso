@@ -1,23 +1,45 @@
 <%
-/* ПОЛОСА ПАРТНЁРОВ (макет согласован владельцем 06.09.2026): подпись слева, логотипы
-   в рамках 180×72 (object-fit: contain), последним — приглашение, которое ведёт на
-   форму обратной связи. Нет партнёров — остаётся только приглашение. */
+/* ПОЛОСА ПАРТНЁРОВ, вариант B «Табло корта» (ТЗ оформления 07.09.2026): подпись
+   слева с зелёной засечкой, логотипы в рамках 180×72 (object-fit: contain),
+   последним — приглашение. Пока партнёров нет, вместо одинокой плашки во всю
+   строку — пояснение, два пустых слота и кнопка «Стать партнёром». */
 const compact = typeof partnersCompact !== 'undefined' && partnersCompact;
 %>
 <section class="partners<%= compact ? ' partners--compact' : '' %>" aria-label="Партнёры Федерации">
+  <%
+  /* Знак корта здесь ГОРИЗОНТАЛЬНЫЙ и свой: вертикальный из секций в низкой
+     полосе виден только обрезками штрихов. data-parallax не ставим намеренно. */
+  %>
+  <svg class="partners__wm" viewBox="0 0 400 300" preserveAspectRatio="none" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <rect x="10" y="10" width="380" height="280" rx="2"/>
+    <line x1="200" y1="10" x2="200" y2="290"/>
+    <rect x="70" y="45" width="260" height="210"/>
+    <line x1="70" y1="150" x2="330" y2="150"/>
+    <line x1="200" y1="45" x2="200" y2="255"/>
+  </svg>
   <div class="container partners__inner">
     <div class="partners__title"><%= partnersTitle %></div>
     <div class="partners__row">
-      <% partners.forEach(function (p) { %>
-        <% if (p.url) { %>
-          <a class="partner" href="<%= p.url %>" rel="noopener nofollow" target="_blank" title="<%= p.name %>" aria-label="Партнёр: <%= p.name %>">
-            <img src="/partners/<%= p.id %>/logo" alt="<%= p.name %>" loading="lazy">
-          </a>
-        <% } else { %>
-          <span class="partner" title="<%= p.name %>"><img src="/partners/<%= p.id %>/logo" alt="<%= p.name %>" loading="lazy"></span>
-        <% } %>
-      <% }); %>
-      <a class="partner partner--cta" href="/contacts#feedback"><%= partnersCta %></a>
+      <% if (!partners.length) { %>
+        <div class="partners__empty">
+          <b><%= partnersCta %></b>
+          <span>Логотипы встанут в полосу под первым экраном главной, а на остальных страницах — в компактный ряд в подвале.</span>
+        </div>
+        <div class="partner partner--slot">СЛОТ</div>
+        <div class="partner partner--slot">СЛОТ</div>
+        <a class="btn btn--primary" href="/contacts#feedback">Стать партнёром</a>
+      <% } else { %>
+        <% partners.forEach(function (p) { %>
+          <% if (p.url) { %>
+            <a class="partner" href="<%= p.url %>" rel="noopener nofollow" target="_blank" title="<%= p.name %>" aria-label="Партнёр: <%= p.name %>">
+              <img src="/partners/<%= p.id %>/logo" alt="<%= p.name %>" loading="lazy">
+            </a>
+          <% } else { %>
+            <span class="partner" title="<%= p.name %>"><img src="/partners/<%= p.id %>/logo" alt="<%= p.name %>" loading="lazy"></span>
+          <% } %>
+        <% }); %>
+        <a class="partner partner--cta" href="/contacts#feedback"><%= partnersCta %></a>
+      <% } %>
     </div>
   </div>
 </section>
