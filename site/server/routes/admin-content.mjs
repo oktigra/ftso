@@ -13,7 +13,7 @@ import { parseMultipart } from '../lib/multipart.mjs';
 import { SEO_PAGES, SEO_DEFAULTS, seoFor, saveSeo } from '../lib/seo.mjs';
 import { SITE_TEXTS, saveText } from '../lib/texts.mjs';
 import { postInBackground, postToMax, maxWhoAmI, maxFindChats, maxEnabled } from '../lib/max-post.mjs';
-import { applyStarterDocuments, applyStarterNews, STARTER_DOCUMENTS, STARTER_NEWS } from '../lib/starter-content.mjs';
+import { applyStarterDocuments, applyStarterNews, applyStarterPartners, STARTER_DOCUMENTS, STARTER_NEWS, STARTER_PARTNERS } from '../lib/starter-content.mjs';
 import { allPartners } from '../lib/partners.mjs';
 import { DIRECTORY_SEED, applyDirectorySeed } from '../lib/directory-seed.mjs';
 import { storeUpload, deleteUpload, uploadById, sendUpload } from '../lib/uploads.mjs';
@@ -370,7 +370,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
 
   // --- ПАРТНЁРЫ И СПОНСОРЫ (06.09.2026) --------------------------------------
   app.get('/admin/partners', requireRole(...CONTENT_ROLES), (req, res) => {
-    res.render('admin/partners', { title: 'Партнёры — админка ФТСО', partnersList: allPartners(db) });
+    res.render('admin/partners', { title: 'Партнёры — админка ФТСО', partnersList: allPartners(db), starterPartners: STARTER_PARTNERS.length });
   });
   app.post(
     '/admin/partners',
@@ -503,6 +503,19 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       const out = applyStarterNews(db, req.session.user.id);
       logAction(db, req.session.user.id, 'news.starter', null, out);
       flash(req, res, 'ok', `Стартовые новости (черновики): добавлено ${out.added}, уже было ${out.skipped} из ${out.total}. Прочтите, поправьте и опубликуйте.`, '/admin/news');
+    }),
+  );
+
+  // СТАРТОВЫЕ ПАРТНЁРЫ (07.09.2026): состав с прежнего сайта Федерации, без логотипов —
+  // в полосу они попадут, когда к каждому загрузят файл. Повтор безвреден.
+  app.post(
+    '/admin/partners/starter',
+    requireRole(...CONTENT_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const out = applyStarterPartners(db);
+      logAction(db, req.session.user.id, 'partners.starter', null, out);
+      flash(req, res, 'ok', `Стартовые партнёры: добавлено ${out.added}, уже было ${out.skipped} из ${out.total}. Загрузите логотипы — без них партнёр не показывается.`, '/admin/partners');
     }),
   );
 
