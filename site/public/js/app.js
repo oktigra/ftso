@@ -114,12 +114,19 @@
   };
 
   // --- тема: localStorage 'ftso-theme', волна смены сверху вниз -------------
+  // Тем ТРИ (07.09.2026): светлая, тёмная, теплая. Выбор — в меню «Цветовая
+  // тема» в шапке; сама смена и «волна» здесь же, чтобы не расходились.
   var THEME_KEY = 'ftso-theme';
+  var THEMES = ['light', 'dark', 'warm'];
   var themeTimer = null;
 
-  function toggleTheme() {
-    var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-    var next = cur === 'dark' ? 'light' : 'dark';
+  function currentTheme() {
+    var t = document.documentElement.getAttribute('data-theme');
+    return THEMES.indexOf(t) >= 0 ? t : 'light';
+  }
+
+  function applyTheme(next) {
+    if (THEMES.indexOf(next) < 0 || next === currentTheme()) return;
 
     if (!reduce) {
       var h = document.documentElement.scrollHeight || 1;
@@ -149,8 +156,44 @@
     }
   }
 
-  var toggle = document.querySelector('[data-theme-toggle]');
-  if (toggle) toggle.addEventListener('click', toggleTheme);
+  // --- меню «Цветовая тема» -------------------------------------------------
+  var themeMenu = document.querySelector('[data-theme-menu]');
+  if (themeMenu) {
+    var themeBtn = themeMenu.querySelector('[data-theme-menu-btn]');
+    var picks = Array.prototype.slice.call(themeMenu.querySelectorAll('[data-theme-pick]'));
+    var markCurrent = function () {
+      var cur = currentTheme();
+      picks.forEach(function (b) {
+        b.setAttribute('aria-current', b.getAttribute('data-theme-pick') === cur ? 'true' : 'false');
+      });
+    };
+    var closeTheme = function () {
+      themeMenu.classList.remove('is-open');
+      themeBtn.setAttribute('aria-expanded', 'false');
+    };
+    themeBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = themeMenu.classList.toggle('is-open');
+      themeBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    document.addEventListener('click', function (e) {
+      if (themeMenu.classList.contains('is-open') && !themeMenu.contains(e.target)) closeTheme();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && themeMenu.classList.contains('is-open')) {
+        closeTheme();
+        themeBtn.focus();
+      }
+    });
+    picks.forEach(function (b) {
+      b.addEventListener('click', function () {
+        closeTheme();
+        applyTheme(b.getAttribute('data-theme-pick'));
+        markCurrent();
+      });
+    });
+    markCurrent();
+  }
 
   // --- бургер-меню ---------------------------------------------------------
   var burger = document.querySelector('[data-burger]');

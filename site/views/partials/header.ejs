@@ -36,10 +36,35 @@
     </nav>
 
     <div class="header-actions">
-      <button class="theme-toggle" type="button" data-theme-toggle aria-label="Переключить тему">
-        <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><line x1="12" y1="2.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21.5" y2="12"/><line x1="5.3" y1="5.3" x2="7" y2="7"/><line x1="17" y1="17" x2="18.7" y2="18.7"/><line x1="18.7" y1="5.3" x2="17" y2="7"/><line x1="7" y1="17" x2="5.3" y2="18.7"/></svg>
-        <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4 6.5 6.5 0 1 0 20 14.5z"/></svg>
-      </button>
+      <%
+      /* ВЫБОР ТЕМЫ (ТЗ оформления 07.09.2026): вместо кружка на два состояния —
+         меню на три темы с образцами палитр. Образцы задаются классами в CSS:
+         инлайновый style="" запрещён политикой CSP (style-src 'self'). */
+      %>
+      <div class="theme-menu" data-theme-menu>
+        <button class="theme-menu__btn" type="button" data-theme-menu-btn aria-haspopup="true" aria-expanded="false" aria-label="Цветовая тема">
+          <span class="theme-menu__icon" aria-hidden="true">
+            <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><line x1="12" y1="2.5" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="21.5" y2="12"/><line x1="5.3" y1="5.3" x2="7" y2="7"/><line x1="17" y1="17" x2="18.7" y2="18.7"/><line x1="18.7" y1="5.3" x2="17" y2="7"/><line x1="7" y1="17" x2="5.3" y2="18.7"/></svg>
+            <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4 6.5 6.5 0 1 0 20 14.5z"/></svg>
+            <svg class="i-warm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3s4.5 3.7 4.5 8a4.5 4.5 0 0 1-9 0c0-1.7.8-3.2 1.7-4.4.4 1 1 1.8 1.8 2.3C11.6 7.3 12 5 12 3z"/><path d="M8 20.5h8"/></svg>
+          </span>
+          <span class="theme-menu__label">Цветовая тема</span>
+          <span class="theme-menu__caret" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+          </span>
+        </button>
+        <div class="theme-menu__list" role="menu">
+          <% [['light','Светлая'],['dark','Тёмная'],['warm','Теплая']].forEach(function (t) { %>
+            <button class="theme-menu__item" type="button" role="menuitem" data-theme-pick="<%= t[0] %>" aria-current="false">
+              <span class="theme-menu__chips" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="theme-menu__name"><%= t[1] %></span>
+              <span class="theme-menu__check" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
+            </button>
+          <% }); %>
+        </div>
+      </div>
       <%
       /* «Вход» — традиционное место справа вверху, рядом с «Регистрацией»
          (так у ФТР: «Личный кабинет» РТТ в правом углу шапки). Ведёт в

@@ -17,6 +17,7 @@
   --photo-filter:none;
   --card-hover-bg:linear-gradient(160deg,#eef6f1,#e7f0f8);
   --page-bg:#b3bcc4;
+  --partner-inset:rgba(255,255,255,.55);
 }
 html[data-theme="dark"]{
   --primary:#27b377; --primary-hover:#1f8f60;
@@ -33,6 +34,27 @@ html[data-theme="dark"]{
   --photo-filter:brightness(.9);
   --card-hover-bg:linear-gradient(160deg,#16232f,#182b3b);
   --page-bg:#15222d;
+  --partner-inset:rgba(255,255,255,.06);
+}
+/* ТРЕТЬЯ ТЕМА «Теплая» (ТЗ оформления 07.09.2026). Существующие две палитры не
+   тронуты — это отдельный набор тех же 24 токенов: слоновая кость, латунный
+   акцент, фирменный зелёный --primary остаётся прежним. */
+html[data-theme="warm"]{
+  --primary:#0e7a52; --primary-hover:#0a6543;
+  --accent:#8a6a1e; --accent-soft:#f0e6cf;
+  --bg:#f7f2e8; --surface:#fffdf7; --surface-2:#f7f0e2;
+  --border:#e0d5bf; --text:#1d2a22; --muted:#6b6455;
+  --input-bg:#fffdf7; --danger:#b23b3b;
+  --shadow-sm:0 1px 2px rgba(96,74,26,.07), 0 2px 8px rgba(96,74,26,.06);
+  --shadow-md:0 6px 24px rgba(96,74,26,.1), 0 2px 6px rgba(96,74,26,.06);
+  --shadow-lg:0 18px 48px rgba(96,74,26,.14), 0 6px 16px rgba(96,74,26,.08);
+  --noise-op:.22; --texture-op:.09;
+  --tex-line:rgba(138,106,30,.5);
+  --cta-grad:linear-gradient(135deg,#123d68,#0f5b79);
+  --photo-filter:none;
+  --card-hover-bg:linear-gradient(160deg,#fbf6ea,#f4ece0);
+  --page-bg:#e8dfcd;
+  --partner-inset:rgba(255,255,255,.75);
 }
 *{box-sizing:border-box;}
 html{scroll-behavior:smooth;}
@@ -55,7 +77,7 @@ a:hover{color:var(--primary-hover);}
 img{max-width:100%; display:block;}
 :focus-visible{outline:3px solid var(--primary); outline-offset:3px; border-radius:6px;}
 
-body, .site-header, section, footer, .card, .btn, .badge, .status, .stat, .photo, table, th, td, .hero-panel, .info-card, .reg-card, .news-card, .theme-toggle, .brand-mark, .nav-menu, .nav-menu a{
+body, .site-header, section, footer, .card, .btn, .badge, .status, .stat, .photo, table, th, td, .hero-panel, .info-card, .reg-card, .news-card, .theme-menu__btn, .brand-mark, .nav-menu, .nav-menu a{
   transition:background-color .45s ease, color .45s ease, border-color .45s ease, box-shadow .45s ease, fill .45s ease, stroke .45s ease;
 }
 @media (prefers-reduced-motion: reduce){
@@ -144,17 +166,56 @@ body, .site-header, section, footer, .card, .btn, .badge, .status, .stat, .photo
 .nav-more.is-open>.nav-more-list{display:flex;}
 .nav-more-list a{font-size:.95rem; padding:.5rem .75rem; border-radius:.7rem;}
 .header-actions{display:flex; align-items:center; gap:.6rem; margin-left:auto;}
-/* Кружок ИНВЕРТИРОВАН относительно темы (решение владельца 05.09.2026): на светлой —
-   тёмный кружок с луной, на тёмной — светлый с солнцем: кнопка показывает, куда ведёт. */
-.theme-toggle{width:42px; height:42px; border-radius:999px; border:1.5px solid #0d141a; background:#0d141a; color:#f5f7f9; display:grid; place-items:center; cursor:pointer; flex:none;}
-html[data-theme="dark"] .theme-toggle{border-color:#f5f7f9; background:#f5f7f9; color:#0d141a;}
-.theme-toggle:hover{border-color:var(--primary); color:var(--primary);}
-.theme-toggle svg{width:20px; height:20px;}
-/* Иконка показывает, КУДА переключишь (решение владельца 05.09.2026):
-   на светлой теме — луна, на тёмной — солнце. */
-.theme-toggle .i-sun{display:none;}
-html[data-theme="dark"] .theme-toggle .i-moon{display:none;}
-html[data-theme="dark"] .theme-toggle .i-sun{display:block;}
+/* ВЫБОР ТЕМЫ (ТЗ оформления 07.09.2026). Был кружок на два состояния — стало
+   меню на три: светлая, тёмная, теплая. У каждой строки образец палитры из трёх
+   полос и галочка у активной. Образцы задаются ЗДЕСЬ, а не инлайном в шаблоне:
+   style-src 'self' инлайновые стили блокирует. */
+.theme-menu{position:relative;}
+.theme-menu__btn{display:inline-flex; align-items:center; gap:.55rem; padding:.62rem .9rem; border:1px solid var(--border); border-radius:999px; background:linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%); color:var(--text); font-family:'Manrope',sans-serif; font-size:.85rem; font-weight:700; cursor:pointer; box-shadow:0 4px 0 var(--border), var(--shadow-sm); transition:transform .12s ease, box-shadow .18s ease, border-color .18s ease;}
+.theme-menu__btn:hover{transform:translateY(-1px); border-color:var(--primary); box-shadow:0 5px 0 var(--border), var(--shadow-md);}
+.theme-menu__btn:active{transform:translateY(3px); box-shadow:0 1px 0 var(--border), inset 0 2px 5px rgba(18,61,104,.16);}
+.theme-menu__icon{display:grid; place-items:center; width:18px; height:18px;}
+.theme-menu__icon svg{width:16px; height:16px;}
+/* Иконка показывает ТЕКУЩУЮ тему (меню теперь на три пункта, и «куда переключишь»
+   больше не читается). Значение data-theme ставит анти-FOUC-скрипт до рендера;
+   без JS остаётся солнце — правило по умолчанию. */
+.theme-menu__icon .i-moon, .theme-menu__icon .i-warm{display:none;}
+html[data-theme="dark"] .theme-menu__icon .i-sun{display:none;}
+html[data-theme="dark"] .theme-menu__icon .i-moon{display:block;}
+html[data-theme="warm"] .theme-menu__icon .i-sun{display:none;}
+html[data-theme="warm"] .theme-menu__icon .i-warm{display:block;}
+.theme-menu__label{white-space:nowrap;}
+.theme-menu__caret{display:grid; place-items:center; transition:transform .26s cubic-bezier(.4,0,.2,1);}
+.theme-menu__caret svg{width:13px; height:13px;}
+.theme-menu.is-open .theme-menu__caret{transform:rotate(180deg);}
+.theme-menu__list{position:absolute; right:0; top:calc(100% + 8px); z-index:60; width:230px; padding:.35rem; background:var(--surface); border:1px solid var(--border); border-radius:1rem; box-shadow:var(--shadow-md); opacity:0; transform:translateY(-6px); pointer-events:none; transition:opacity .2s ease, transform .26s cubic-bezier(.16,.84,.24,1);}
+.theme-menu.is-open .theme-menu__list{opacity:1; transform:none; pointer-events:auto;}
+.theme-menu__item{display:flex; align-items:center; gap:.65rem; width:100%; padding:.6rem .65rem; border:0; border-radius:.65rem; background:transparent; color:var(--text); font-family:'Manrope',sans-serif; font-size:.95rem; font-weight:400; text-align:left; cursor:pointer; transition:background-color .14s ease;}
+.theme-menu__item:hover{background:var(--surface-2);}
+.theme-menu__item[aria-current="true"]{background:var(--accent-soft); font-weight:700;}
+.theme-menu__chips{display:flex; width:38px; height:24px; flex:none; border:1px solid var(--border); border-radius:.35rem; overflow:hidden;}
+.theme-menu__chips i{flex:1;}
+[data-theme-pick="light"] .theme-menu__chips i:nth-child(1){background:#b3bcc4;}
+[data-theme-pick="light"] .theme-menu__chips i:nth-child(2){background:#eaeff4;}
+[data-theme-pick="light"] .theme-menu__chips i:nth-child(3){background:#0e7a52;}
+[data-theme-pick="dark"] .theme-menu__chips i:nth-child(1){background:#15222d;}
+[data-theme-pick="dark"] .theme-menu__chips i:nth-child(2){background:#111c25;}
+[data-theme-pick="dark"] .theme-menu__chips i:nth-child(3){background:#27b377;}
+[data-theme-pick="warm"] .theme-menu__chips i:nth-child(1){background:#e8dfcd;}
+[data-theme-pick="warm"] .theme-menu__chips i:nth-child(2){background:#fffdf7;}
+[data-theme-pick="warm"] .theme-menu__chips i:nth-child(3){background:#8a6a1e;}
+.theme-menu__name{flex:1;}
+.theme-menu__check{display:grid; place-items:center; width:16px; color:var(--primary); opacity:0;}
+.theme-menu__check svg{width:14px; height:14px;}
+.theme-menu__item[aria-current="true"] .theme-menu__check{opacity:1;}
+@media (max-width:760px){ .theme-menu__label{display:none;} .theme-menu__list{width:200px;} }
+/* Телефон: кнопка сжимается до кружка 42×42, как прежний переключатель, иначе
+   шапка перестаёт влезать в 360 px (приёмка ловит горизонтальный скролл). */
+@media (max-width:480px){
+  .theme-menu__btn{width:42px; height:42px; padding:0; gap:0; justify-content:center; box-shadow:var(--shadow-sm);}
+  .theme-menu__btn:hover, .theme-menu__btn:active{transform:none; box-shadow:var(--shadow-sm);}
+  .theme-menu__caret{display:none;}
+}
 .burger{display:none; width:42px; height:42px; border-radius:12px; border:1.5px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; padding:0;}
 .burger svg{width:22px; height:22px; margin:auto;}
 
