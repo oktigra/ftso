@@ -2695,10 +2695,15 @@ await check('тренер = игрок: связь записей (не слия
 });
 
 await check('партнёры: полоса под первым экраном и ряд в подвале, приглашение «станьте партнёром» всегда, логотип отдаётся, скрытый партнёр не виден, в админку полоса не лезет', async () => {
-  // Без партнёров — на главной только приглашение.
+  // Без партнёров — на главной пустое состояние варианта B: приглашение, слоты, кнопка.
   const home0 = await http('/');
   assert(/class="partners"/.test(home0.text) && /Станьте партнёром или спонсором/.test(home0.text), 'нет полосы с приглашением');
   assert(!/class="partner"[^>]*>\s*<img/.test(home0.text), 'без партнёров не должно быть логотипов');
+  assert(/class="partners__wm"/.test(home0.text), 'нет водяного знака корта в полосе');
+  assert(/class="partners__empty"/.test(home0.text), 'нет пустого состояния полосы');
+  eq((home0.text.match(/partner--slot/g) || []).length, 2, 'в пустом состоянии должно быть два слота');
+  assert(/href="\/contacts#feedback"[^>]*>Стать партнёром</.test(home0.text.replace(/\s+/g, ' ')), 'нет кнопки «Стать партнёром»');
+  assert(!/partner--cta/.test(home0.text), 'в пустом состоянии плашка-приглашение во всю строку не нужна');
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const page = await http('/admin/partners', { jar });
   eq(page.status, 200, '/admin/partners');
