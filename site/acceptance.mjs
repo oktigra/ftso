@@ -5103,6 +5103,58 @@ try {
   const { chromium } = await import('playwright');
   const browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-sandbox'] });
 
+  await check('эффекты: секции появляются один раз, у кнопок своё нажатие, reduced-motion всё глушит', async () => {
+    // Обычный режим: секции получают .reveal и доезжают до .is-in.
+    const page = await browser.newPage();
+    await page.goto(inst.base + '/', { waitUntil: 'networkidle' });
+    await page.waitForFunction(() => {
+      const s = document.querySelectorAll('main > section.reveal');
+      return s.length > 0 && [...s].every((n) => n.classList.contains('is-in'));
+    }, null, { timeout: 6000 });
+    // Класс появился — ждём КОНЦА въезда: переход .9s плюс задержка 120 мс на соседа.
+    await page.waitForFunction(() => {
+      const s = [...document.querySelectorAll('main > section')];
+      return s.every((n) => getComputedStyle(n).opacity === '1');
+    }, null, { timeout: 8000 });
+    const shown = await page.evaluate(() => {
+      const s = [...document.querySelectorAll('main > section')];
+      return {
+        всего: s.length,
+        сReveal: s.filter((n) => n.classList.contains('reveal')).length,
+        видимы: s.filter((n) => getComputedStyle(n).opacity === '1').length,
+      };
+    });
+    // Кнопка: свой быстрый переход и провал при нажатии — раньше :active не было.
+    const btn = await page.evaluate(() => {
+      const b = document.querySelector('.btn--primary');
+      const cs = getComputedStyle(b);
+      return { transition: cs.transitionDuration, shadow: cs.boxShadow };
+    });
+    await page.close();
+
+    // reduced-motion: ни .reveal, ни скрытых секций быть не должно.
+    const ctx = await browser.newContext({ reducedMotion: 'reduce' });
+    const p2 = await ctx.newPage();
+    await p2.goto(inst.base + '/', { waitUntil: 'networkidle' });
+    await p2.waitForTimeout(400);
+    const reduced = await p2.evaluate(() => {
+      const s = [...document.querySelectorAll('main > section')];
+      return {
+        сReveal: s.filter((n) => n.classList.contains('reveal')).length,
+        прозрачных: s.filter((n) => getComputedStyle(n).opacity !== '1').length,
+      };
+    });
+    await ctx.close();
+
+    assert(shown.всего > 0, 'на главной нет секций');
+    eq(shown.сReveal, shown.всего, 'не все секции получили .reveal');
+    eq(shown.видимы, shown.всего, 'часть секций осталась невидимой после появления');
+    assert(btn.transition.startsWith('0.18'), `у кнопки ожидался свой переход .18s, получен ${btn.transition}`);
+    assert(/inset|0px 4px 0px/.test(btn.shadow) || btn.shadow !== 'none', 'у кнопки нет борта');
+    eq(reduced.прозрачных, 0, 'при reduced-motion секции не должны прятаться');
+    return `секций ${shown.всего}, все доехали до is-in; переход кнопки ${btn.transition}; при reduced-motion .reveal у ${reduced.сReveal}, скрытых 0`;
+  });
+
   await check('шрифты грузятся ЛОКАЛЬНО (нет обращений к Google)', async () => {
     const page = await browser.newPage();
     const external = [];
