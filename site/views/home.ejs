@@ -112,16 +112,32 @@
             <a class="btn btn--secondary btn--small" href="/tournament-request">Заявить турнир</a>
           </div>
         <% } else { %>
-          <div class="tcards">
+          <%
+          /* ЯЩИК ТУРНИРА: корпус не ссылка целиком — ссылками служат фасад и три
+             папки, иначе получились бы вложенные ссылки. С клавиатуры ящик
+             раскрывается по табу: :focus-within на корпусе. */
+          %>
+          <div class="tdrawers">
             <% homeTournaments.forEach(function (t) { %>
-              <a class="tcard fx-card" href="/tournaments/<%= t.id %>">
-                <div class="tcard__date"><b><%= dm(t.start_date || t.end_date) %></b><% if (t.start_date && t.start_date !== t.end_date) { %><span>— <%= dm(t.end_date) %></span><% } %></div>
-                <div class="tcard__body">
-                  <div class="tcard__name"><%= t.name %></div>
-                  <div class="tcard__meta"><%= t.city || 'Смоленская область' %><%= t.age_group ? ' · ' + t.age_group : '' %><%= t.participants ? ' · участников: ' + t.participants : '' %></div>
-                  <div class="tcard__tags"><span class="badge badge--<%= t.category.toLowerCase() %>"><%= t.category %></span> <span class="tag tag--<%= t.status %>"><%= statusRu[t.status] %></span></div>
+              <div class="tdrawer">
+                <div class="tdrawer__box">
+                  <div class="tdrawer__folders">
+                    <a class="tdrawer__folder" href="/tournaments/<%= t.id %>#grid">Сетка</a>
+                    <a class="tdrawer__folder" href="/tournament-request">Заявка</a>
+                    <a class="tdrawer__folder" href="/documents">Регламент</a>
+                  </div>
+                  <a class="tdrawer__face" href="/tournaments/<%= t.id %>">
+                    <div class="tdrawer__top">
+                      <span class="tdrawer__date"><%= dm(t.start_date || t.end_date) %><% if (t.start_date && t.start_date !== t.end_date) { %> — <%= dm(t.end_date) %><% } %></span>
+                      <span class="badge badge--<%= t.category.toLowerCase() %>">Кат. <%= t.category %></span>
+                    </div>
+                    <div class="tdrawer__name"><%= t.name %></div>
+                    <div class="tdrawer__meta"><%= t.city || 'Смоленская область' %><%= t.age_group ? ' · ' + t.age_group : '' %><%= t.participants ? ' · участников: ' + t.participants : '' %></div>
+                    <div class="tdrawer__tags"><span class="tag tag--<%= t.status %>"><%= statusRu[t.status] %></span></div>
+                    <div class="tdrawer__handle" aria-hidden="true"></div>
+                  </a>
                 </div>
-              </a>
+              </div>
             <% }); %>
           </div>
         <% } %>
