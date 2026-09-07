@@ -8,6 +8,15 @@
 
   <div class="panel">
     <p class="muted">Логотипы показываются полосой под первым экраном главной и в подвале остальных страниц. Формат — PNG или SVG, вписывается в рамку 180×72 (лучше прозрачный фон). Без логотипа партнёр не показывается. Порядок — по числу «Сортировка» (меньше — левее). Подпись полосы и текст приглашения правятся в «Текстах».</p>
+    <%
+    /* СТАРТОВЫЙ СПИСОК (07.09.2026): состав с прежнего сайта Федерации. Логотипов
+       там не было, поэтому записи заводятся пустыми — останется загрузить файлы. */
+    %>
+    <form method="post" action="/admin/partners/starter" class="inline-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <button class="btn btn--secondary btn--small" type="submit">Завести стартовых партнёров (<%= starterPartners %>)</button>
+      <span class="muted small">Министерство спорта, ФТР, РУСАДА, спорт области и города, «Купол», «Алпина» — как на прежнем сайте Федерации. Логотипы загружаются отдельно.</span>
+    </form>
     <form method="post" action="/admin/partners" class="inline-form" enctype="multipart/form-data">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="field"><label for="p-name">Название</label><input id="p-name" name="name" maxlength="120" required></div>

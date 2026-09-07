@@ -2033,6 +2033,29 @@ await check('сетка, слой 3 — группы + плей-офф: посе
   return 'две группы по 3 → сетка на 4 по 2 лучших, первые места в разных парах; недоигранная группа блокирует посев; места: сетка 1/2/3, не вышедшие — 5';
 });
 
+await check('стартовые партнёры: кнопка в админке, записи без логотипа, повтор без дублей, в полосу до логотипа не лезут', async () => {
+  const { STARTER_PARTNERS } = await import('./server/lib/starter-content.mjs');
+  assert(STARTER_PARTNERS.length >= 5, 'список стартовых партнёров слишком короткий');
+  for (const p of STARTER_PARTNERS) assert(p.name && /^https:\/\//.test(p.url), `партнёр без названия или с некорректной ссылкой: ${p.name}`);
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/partners', { jar });
+  assert(/partners\/starter/.test(page.text), 'нет кнопки стартовых партнёров');
+  const _csrf = tokenFrom(page.text);
+  const before = db.prepare('SELECT COUNT(*) AS n FROM partners').get().n;
+  eq((await http('/admin/partners/starter', { method: 'POST', form: { _csrf }, jar })).status, 302, 'загрузка');
+  const after = db.prepare('SELECT COUNT(*) AS n FROM partners').get().n;
+  eq(after, before + STARTER_PARTNERS.length, 'добавлены не все партнёры');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM partners WHERE logo_upload_id IS NULL').get().n, STARTER_PARTNERS.length, 'стартовые партнёры заводятся без логотипа');
+  eq((await http('/admin/partners/starter', { method: 'POST', form: { _csrf }, jar })).status, 302, 'повтор');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM partners').get().n, after, 'повтор не должен дублировать');
+  // Без логотипа партнёр не показывается: на главной по-прежнему пустое состояние полосы.
+  const home = await http('/');
+  assert(/partner--slot/.test(home.text) && !/Министерство спорта/.test(home.text), 'партнёр без логотипа не должен попадать в полосу');
+  db.prepare('DELETE FROM partners').run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return `${STARTER_PARTNERS.length} партнёров заводятся без логотипов, повтор не дублирует, в полосу не попадают до загрузки файла`;
+});
+
 await check('стартовый список кортов и клубов: кнопка в админке, вставка по названию идемпотентна, у судей кнопки нет', async () => {
   const { DIRECTORY_SEED } = await import('./server/lib/directory-seed.mjs');
   assert(DIRECTORY_SEED.courts.length >= 5 && DIRECTORY_SEED.clubs.length >= 3, 'список слишком короткий');

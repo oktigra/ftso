@@ -97,8 +97,32 @@ export const STARTER_NEWS = [
     body: 'Организаторы турниров Смоленской области могут подать заявку на включение соревнования в календарь Федерации на странице «Организаторам» сайта: название, сроки, место, категория, положение. После согласования турнир появляется в календаре, а по итогам — сетка, результаты и очки в рейтинге.\n\nСекретарям турниров доступны бланк протокола, посев по рейтингу и ввод счёта прямо с телефона по временной ссылке. Подробности — на странице «Организаторам».' },
 ];
 
-export async function applyStarterDocuments(db, config, userId) {
+// СТАРТОВЫЕ ПАРТНЁРЫ (07.09.2026). Состав — с прежнего сайта Федерации
+// (ftso67.ru, раздел «Партнёры», снимок веб-архива 2026). Логотипов там не было,
+// только названия и адреса сайтов, поэтому записи заводятся БЕЗ логотипа:
+// в полосу на витрине партнёр попадает только с логотипом (partners.mjs), так что
+// до загрузки файлов ничего не покажется — список просто ждёт в админке.
+export const STARTER_PARTNERS = [
+  { name: 'Министерство спорта Российской Федерации', url: 'https://minsport.gov.ru/', sort: 10 },
+  { name: 'Федерация тенниса России', url: 'https://tennis-russia.ru/', sort: 20 },
+  { name: 'РУСАДА', url: 'https://rusada.ru/', sort: 30 },
+  { name: 'Главное управление спорта Смоленской области', url: 'https://sport.admin-smolensk.ru/', sort: 40 },
+  { name: 'Комитет по физической культуре и спорту города Смоленска', url: 'https://www.smoladmin.ru/', sort: 50 },
+  { name: 'Спортивный клуб «Купол»', url: 'https://skkupol.ru/', sort: 60 },
+  { name: 'Теннисный клуб «Алпина»', url: 'https://alpinatennis.ru/', sort: 70 },
+];
+
+export function applyStarterPartners(db) {
   let added = 0; let skipped = 0;
+  for (const p of STARTER_PARTNERS) {
+    if (db.prepare('SELECT 1 FROM partners WHERE name = ?').get(p.name)) { skipped++; continue; }
+    db.prepare('INSERT INTO partners (name, url, logo_upload_id, sort) VALUES (?, ?, NULL, ?)').run(p.name, p.url, p.sort);
+    added++;
+  }
+  return { added, skipped, total: STARTER_PARTNERS.length };
+}
+
+export async function applyStarterDocuments(db, config, userId) {  let added = 0; let skipped = 0;
   for (const d of STARTER_DOCUMENTS) {
     if (db.prepare('SELECT 1 FROM federation_documents WHERE title = ?').get(d.title)) { skipped++; continue; }
     const buffer = await simplePdf(d.title, d.subtitle, d.blocks);
