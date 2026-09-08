@@ -5453,7 +5453,7 @@ try {
         thBg: th ? cs(th).backgroundColor : null,
       };
     });
-    // Прокручиваем и смотрим, что плашка осталась в кадре.
+    // Прокручиваем и смотрим, что плашка И ЗАГОЛОВОК ТАБЛИЦЫ остались в кадре.
     await sticky.evaluate(() => window.scrollTo(0, 1500));
     await sticky.waitForTimeout(300);
     const noticeVisible = await sticky.evaluate(() => {
@@ -5462,6 +5462,10 @@ try {
       const r = n.getBoundingClientRect();
       return r.top >= -1 && r.bottom > 0;
     });
+    Object.assign(bars, await sticky.evaluate(() => ({
+      noHScrollWide: document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
+      docWidth: `${document.documentElement.scrollWidth} при ${document.documentElement.clientWidth}`,
+    })));
     await sticky.close();
 
     assert(btn.transition.startsWith('0.18'), `у кнопки ожидался свой переход .18s, получен ${btn.transition}`);
@@ -5471,8 +5475,22 @@ try {
       assert(bars.headerTop && bars.headerTop !== '0px', `шапка должна садиться под плашку, а не на неё: top=${bars.headerTop}`);
       eq(noticeVisible, true, 'плашка уехала при прокрутке');
     }
-    eq(bars.thPos, 'sticky', 'заголовки таблиц должны быть липкими');
-    assert(bars.thBg && bars.thBg !== 'rgba(0, 0, 0, 0)', 'у липкого заголовка обязателен непрозрачный фон');
+    // Липкие заголовки сняты 08.09 (см. site.css): sticky не работал из-за overflow
+    // у обёртки, а снятие overflow распирало страницу. Сторожим, чтобы объявление
+    // не вернулось само по себе — неработающий sticky хуже его отсутствия.
+    eq(bars.thPos, 'static', 'липкий заголовок вернулся — он не работает внутри .table-scroll');
+    eq(bars.noHScrollWide, true, `на широком экране появилась горизонтальная прокрутка страницы (${bars.docWidth})`);
+    // ШИРИНЫ МЕЖДУ БУРГЕРОМ И БОЛЬШИМ ЭКРАНОМ. Раньше проверялись только 360, 768 и
+    // 1280 — и кнопка «Цветовая тема» с подписью незаметно распирала шапку на всех
+    // ноутбучных ширинах: на 1440 страница уезжала вправо на 66 px.
+    for (const width of [1920, 1600, 1440, 1366, 1280, 1180]) {
+      const wp = await browser.newPage({ viewport: { width, height: 800 } });
+      await wp.goto(inst.base + '/courts', { waitUntil: 'domcontentloaded' });
+      await wp.waitForTimeout(250);
+      const over = await wp.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      await wp.close();
+      eq(over, 0, `на ${width} px страница уезжает вбок на ${over} px`);
+    }
     assert(/inset|0px 4px 0px/.test(btn.shadow) || btn.shadow !== 'none', 'у кнопки нет борта');
     eq(reduced.прозрачных, 0, 'при reduced-motion секции не должны прятаться');
     return `секций ${shown.всего}, все доехали до is-in; переход кнопки ${btn.transition}; при reduced-motion .reveal у ${reduced.сReveal}, скрытых 0`;

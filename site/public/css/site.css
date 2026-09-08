@@ -211,7 +211,18 @@ html[data-theme="warm"] .theme-menu__icon .i-warm{display:block;}
 .theme-menu__check{display:grid; place-items:center; width:16px; color:var(--primary); opacity:0;}
 .theme-menu__check svg{width:14px; height:14px;}
 .theme-menu__item[aria-current="true"] .theme-menu__check{opacity:1;}
-@media (max-width:760px){ .theme-menu__label{display:none;} .theme-menu__list{width:200px;} }
+/* Метка «Цветовая тема» съедается раньше бургера: замер 08.09 показал, что с ней
+   шапка не влезает в окно от 1180 до 1580 px — на 1440 страница уезжала вправо на
+   66 px. Ниже 1180 меню и так уходит в бургер. Кнопка остаётся кружком с иконкой. */
+@media (max-width:1580px){ .theme-menu__label{display:none;} }
+/* 1180–1300 px: даже без метки не хватает — ужимаем отступы меню и кнопок входа.
+   Ниже 1180 меню уходит в бургер и место освобождается само. */
+@media (max-width:1300px){
+  .nav-menu a, .nav-more-btn{padding:.5rem .55rem;}
+  .header-actions{gap:.45rem;}
+  .btn--register, .btn--login{padding:.7rem 1rem;}
+}
+@media (max-width:760px){ .theme-menu__list{width:200px;} }
 /* Телефон: кнопка сжимается до кружка 42×42, как прежний переключатель, иначе
    шапка перестаёт влезать в 360 px (приёмка ловит горизонтальный скролл). */
 @media (max-width:480px){
@@ -925,6 +936,13 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
    тридцать пять: прокрутил вниз и уже не помнишь, где какая колонка. Шапка липнет к
    верху окна, а не контейнера, поэтому учитываем высоту шапки сайта (72 px).
    Фон обязателен — иначе строки будут просвечивать сквозь заголовок. */
-thead th{position:sticky; top:calc(var(--dev-notice-h, 0px) + 72px); z-index:2;}
-@media (max-width:960px){ thead th{top:0;} }
-@media (prefers-reduced-motion: reduce){ thead th{position:static;} }
+/* ЛИПКИЕ ЗАГОЛОВКИ ТАБЛИЦ — СНЯТЫ 08.09.2026, НЕ ВОЗВРАЩАТЬ БЕЗ ПЕРЕСТРОЙКИ.
+   position:sticky у th липнет к окну только если НИ У ОДНОГО предка нет overflow,
+   отличного от visible. У обёртки .table-scroll стоит overflow-x:auto ради
+   горизонтальной прокрутки на телефоне — из-за неё заголовок липнул к самой обёртке
+   и уезжал вместе с ней (замер на бою: top:-503 при прокрутке на 1200 px).
+   Снятие overflow на широких экранах заголовок чинит (top:119, видно), НО широкая
+   таблица кортов начинает распирать страницу — появляется горизонтальная прокрутка
+   всего документа. Рабочий путь — обёртка с max-height и собственной вертикальной
+   прокруткой, тогда шапка липнет к ней; это меняет поведение страницы и делается
+   отдельной задачей, а не походя. Пока заголовок обычный. */
