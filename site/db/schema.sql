@@ -628,7 +628,17 @@ CREATE INDEX IF NOT EXISTS idx_coach_applications_status ON coach_applications (
 CREATE TABLE IF NOT EXISTS referees (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   full_name     TEXT NOT NULL CHECK (length(trim(full_name)) BETWEEN 1 AND 120),
+  -- Категории по квалификационным требованиям Минспорта: ЮС, 3К, 2К, 1К, ВК.
+  -- Международные значки ITF (белый, бронзовый, серебряный, золотой) — отдельно,
+  -- это не российская категория, а бейдж, и живут они в одном поле по-разному.
   category      TEXT,
+  -- Категория присваивается приказом и ПОДТВЕРЖДАЕТСЯ раз в несколько лет —
+  -- без даты нельзя понять, действует ли она сейчас.
+  category_date TEXT,
+  -- Роли на турнирах: главный судья, судья на вышке, судья-инспектор, секретарь.
+  roles         TEXT,
+  experience    TEXT,
+  contact       TEXT,
   city          TEXT,
   note          TEXT,
   basis         TEXT NOT NULL CHECK (length(trim(basis)) BETWEEN 1 AND 200),
@@ -638,6 +648,40 @@ CREATE TABLE IF NOT EXISTS referees (
 
 -- Корты и клубы — сведения об организациях и объектах, не о людях:
 -- основание публикации им не требуется.
+-- ЗАЯВКА СУДЬИ В РЕЕСТР (08.09.2026) — как у тренеров: согласие по ст. 10.1 с
+-- отметкой по каждому полю. Состав полей — по тому, что ведёт региональная коллегия
+-- судей: категория и дата её присвоения (её подтверждают раз в несколько лет),
+-- роли на турнирах, опыт, контакт.
+CREATE TABLE IF NOT EXISTS referee_applications (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name      TEXT NOT NULL CHECK (length(trim(full_name)) BETWEEN 1 AND 120),
+  city           TEXT,
+  category       TEXT,
+  category_date  TEXT,
+  roles          TEXT,
+  experience     TEXT,
+  contact        TEXT,
+  email          TEXT NOT NULL CHECK (length(trim(email)) BETWEEN 5 AND 160),
+  note           TEXT,
+  allow_city          INTEGER NOT NULL DEFAULT 0 CHECK (allow_city IN (0,1)),
+  allow_category      INTEGER NOT NULL DEFAULT 0 CHECK (allow_category IN (0,1)),
+  allow_category_date INTEGER NOT NULL DEFAULT 0 CHECK (allow_category_date IN (0,1)),
+  allow_roles         INTEGER NOT NULL DEFAULT 0 CHECK (allow_roles IN (0,1)),
+  allow_experience    INTEGER NOT NULL DEFAULT 0 CHECK (allow_experience IN (0,1)),
+  allow_contact       INTEGER NOT NULL DEFAULT 0 CHECK (allow_contact IN (0,1)),
+  consent_10_1   INTEGER NOT NULL CHECK (consent_10_1 = 1),
+  consent_text   TEXT NOT NULL,
+  status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  status_token   TEXT NOT NULL UNIQUE,
+  referee_id     INTEGER REFERENCES referees(id) ON DELETE SET NULL,
+  decided_by     INTEGER REFERENCES users(id)    ON DELETE SET NULL,
+  decided_at     TEXT,
+  reject_reason  TEXT,
+  ip             TEXT,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_referee_applications_status ON referee_applications (status, id DESC);
+
 CREATE TABLE IF NOT EXISTS courts (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   name       TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 160),

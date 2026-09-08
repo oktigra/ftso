@@ -2712,6 +2712,62 @@ await check('анкета тренера: публикуется только о
   return 'отмеченные поля публикуются, неотмеченные не сохраняются; без согласия 400; основание «согласие через сайт от <дата>» проставлено само';
 });
 
+await check('анкета судьи: поля по требованиям к судьям, инструкция про категории, публикуется только отмеченное', async () => {
+  const page = await http('/referees/apply');
+  eq(page.status, 200, 'страница анкеты судьи');
+  // Поля — те, что ведёт коллегия судей: категория, дата её присвоения, роли, опыт.
+  for (const name of ['category', 'category_date', 'roles', 'experience', 'contact']) {
+    assert(page.text.includes(`name="${name}"`), `в анкете нет поля ${name}`);
+    assert(page.text.includes(`name="allow_${name}"`), `у поля ${name} нет отметки согласия`);
+  }
+  // Инструкция обязана объяснять лестницу категорий: без этого поле заполняют как попало.
+  for (const word of ['ЮС', '3К', '2К', '1К', 'ВК', 'ITF', 'подтверждают']) {
+    assert(page.text.includes(word), `в инструкции нет «${word}»`);
+  }
+  assert(/href="\/referees\/apply"/.test((await http('/referees')).text), 'в разделе судей нет ссылки на анкету');
+
+  const jarPub = new Jar();
+  const sent = await http('/referees/apply', {
+    method: 'POST', jar: jarPub,
+    form: {
+      _csrf: tokenFrom((await http('/referees/apply', { jar: jarPub })).text),
+      full_name: 'Судейкин Тест Тестович', email: 'sud@example.com',
+      city: 'Смоленск', allow_city: 'on',
+      category: '1К, белый значок ITF', allow_category: 'on',
+      category_date: '03.2024', allow_category_date: 'on',
+      roles: 'главный судья, судья на вышке', allow_roles: 'on',
+      contact: '+7 900 555-44-33',
+      consent_10_1: 'on',
+    },
+  });
+  eq(sent.status, 303, 'отправка анкеты судьи');
+  const row = db.prepare("SELECT * FROM referee_applications WHERE full_name = 'Судейкин Тест Тестович'").get();
+  assert(row, 'заявка судьи не сохранилась');
+  eq(row.category, '1К, белый значок ITF', 'категория должна сохраниться');
+  eq(row.contact, null, 'неотмеченный контакт не должен сохраняться');
+
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const adminPage = await http('/admin/referee-applications', { jar });
+  assert(/Судейкин Тест Тестович/.test(adminPage.text), 'заявки судьи нет в админке');
+  const ok = await http(`/admin/referee-applications/${row.id}/approve`, {
+    method: 'POST', jar, form: { _csrf: tokenFrom(adminPage.text) },
+  });
+  eq(ok.status, 302, 'одобрение заявки судьи');
+  const ref = db.prepare("SELECT * FROM referees WHERE full_name = 'Судейкин Тест Тестович'").get();
+  assert(ref, 'карточка судьи не создана');
+  eq(ref.category_date, '03.2024', 'дата присвоения категории должна попасть в карточку');
+  eq(ref.contact, null, 'неотмеченный контакт не должен попасть в карточку');
+  assert(/^согласие через сайт от \d{4}-\d{2}-\d{2}$/.test(ref.basis), `основание: ${ref.basis}`);
+  const pub = await http('/referees');
+  assert(/Судейкин Тест Тестович/.test(pub.text), 'судьи нет на витрине');
+  assert(!/900 555-44-33/.test(pub.text), 'неотмеченный контакт попал на витрину');
+
+  db.prepare('DELETE FROM referees WHERE id = ?').run(ref.id);
+  db.prepare('DELETE FROM referee_applications').run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'поля категории/даты/ролей/опыта на месте, лестница ЮС→ВК и значки ITF объяснены, неотмеченное не публикуется';
+});
+
 await check('инструкция Word собирается из того же файла, что и /admin/guide: все 12 разделов на месте', async () => {
   const { execFileSync } = await import('node:child_process');
   const { readFileSync, existsSync, unlinkSync } = await import('node:fs');

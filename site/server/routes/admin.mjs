@@ -73,8 +73,7 @@ import { withConsentErasure } from '../lib/consent-journal.mjs';
 import { guardianInput, isMinor, ageOn } from '../lib/validate.mjs';
 import { buildGuideDocx } from '../lib/guide-docx.mjs';
 import {
-  listApplications, approveApplication, rejectApplication,
-  OPTIONAL_FIELDS as COACH_FIELDS,
+  listApplications, approveApplication, rejectApplication, REGISTRIES,
 } from '../lib/coach-applications.mjs';
 import {
   queueMail,
@@ -130,6 +129,9 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       .get().n;
     res.locals.pendingCoachCount = db
       .prepare("SELECT COUNT(*) AS n FROM coach_applications WHERE status = 'pending'")
+      .get().n;
+    res.locals.pendingRefereeCount = db
+      .prepare("SELECT COUNT(*) AS n FROM referee_applications WHERE status = 'pending'")
       .get().n;
     next();
   });
@@ -560,38 +562,49 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
   // АНКЕТЫ ТРЕНЕРОВ (08.09.2026): согласие по ст. 10.1 собрано формой на сайте.
   // Одобрение создаёт карточку ТОЛЬКО из отмеченных полей и проставляет основание
   // публикации «согласие через сайт от <дата>» — вручную его вводить не нужно.
-  app.get('/admin/coach-applications', requireRole(...DATA_ROLES), (req, res) => {
-    res.render('admin/coach-applications', {
-      title: 'Анкеты тренеров — админка ФТСО',
-      pending: listApplications(db, 'pending'),
-      decided: [...listApplications(db, 'approved'), ...listApplications(db, 'rejected')].slice(0, 30),
-      fields: COACH_FIELDS,
+  // Два реестра — один экран и одни правила, различаются таблица и набор полей.
+  for (const [key, cfg] of [
+    ['coach-applications', { registry: REGISTRIES.coaches, title: 'Анкеты тренеров', who: 'Тренер' }],
+    ['referee-applications', { registry: REGISTRIES.referees, title: 'Анкеты судей', who: 'Судья' }],
+  ]) {
+    app.get(`/admin/${key}`, requireRole(...DATA_ROLES), (req, res) => {
+      res.render('admin/coach-applications', {
+        title: `${cfg.title} — админка ФТСО`,
+        heading: cfg.title,
+        basePath: `/admin/${key}`,
+        pending: listApplications(db, 'pending', cfg.registry),
+        decided: [
+          ...listApplications(db, 'approved', cfg.registry),
+          ...listApplications(db, 'rejected', cfg.registry),
+        ].slice(0, 30),
+        fields: cfg.registry.fields,
+      });
     });
-  });
 
-  app.post(
-    '/admin/coach-applications/:id/approve',
-    requireRole(...DATA_ROLES),
-    limitWrites,
-    guard((req, res) => {
-      const id = intAtLeast(req.params.id, 'id');
-      const { coachId, basis } = approveApplication(db, id, req.session.user.id);
-      logAction(db, req.session.user.id, 'coach_application.approve', id, { coachId, basis });
-      flash(req, res, 'ok', `Тренер добавлен в реестр (#${coachId}), основание: ${basis}.`, '/admin/coach-applications');
-    }),
-  );
+    app.post(
+      `/admin/${key}/:id/approve`,
+      requireRole(...DATA_ROLES),
+      limitWrites,
+      guard((req, res) => {
+        const id = intAtLeast(req.params.id, 'id');
+        const { coachId, basis } = approveApplication(db, id, req.session.user.id, cfg.registry);
+        logAction(db, req.session.user.id, `${key}.approve`, id, { id: coachId, basis });
+        flash(req, res, 'ok', `${cfg.who} добавлен в реестр (#${coachId}), основание: ${basis}.`, `/admin/${key}`);
+      }),
+    );
 
-  app.post(
-    '/admin/coach-applications/:id/reject',
-    requireRole(...DATA_ROLES),
-    limitWrites,
-    guard((req, res) => {
-      const id = intAtLeast(req.params.id, 'id');
-      rejectApplication(db, id, req.session.user.id, req.body.reason);
-      logAction(db, req.session.user.id, 'coach_application.reject', id, null);
-      flash(req, res, 'ok', 'Анкета отклонена.', '/admin/coach-applications');
-    }),
-  );
+    app.post(
+      `/admin/${key}/:id/reject`,
+      requireRole(...DATA_ROLES),
+      limitWrites,
+      guard((req, res) => {
+        const id = intAtLeast(req.params.id, 'id');
+        rejectApplication(db, id, req.session.user.id, req.body.reason, cfg.registry);
+        logAction(db, req.session.user.id, `${key}.reject`, id, null);
+        flash(req, res, 'ok', 'Анкета отклонена.', `/admin/${key}`);
+      }),
+    );
+  }
 
   app.get('/admin/tournament-requests', requireRole(...DATA_ROLES), (req, res) => {
     res.render('admin/tournament-requests', {

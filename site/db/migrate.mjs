@@ -281,6 +281,11 @@ export function migrate() {
   const rebuilt = upgradeConsents(db);
   const accountsRebuilt = upgradePlayerAccounts(db);
   allowMixedDiscipline(db);
+  // Поля судьи под требования ФТР (08.09.2026): дата присвоения категории, роли на
+  // турнирах, опыт, контакт. Добавляются по PRAGMA — старая база тоже доедет.
+  for (const [col, def] of [['category_date', 'TEXT'], ['roles', 'TEXT'], ['experience', 'TEXT'], ['contact', 'TEXT']]) {
+    addColumnIfMissing(db, 'referees', col, def);
+  }
   // Флаг публикуемости для баз, созданных до журнала согласий. Дефолт 0:
   // существующие игроки становятся НЕпубличными, пока согласие на
   // распространение не подтверждено — умолчание в пользу субъекта, а не витрины.
