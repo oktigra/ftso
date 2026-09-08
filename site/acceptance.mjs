@@ -5635,14 +5635,14 @@ try {
     eq(cabinet.status, 403, 'кабинет без входа');
     assert(cabinet.text.includes('/cabinet/login'), 'на странице кабинета нет входа');
 
+    // «Заявка на турнир» в подвале с 08.09.2026 ведёт на /tournament-request —
+    // форму заявки организатора, она в сборке есть и работает. Заявка ИГРОКА на
+    // участие в конкретном турнире остаётся пунктом бэклога: её подают через
+    // секретаря, отдельной страницы нет и заглушки под неё в подвале тоже нет.
     const portal = await page.evaluate(() => {
-      // Заявка участника на турнир и приём документов от секретарей — отдельные
-      // пункты бэклога, их функционала в сборке нет.
-      const names = ['Заявка на турнир'];
       const out = [];
       for (const a of document.querySelectorAll('a')) {
-        const t = a.textContent.trim();
-        if (names.some((n) => t === n)) out.push({ t, href: a.getAttribute('href') });
+        if (a.textContent.trim() === 'Заявка на турнир') out.push({ t: a.textContent.trim(), href: a.getAttribute('href') });
       }
       return out;
     });
@@ -5656,13 +5656,15 @@ try {
     eq(org.status, 200, 'страница «Организаторам»');
     assert(/Заявить турнир в календарь/.test(org.text) && /<details>/.test(org.text) && /tournament-request/.test(org.text), 'на «Организаторам» нет шагов/FAQ/ссылки на заявку');
     assert(/href="\/organizers"/.test((await http('/')).text), 'в подвале нет ссылки «Организаторам и секретарям»');
-    for (const p of portal) eq(p.href, '#', `«${p.t}» должна оставаться заглушкой`);
+    for (const p of portal) eq(p.href, '/tournament-request', `«${p.t}» должна вести на форму заявки, а не на «${p.href}»`);
+    eq((await http('/tournament-request')).status, 200, 'форма заявки на турнир');
+    assert(!/href="#"/.test((await http('/')).text), 'на главной не должно остаться ссылок в никуда');
     for (const l of legal) assert(l.href.startsWith('/'), `правовая ссылка «${l.t}» должна вести на реальную страницу, а не «${l.href}»`);
     for (const l of legal) {
       const r = await http(l.href);
       eq(r.status, 200, `правовая страница ${l.href}`);
     }
-    return `${live.length} живых ссылок (регистрация, заявка на турнир, кабинет); ${portal.length} портальных = «#»; правовые ведут на ${legal.map((l) => l.href).join(', ')} (обе 200)`;
+    return `${live.length} живых ссылок (регистрация, заявка на турнир, кабинет); «Заявка на турнир» в подвале ведёт на /tournament-request (200), ссылок «#» на главной нет; правовые ведут на ${legal.map((l) => l.href).join(', ')} (обе 200)`;
   });
 
   await check('/contacts: реквизиты читаемы — на 998 px значение шире половины dl, на 390 px во всю ширину', async () => {
