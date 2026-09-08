@@ -58,7 +58,11 @@
               <td><%= p.id %></td>
               <td class="name-cell">
                 <input form="edit-player-<%= p.id %>" name="last_name" value="<%= p.nameParts.last %>" maxlength="60" required placeholder="Фамилия" aria-label="Фамилия">
-                <input form="edit-player-<%= p.id %>" name="first_name" value="<%= p.nameParts.first %>" maxlength="60" required placeholder="Имя" aria-label="Имя">
+                <%
+                /* Имя в строке правки НЕ required: карточки из импорта заводятся одной
+                   фамилией, и браузер иначе не давал сохранить даже смену пола. */
+                %>
+                <input form="edit-player-<%= p.id %>" name="first_name" value="<%= p.nameParts.first %>" maxlength="60" placeholder="Имя" aria-label="Имя">
                 <input form="edit-player-<%= p.id %>" name="middle_name" value="<%= p.nameParts.middle %>" maxlength="60" placeholder="Отчество" aria-label="Отчество">
               </td>
               <td><input form="edit-player-<%= p.id %>" name="city" value="<%= p.city %>" maxlength="80" required></td>

@@ -2643,6 +2643,36 @@ await check('импорт турнира из текста: сетка с bye/о
   return 'сетка 8 с bye, отказом и матчем за 3-е, группа, пары → черновик; 15 игроков, 11 матчей, места 1/2/3/4/5 и пар; ошибка — без записи';
 });
 
+await check('игрока без имени (из импорта) можно править: пол и город меняются, при создании имя обязательно', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  // Карточка одной фамилией — ровно то, что заводит импорт протокола ветеранов.
+  const id = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Безымяннова', 'Смоленск', 'M')").run().lastInsertRowid);
+  const page = await http('/admin/players', { jar });
+  const _csrf = tokenFrom(page.text);
+  const upd = await http(`/admin/players/${id}/update`, {
+    method: 'POST', jar,
+    form: { _csrf, last_name: 'Безымяннова', first_name: '', middle_name: '', city: 'Вязьма', sex: 'F' },
+  });
+  eq(upd.status, 302, 'правка карточки без имени');
+  const after = db.prepare('SELECT full_name, city, sex FROM players WHERE id = ?').get(id);
+  eq(after.sex, 'F', 'пол не сохранился');
+  eq(after.city, 'Вязьма', 'город не сохранился');
+  eq(after.full_name, 'Безымяннова', 'ФИО не должно измениться');
+  // При СОЗДАНИИ имя по-прежнему обязательно.
+  // Форма админки на ошибке валидации возвращает редирект с флешем, а не 400 —
+  // проверяем не код, а факт: игрок без имени НЕ создан.
+  await http('/admin/players', {
+    method: 'POST', jar,
+    form: { _csrf, last_name: 'Новичкова', first_name: '', city: 'Смоленск', sex: 'F' },
+  });
+  eq(db.prepare("SELECT COUNT(*) AS n FROM players WHERE full_name LIKE 'Новичкова%'").get().n, 0,
+    'создание игрока без имени должно отклоняться');
+  db.prepare('DELETE FROM players WHERE id = ?').run(id);
+  db.prepare("DELETE FROM players WHERE full_name LIKE 'Новичкова%'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'карточка из импорта (одна фамилия) правится: пол M→F, город сменился; создание без имени отклонено — игрок не заведён';
+});
+
 await check('импорт: пол в миксте по фамилии, а не «мужской» по умолчанию; возможный дубль — предупреждение', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const _csrf = tokenFrom((await http('/admin/tournaments/import', { jar })).text);

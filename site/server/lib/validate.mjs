@@ -133,11 +133,15 @@ export function birthDate(value, field = 'Дата рождения') {
  * витрина, поиск дублей и сортировка по фамилии не меняются. Старое одно поле
  * full_name принимается для совместимости (API, тесты).
  */
-export function personName(body, { prefix = '', field = 'ФИО' } = {}) {
+export function personName(body, { prefix = '', field = 'ФИО', requireFirst = true } = {}) {
   const key = (s) => (prefix ? `${prefix}_${s}` : s);
   if (body[key('last_name')] !== undefined || body[key('first_name')] !== undefined) {
     const last = str(body[key('last_name')], `${field}: фамилия`, { max: 60 });
-    const first = str(body[key('first_name')], `${field}: имя`, { max: 60 });
+    // Имя обязательно везде, КРОМЕ правки уже заведённой карточки: импорт протокола
+    // заводит игроков одной фамилией (в протоколах ветеранов имён нет вовсе), и с
+    // обязательным именем такая карточка запиралась целиком — нельзя было поправить
+    // ни пол, ни город, пока секретарь не найдёт имя в бумагах.
+    const first = str(body[key('first_name')], `${field}: имя`, { max: 60, required: requireFirst });
     const middle = str(body[key('middle_name')], `${field}: отчество`, { max: 60, required: false });
     return [last, first, middle].filter(Boolean).join(' ');
   }
@@ -158,9 +162,9 @@ export function guardianInput(body) {
   };
 }
 
-export function playerInput(body) {
+export function playerInput(body, { requireFirst = true } = {}) {
   return {
-    full_name: personName(body),
+    full_name: personName(body, { requireFirst }),
     city: str(body.city, 'Город', { max: 80 }),
     sex: oneOf(body.sex, 'Пол', SEXES),
     // Возрастная группа не вводится нигде: считается от даты рождения (решение 23.08).
