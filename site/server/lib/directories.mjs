@@ -47,8 +47,14 @@ export const DIRECTORIES = {
     personal: true,
     fields: [
       { name: 'full_name', label: 'ФИО', required: true, max: 120 },
-      { name: 'category', label: 'Категория', max: 80 },
-      { name: 'city', label: 'Город', max: 80 },
+      // Категории по требованиям Минспорта: ЮС, 3К, 2К, 1К, ВК; международные значки
+      // ITF (белый, бронзовый, серебряный, золотой) пишутся здесь же словами.
+      { name: 'category', label: 'Категория', max: 80, filter: true },
+      { name: 'category_date', label: 'Категория присвоена', max: 40 },
+      { name: 'roles', label: 'Роли на турнирах', max: 160 },
+      { name: 'experience', label: 'Опыт судейства', max: 200 },
+      { name: 'city', label: 'Город', max: 80, filter: true },
+      { name: 'contact', label: 'Контакт', max: 120 },
       { name: 'note', label: 'Примечание', max: 500 },
     ],
   },

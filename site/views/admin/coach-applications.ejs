@@ -7,11 +7,11 @@
 
 <main id="top" class="admin-shell">
 <div class="container stack">
-  <h1>Анкеты тренеров</h1>
+  <h1><%= typeof heading !== 'undefined' ? heading : 'Анкеты тренеров' %></h1>
   <%- include('_shell') %>
 
   <div class="panel">
-    <p class="muted">Тренер заполняет анкету на сайте (<code>/coaches/apply</code>) и отмечает, что разрешает опубликовать. Одобрение создаёт карточку в реестре: переносятся только отмеченные поля, основание публикации проставляется само — «согласие через сайт от даты подачи». Отдельная бумага при этом не нужна.</p>
+    <p class="muted">Человек заполняет анкету на сайте и отмечает, что разрешает опубликовать. Одобрение создаёт карточку в реестре: переносятся только отмеченные поля, основание публикации проставляется само — «согласие через сайт от даты подачи». Отдельная бумага при этом не нужна.</p>
   </div>
 
   <h2>На рассмотрении (<%= pending.length %>)</h2>
@@ -39,11 +39,11 @@
         <% if (a.note) { %><p class="muted">Примечание тренера: <%= a.note %></p><% } %>
         <details><summary>Текст согласия, который принял тренер</summary><p class="small muted"><%= a.consent_text %></p></details>
         <div class="row-actions">
-          <form method="post" action="/admin/coach-applications/<%= a.id %>/approve" class="inline-form">
+          <form method="post" action="<%= basePath %>/<%= a.id %>/approve" class="inline-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <button class="btn btn--primary btn--small" type="submit">Добавить в реестр</button>
           </form>
-          <form method="post" action="/admin/coach-applications/<%= a.id %>/reject" class="inline-form">
+          <form method="post" action="<%= basePath %>/<%= a.id %>/reject" class="inline-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <input name="reason" maxlength="300" placeholder="Причина (необязательно)" aria-label="Причина отклонения">
             <button class="btn btn--danger btn--small" type="submit">Отклонить</button>

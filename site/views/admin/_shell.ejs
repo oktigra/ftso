@@ -13,6 +13,7 @@
   <% if (sections.includes('news')) { %><a href="/admin/news"<%= currentPath.indexOf('/admin/news') === 0 ? ' aria-current="page"' : '' %>>Новости</a><% } %>
   <% if (sections.includes('directories')) { %><a href="/admin/directories/coaches"<%= currentPath.indexOf('/admin/directories') === 0 ? ' aria-current="page"' : '' %>>Справочники</a><% } %>
   <% if (sections.includes('directories')) { %><a href="/admin/coach-applications"<%= currentPath.indexOf('/admin/coach-applications') === 0 ? ' aria-current="page"' : '' %>>Анкеты тренеров<%= typeof pendingCoachCount !== 'undefined' && pendingCoachCount ? ` (${pendingCoachCount})` : '' %></a><% } %>
+  <% if (sections.includes('directories')) { %><a href="/admin/referee-applications"<%= currentPath.indexOf('/admin/referee-applications') === 0 ? ' aria-current="page"' : '' %>>Анкеты судей<%= typeof pendingRefereeCount !== 'undefined' && pendingRefereeCount ? ` (${pendingRefereeCount})` : '' %></a><% } %>
   <% if (sections.includes('library')) { %><a href="/admin/partners"<%= currentPath === '/admin/partners' ? ' aria-current="page"' : '' %>>Партнёры</a><% } %>
   <% if (sections.includes('library')) { %><a href="/admin/texts"<%= currentPath === '/admin/texts' ? ' aria-current="page"' : '' %>>Тексты</a><% } %>
   <% if (sections.includes('library')) { %><a href="/admin/seo"<%= currentPath === '/admin/seo' ? ' aria-current="page"' : '' %>>SEO</a><% } %>
