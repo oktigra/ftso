@@ -106,7 +106,7 @@ export const STARTER_PARTNERS = [
   { name: 'Министерство спорта Российской Федерации', url: 'https://minsport.gov.ru/', sort: 10 },
   { name: 'Федерация тенниса России', url: 'https://tennis-russia.ru/', sort: 20 },
   { name: 'РУСАДА', url: 'https://rusada.ru/', sort: 30 },
-  { name: 'Главное управление спорта Смоленской области', url: 'https://sport.admin-smolensk.ru/', sort: 40 },
+  { name: 'Министерство спорта Смоленской области', url: 'https://sport.admin-smolensk.ru/', sort: 40 },
   { name: 'Комитет по физической культуре и спорту города Смоленска', url: 'https://www.smoladmin.ru/', sort: 50 },
   { name: 'Спортивный клуб «Купол»', url: 'https://skkupol.ru/', sort: 60 },
   { name: 'Теннисный клуб «Алпина»', url: 'https://alpinatennis.ru/', sort: 70 },
