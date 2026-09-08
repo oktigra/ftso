@@ -2649,6 +2649,19 @@ await check('инструкция Word собирается из того же �
   const out = '/tmp/ftso-guide-acceptance.docx';
   if (existsSync(out)) unlinkSync(out);
   execFileSync('node', ['tools/build-guide.mjs', out], { stdio: 'pipe' });
+  // Тот же документ обязан отдаваться кнопкой из админки — отдельной копии,
+  // которая может отстать от страницы, у нас нет.
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/guide', { jar });
+  assert(/href="\/admin\/guide\.docx"/.test(page.text), 'на странице инструкции нет кнопки скачивания');
+  const dl = await http('/admin/guide.docx', { jar });
+  eq(dl.status, 200, 'скачивание инструкции');
+  const ctype = dl.headers.get('content-type') || '';
+  const cdisp = dl.headers.get('content-disposition') || '';
+  assert(/wordprocessingml/.test(ctype), `тип файла: ${ctype}`);
+  assert(/attachment; filename="ftso-instrukciya-\d{4}-\d{2}-\d{2}\.docx"/.test(cdisp), `имя файла: ${cdisp}`);
+  assert(dl.text.startsWith('PK'), 'отдан не zip-контейнер');
+  eq((await http('/admin/guide.docx')).status, 302, 'без входа документ не отдаётся');
   assert(existsSync(out), 'документ не собрался');
   const buf = readFileSync(out);
   eq(buf.slice(0, 2).toString('latin1'), 'PK', 'docx должен быть zip-контейнером');
