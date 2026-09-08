@@ -4251,6 +4251,36 @@ await check('справочники: карточки вместо таблиц�
   return 'корты и клубы — карточки, десять заполненных полей с подписями на месте, пустые поля не печатаются';
 });
 
+await check('пустые разделы приглашают, а не сообщают о пустоте', async () => {
+  // Эффект дизайн-чата «пустое состояние как приглашение» доехал только до главной,
+  // /news и /tournaments. Сторож: где раздел пуст, обязана быть рамка-приглашение
+  // с действием, а не сухая плашка. Фильтровые «ничего не найдено» — не приглашения.
+  const checks = [
+    ['/coaches', /class="dir-cards"/],
+    ['/referees', /class="dir-cards"/],
+    ['/courts', /class="dir-cards"/],
+    ['/clubs', /class="dir-cards"/],
+    ['/gallery', /class="gallery-grid"/],
+  ];
+  const seen = [];
+  for (const [path, hasContent] of checks) {
+    const page = await http(path);
+    eq(page.status, 200, `GET ${path}`);
+    if (hasContent.test(page.text)) { seen.push(`${path}: с содержимым`); continue; }
+    assert(/notice--invite/.test(page.text), `${path} пуст, но плашка не приглашение`);
+    assert(/class="btn btn--secondary btn--small"/.test(page.text), `${path}: в приглашении нет действия`);
+    seen.push(`${path}: приглашение`);
+  }
+  // Документы: регистрационные плитки есть всегда, приглашение — у второй половины.
+  const docs = await http('/documents');
+  assert(/class="doc-item"/.test(docs.text), 'документы не плитками');
+  assert(/Регистрационные документы/.test(docs.text), 'пропал блок регистрационных документов');
+  if (!/<h2>(?!Регистрационные)/.test(docs.text)) {
+    assert(/notice--invite/.test(docs.text), 'остальные документы пусты, но без приглашения');
+  }
+  return seen.join('; ');
+});
+
 await check('публичный файл отдаётся защищённым путём, документ с модерации — нет', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const page = await http('/admin/library', { jar });

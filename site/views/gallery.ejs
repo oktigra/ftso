@@ -10,7 +10,11 @@
 <section class="section-pad section-pad--tight">
   <div class="container">
     <% if (!items.length) { %>
-      <div class="panel notice">Фотографий пока нет.</div>
+      <div class="panel notice notice--invite">
+        <b>Фотогалерея собирается</b>
+        <span>Здесь появятся снимки с турниров Федерации. Есть свои кадры с соревнований — пришлите, подпишем турниром и датой.</span>
+        <a class="btn btn--secondary btn--small" href="/contacts">Прислать снимки</a>
+      </div>
     <% } else { %>
       <%
       /* Снимки показываются картинками через /gallery/:id/image. Это безопасно:
