@@ -909,3 +909,11 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .check--inline input{margin:0;}
 .row-actions{display:flex; gap:.75rem; flex-wrap:wrap; align-items:center;}
 .dir-actions{display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; margin-top:.9rem;}
+/* Свёрнутая инструкция по заполнению анкеты тренера. */
+.guide-details summary{cursor:pointer; padding:.2rem 0;}
+.guide-details h2{font-size:1.05rem; margin:1.1rem 0 .4rem;}
+.guide-details ol, .guide-details ul{margin:0 0 .6rem 1.1rem;}
+.guide-details li{margin-bottom:.3rem;}
+.guide-fields{margin:0 0 .6rem;}
+.guide-fields dt{font-family:'Manrope',sans-serif; font-weight:700; margin-top:.7rem;}
+.guide-fields dd{margin:.15rem 0 0; color:var(--muted);}

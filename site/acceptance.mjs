@@ -2649,6 +2649,12 @@ await check('анкета тренера: публикуется только о
   eq(page.status, 200, 'страница анкеты');
   assert(/name="allow_contact"/.test(page.text) && /name="consent_10_1"/.test(page.text), 'нет отметок согласия в форме');
   assert(/href="\/coaches\/apply"/.test((await http('/coaches')).text), 'в разделе тренеров нет ссылки на анкету');
+  // Инструкция по заполнению — на той же странице: человек не должен уходить за ней.
+  assert(/Как заполнить анкету/.test(page.text), 'нет инструкции по заполнению на странице анкеты');
+  for (const label of ['E-mail для связи', 'Контакт для связи', 'Про отметки']) {
+    assert(page.text.includes(label), `в инструкции нет раздела «${label}»`);
+  }
+  assert(/реестр на сайте/.test((await http('/faq')).text), 'в «Вопросах и ответах» нет пути для тренера');
   const _csrf = tokenFrom(page.text);
   const jarPub = new Jar();
 
