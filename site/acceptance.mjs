@@ -2643,6 +2643,69 @@ await check('импорт турнира из текста: сетка с bye/о
   return 'сетка 8 с bye, отказом и матчем за 3-е, группа, пары → черновик; 15 игроков, 11 матчей, места 1/2/3/4/5 и пар; ошибка — без записи';
 });
 
+await check('анкета тренера: публикуется только отмеченное, без согласия не принимается, одобрение ставит основание по ст. 10.1', async () => {
+  // Форма на /coaches/apply — согласие по ст. 10.1 с отметкой по каждому полю.
+  const page = await http('/coaches/apply');
+  eq(page.status, 200, 'страница анкеты');
+  assert(/name="allow_contact"/.test(page.text) && /name="consent_10_1"/.test(page.text), 'нет отметок согласия в форме');
+  assert(/href="\/coaches\/apply"/.test((await http('/coaches')).text), 'в разделе тренеров нет ссылки на анкету');
+  const _csrf = tokenFrom(page.text);
+  const jarPub = new Jar();
+
+  // Контакт заполнен, но НЕ отмечен — он не должен попасть ни в заявку, ни в карточку.
+  const sent = await http('/coaches/apply', {
+    method: 'POST', jar: jarPub,
+    form: {
+      _csrf: tokenFrom((await http('/coaches/apply', { jar: jarPub })).text),
+      full_name: 'Анкетов Тест Тестович', email: 'anketov@example.com',
+      city: 'Ярцево', allow_city: 'on',
+      club: 'СК «Кентавр»', allow_club: 'on',
+      contact: '+7 900 111-22-33',
+      consent_10_1: 'on',
+    },
+  });
+  eq(sent.status, 303, 'отправка анкеты');
+  const appRow = db.prepare("SELECT * FROM coach_applications WHERE full_name = 'Анкетов Тест Тестович'").get();
+  assert(appRow, 'заявка не сохранилась');
+  eq(appRow.city, 'Ярцево', 'отмеченное поле должно сохраниться');
+  eq(appRow.contact, null, 'неотмеченное поле не должно сохраняться');
+  eq(appRow.allow_contact, 0, 'отметка контакта должна быть снята');
+  assert((appRow.consent_text || '').includes('10.1'), 'текст согласия не зафиксирован');
+
+  // Без согласия заявка не принимается вовсе.
+  const noConsent = await http('/coaches/apply', {
+    method: 'POST', jar: jarPub,
+    form: {
+      _csrf: tokenFrom((await http('/coaches/apply', { jar: jarPub })).text),
+      full_name: 'Безсогласный Тест', email: 'no@example.com',
+    },
+  });
+  eq(noConsent.status, 400, 'без согласия должно отклоняться');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM coach_applications WHERE full_name = 'Безсогласный Тест'").get().n, 0, 'заявка без согласия не должна сохраняться');
+
+  // Одобрение: карточка создаётся только из отмеченного, основание проставляется само.
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const adminPage = await http('/admin/coach-applications', { jar });
+  assert(/Анкетов Тест Тестович/.test(adminPage.text), 'заявки нет в админке');
+  const ok = await http(`/admin/coach-applications/${appRow.id}/approve`, {
+    method: 'POST', jar, form: { _csrf: tokenFrom(adminPage.text) },
+  });
+  eq(ok.status, 302, 'одобрение');
+  const coach = db.prepare("SELECT * FROM coaches WHERE full_name = 'Анкетов Тест Тестович'").get();
+  assert(coach, 'карточка тренера не создана');
+  eq(coach.city, 'Ярцево', 'отмеченный город должен попасть в карточку');
+  eq(coach.contact, null, 'неотмеченный контакт не должен попасть в карточку');
+  assert(/^согласие через сайт от \d{4}-\d{2}-\d{2}$/.test(coach.basis), `основание публикации: ${coach.basis}`);
+  assert(/\d{4}-\d{2}-\d{2}/.test(coach.document_date), 'нет даты документа');
+  assert(/Анкетов Тест Тестович/.test((await http('/coaches')).text), 'тренера нет на витрине');
+  assert(!/900 111-22-33/.test((await http('/coaches')).text), 'неотмеченный контакт попал на витрину');
+
+  db.prepare('DELETE FROM coaches WHERE id = ?').run(coach.id);
+  db.prepare('DELETE FROM coach_applications').run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'отмеченные поля публикуются, неотмеченные не сохраняются; без согласия 400; основание «согласие через сайт от <дата>» проставлено само';
+});
+
 await check('инструкция Word собирается из того же файла, что и /admin/guide: все 12 разделов на месте', async () => {
   const { execFileSync } = await import('node:child_process');
   const { readFileSync, existsSync, unlinkSync } = await import('node:fs');

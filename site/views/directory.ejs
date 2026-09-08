@@ -10,6 +10,14 @@
     <span class="eyebrow">Раздел сайта</span>
     <h1><%= spec.title %></h1>
     <% if (typeof intro !== 'undefined' && intro && intro.length) { %><div class="lead dir-intro"><% intro.forEach(function (p) { %><p><%= p %></p><% }); %></div><% } %>
+    <%
+    /* Тренер может подать сведения сам: анкета собирает согласие по ст. 10.1 с
+       отметками по каждому полю, публикует секретарь после проверки. */
+    %>
+    <% if (spec.key === 'coaches') { %>
+      <p class="dir-actions"><a class="btn btn--secondary btn--small" href="/coaches/apply">Заполнить анкету тренера</a>
+        <span class="muted small">Вы сами отмечаете, что публиковать: телефон и место работы — по желанию.</span></p>
+    <% } %>
   </div>
 </section>
 <section class="section-pad section-pad--tight">

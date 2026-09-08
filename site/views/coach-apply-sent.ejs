@@ -1,0 +1,25 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<main id="top">
+<section class="section-pad">
+  <div class="container stack form-panel">
+    <h1>Анкета отправлена</h1>
+    <% if (application) { %>
+      <div class="panel">
+        <p><strong><%= application.full_name %></strong> — статус: <%= statusRu[application.status] || application.status %>.</p>
+        <% if (application.status === 'rejected' && application.reject_reason) { %>
+          <p class="muted">Причина: <%= application.reject_reason %></p>
+        <% } %>
+        <p class="muted">Секретарь Федерации проверит сведения и опубликует запись в разделе «Тренеры». Публикуются только отмеченные вами поля.</p>
+      </div>
+    <% } else { %>
+      <div class="panel"><p>Спасибо, анкета принята. Секретарь Федерации проверит сведения и опубликует запись в разделе «Тренеры».</p></div>
+    <% } %>
+    <p><a class="link-more" href="/coaches">К реестру тренеров →</a></p>
+    <p class="small muted">Передумали — напишите на <%= op.email %>, запись снимут с сайта в течение трёх рабочих дней.</p>
+  </div>
+</section>
+</main>
+
+<%- include('partials/footer') %>
