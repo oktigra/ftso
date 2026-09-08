@@ -233,6 +233,35 @@ function upgradePlayerAccounts(db) {
 import { DIRECTORIES } from '../server/lib/directories.mjs';
 import { applyDirectorySeed } from '../server/lib/directory-seed.mjs';
 
+// МИКСТ КАК ОТДЕЛЬНАЯ ДИСЦИПЛИНА (08.09.2026). Раньше и парный разряд, и микст
+// писались как 'double', а UNIQUE (tournament_id, player_id, discipline) допускает
+// одну запись на игрока. Кто играл в турнире и пары, и микст, ТИХО терял одно место:
+// INSERT OR REPLACE перетирал предыдущее. Расширяем CHECK до трёх значений.
+function allowMixedDiscipline(db) {
+  const table = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'results'")
+    .get();
+  if (!table) return false;
+  if (table.sql.includes("'mixed'")) return false;
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE results_mixed_upgraded (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+        player_id     INTEGER NOT NULL REFERENCES players(id)     ON DELETE CASCADE,
+        place         INTEGER NOT NULL CHECK (place >= 1 AND place = CAST(place AS INTEGER)),
+        discipline    TEXT NOT NULL DEFAULT 'single' CHECK (discipline IN ('single','double','mixed')),
+        UNIQUE (tournament_id, player_id, discipline)
+      );
+      INSERT INTO results_mixed_upgraded (id, tournament_id, player_id, place, discipline)
+      SELECT id, tournament_id, player_id, place, discipline FROM results;
+      DROP TABLE results;
+      ALTER TABLE results_mixed_upgraded RENAME TO results;
+    `);
+  })();
+  return true;
+}
+
 export function migrate() {
   const db = getDb();
   // ПОРЯДОК ВАЖЕН И НЕ СЛУЧАЕН:
@@ -251,6 +280,7 @@ export function migrate() {
   relaxCategoryCheck(db, 'tournament_requests');
   const rebuilt = upgradeConsents(db);
   const accountsRebuilt = upgradePlayerAccounts(db);
+  allowMixedDiscipline(db);
   // Флаг публикуемости для баз, созданных до журнала согласий. Дефолт 0:
   // существующие игроки становятся НЕпубличными, пока согласие на
   // распространение не подтверждено — умолчание в пользу субъекта, а не витрины.

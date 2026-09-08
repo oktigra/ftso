@@ -9,8 +9,8 @@ export { DEFAULT_CONFIG as RATING_CONFIG };
 // Разряды. Рейтинги считаются РАЗДЕЛЬНО (как у РТТ): одиночный по results с
 // discipline='single' и матчам kind='single', парный — по 'double'. Движок при
 // этом один и тот же и не переписывается.
-export const DISCIPLINES = ['single', 'double'];
-export const DISCIPLINE_RU = { single: 'одиночный', double: 'парный' };
+export const DISCIPLINES = ['single', 'double', 'mixed'];
+export const DISCIPLINE_RU = { single: 'одиночный', double: 'парный', mixed: 'микст' };
 
 /** Вход движка ровно в его формате: {tournaments, results, matches} — для одного разряда. */
 export function collectEngineInput(db, discipline = 'single') {

@@ -72,7 +72,8 @@ export function sheetModel({ tournament, groups, brackets, results }) {
         score: p.void ? p.score : (p.winner ? (p.bye ? 'без игры' : fromA(p.scoreRaw || '', p.winner === p.aId)) : ''),
       })))),
     ],
-    results: results.map((r) => [String(r.place), `${r.name}${r.discipline === 'double' ? ' (парный)' : ''}`, r.city || '']),
+    // Микст с 08.09.2026 — своя дисциплина, в протоколе подписывается отдельно.
+    results: results.map((r) => [String(r.place), `${r.name}${r.discipline === 'double' ? ' (парный)' : r.discipline === 'mixed' ? ' (микст)' : ''}`, r.city || '']),
     footer: `ftso67.ru/tournaments/${tournament.id} · Федерация тенниса Смоленской области · ${new Date().toISOString().slice(0, 10)}`,
   };
 }

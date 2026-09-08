@@ -225,8 +225,15 @@ export function importTournament(db, text, { userId = null } = {}) {
         } else report.warnings.push(`${s.title}: финал не сыгран — места не записаны`);
       } else { // pairs — только места
         const ins = db.prepare('INSERT OR REPLACE INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
+        // МИКСТ — ОТДЕЛЬНАЯ ДИСЦИПЛИНА (08.09.2026). Раньше он писался как 'double',
+        // и у того, кто играл в турнире и пары, и микст, одно место молча пропадало:
+        // UNIQUE (турнир, игрок, дисциплина) допускает одну запись, а INSERT OR REPLACE
+        // перетирал прежнюю без предупреждения. Признаём микст по полу «X» или по
+        // названию раздела.
+        const isMixed = sex === 'X' || /микст|смешан/i.test(s.title || '');
+        const kind = isMixed ? 'mixed' : 'double';
         for (const pl of s.places) {
-          for (const n of pl.who.split('/').map((x) => x.trim()).filter(Boolean)) { ins.run(tid, findOrCreate(n, sex), pl.place, 'double'); sec.places++; }
+          for (const n of pl.who.split('/').map((x) => x.trim()).filter(Boolean)) { ins.run(tid, findOrCreate(n, sex), pl.place, kind); sec.places++; }
         }
         if (!s.places.length) report.warnings.push(`${s.title}: для парного разряда нужна строка «Итог: 1 А/Б, 2 В/Г …»`);
       }

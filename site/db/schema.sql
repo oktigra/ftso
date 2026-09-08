@@ -87,7 +87,7 @@ CREATE TABLE IF NOT EXISTS results (
   tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   player_id     INTEGER NOT NULL REFERENCES players(id)     ON DELETE CASCADE,
   place         INTEGER NOT NULL CHECK (place >= 1 AND place = CAST(place AS INTEGER)),
-  discipline    TEXT NOT NULL DEFAULT 'single' CHECK (discipline IN ('single','double')),
+  discipline    TEXT NOT NULL DEFAULT 'single' CHECK (discipline IN ('single','double','mixed')),
   UNIQUE (tournament_id, player_id, discipline)
 );
 
