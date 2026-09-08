@@ -903,3 +903,9 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 /* 05.09.2026: повторный выкат — липкая колонка «Действия» (PR #71) не перезапустила процесс */
 /* Строка с кнопкой скачивания инструкции в Word (/admin/guide). */
 .guide-actions{display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-bottom:.75rem;}
+/* Отметка «публиковать» под полем анкеты тренера: она относится к полю выше,
+   поэтому идёт в одну строку и мельче обычного чекбокса. */
+.check--inline{margin-top:.35rem; font-size:.85rem; color:var(--muted); align-items:center;}
+.check--inline input{margin:0;}
+.row-actions{display:flex; gap:.75rem; flex-wrap:wrap; align-items:center;}
+.dir-actions{display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; margin-top:.9rem;}

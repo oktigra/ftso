@@ -1,0 +1,77 @@
+<%
+/* АНКЕТЫ ТРЕНЕРОВ. Согласие по ст. 10.1 собрано формой на сайте: в карточку
+   переносятся ТОЛЬКО отмеченные поля, остальное видно здесь, но не публикуется. */
+%>
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Анкеты тренеров</h1>
+  <%- include('_shell') %>
+
+  <div class="panel">
+    <p class="muted">Тренер заполняет анкету на сайте (<code>/coaches/apply</code>) и отмечает, что разрешает опубликовать. Одобрение создаёт карточку в реестре: переносятся только отмеченные поля, основание публикации проставляется само — «согласие через сайт от даты подачи». Отдельная бумага при этом не нужна.</p>
+  </div>
+
+  <h2>На рассмотрении (<%= pending.length %>)</h2>
+  <% if (!pending.length) { %>
+    <div class="panel notice">Новых анкет нет.</div>
+  <% } else { %>
+    <% pending.forEach(function (a) { %>
+      <div class="panel stack">
+        <h3><%= a.full_name %></h3>
+        <p class="muted small">Подана <%= a.created_at %> · для связи: <%= a.email %></p>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th scope="col">Поле</th><th scope="col">Значение</th><th scope="col">Публиковать</th></tr></thead>
+            <tbody>
+              <% fields.forEach(function (f) { %>
+                <tr>
+                  <td><%= f.label %></td>
+                  <td><%= a[f.key] || '—' %></td>
+                  <td><%= a[f.allow] ? 'да' : 'нет' %></td>
+                </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+        <% if (a.note) { %><p class="muted">Примечание тренера: <%= a.note %></p><% } %>
+        <details><summary>Текст согласия, который принял тренер</summary><p class="small muted"><%= a.consent_text %></p></details>
+        <div class="row-actions">
+          <form method="post" action="/admin/coach-applications/<%= a.id %>/approve" class="inline-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn btn--primary btn--small" type="submit">Добавить в реестр</button>
+          </form>
+          <form method="post" action="/admin/coach-applications/<%= a.id %>/reject" class="inline-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <input name="reason" maxlength="300" placeholder="Причина (необязательно)" aria-label="Причина отклонения">
+            <button class="btn btn--danger btn--small" type="submit">Отклонить</button>
+          </form>
+        </div>
+      </div>
+    <% }); %>
+  <% } %>
+
+  <% if (decided.length) { %>
+    <h2>Рассмотренные</h2>
+    <div class="panel table-scroll">
+      <table>
+        <thead><tr><th scope="col">Тренер</th><th scope="col">Подана</th><th scope="col">Решение</th><th scope="col">Когда</th></tr></thead>
+        <tbody>
+          <% decided.forEach(function (a) { %>
+            <tr>
+              <td><%= a.full_name %></td>
+              <td><%= (a.created_at || '').slice(0, 10) %></td>
+              <td><%= a.status === 'approved' ? 'в реестре' : 'отклонена' %><%= a.reject_reason ? ' — ' + a.reject_reason : '' %></td>
+              <td><%= (a.decided_at || '').slice(0, 10) %></td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  <% } %>
+</div>
+</main>
+
+<%- include('../partials/footer') %>

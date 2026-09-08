@@ -30,6 +30,7 @@ import { ValidationError } from './lib/validate.mjs';
 import mountPublic from './routes/public.mjs';
 import mountRegister from './routes/register.mjs';
 import mountTournamentRequest from './routes/tournament-request.mjs';
+import mountCoachApplication from './routes/coach-apply.mjs';
 import mountCabinet from './routes/cabinet.mjs';
 import mountRating from './routes/rating.mjs';
 import mountPlayer from './routes/player.mjs';
@@ -260,13 +261,15 @@ export function createApp(config) {
   // Счётчик СВОЙ (ключ «t»): поток заявок на турниры не должен съедать лимит
   // регистрации игроков и наоборот.
   const limitTournamentRequest = publicFormLimiter(db, { ...config.tournamentRequest, key: 't' });
+  // Анкета тренера — тот же публичный лимит, что и заявка на турнир.
+  const limitCoachApplication = publicFormLimiter(db, { ...config.tournamentRequest, key: 'c' });
   // Форма обратной связи — те же лимиты, что у регистрации, свой ключ.
   const limitFeedback = publicFormLimiter(db, { ...config.register, key: 'f' });
   // И у кабинета свой (ключ «c»): подбор пароля не должен закрывать приём заявок.
   const limitCabinet = publicFormLimiter(db, { ...config.cabinet, key: 'c' });
 
   const ctx = {
-    db, config, attempts, limitWrites, limitRegister, limitTournamentRequest, limitFeedback, limitCabinet, store,
+    db, config, attempts, limitWrites, limitRegister, limitTournamentRequest, limitCoachApplication, limitFeedback, limitCabinet, store,
   };
 
   // РУБИЛЬНИК — до монтирования маршрутов, чтобы ни один обработчик приёма ПДн
@@ -282,6 +285,7 @@ export function createApp(config) {
   mountServiceFiles(app, { ...ctx, root: ROOT });
   mountRegister(app, ctx);
   mountTournamentRequest(app, ctx);
+  mountCoachApplication(app, ctx);
   mountCabinet(app, ctx);
   mountPublic(app, ctx);
 

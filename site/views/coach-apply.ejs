@@ -1,0 +1,74 @@
+<%
+/* АНКЕТА ТРЕНЕРА В РЕЕСТР (08.09.2026). Согласие по ст. 10.1 с отдельной отметкой
+   по каждому полю: что не отмечено — не публикуется. Заявка уходит на модерацию. */
+%>
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+
+<main id="top">
+<section class="section-pad">
+  <div class="container stack form-panel">
+    <p class="eyebrow">Реестр тренеров</p>
+    <h1>Анкета тренера</h1>
+    <p class="lead">Заполните анкету, чтобы попасть в реестр тренеров на сайте Федерации. Сведения появятся на сайте после проверки секретарём.</p>
+
+    <div class="panel notice notice--warn">
+      <p><strong>Публикуется только то, что вы отметите.</strong> Напротив каждой строки есть отметка «публиковать». Поле без отметки останется у Федерации и на сайт не попадёт, даже если вы его заполнили.</p>
+    </div>
+
+    <% if (errors.length) { %>
+      <div class="form-errors"><% errors.forEach(function (e) { %><p><%= e %></p><% }); %></div>
+    <% } %>
+
+    <form method="post" action="/coaches/apply" class="stacked-form">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field visually-hidden" aria-hidden="true">
+        <label for="website">Сайт</label>
+        <input id="website" name="website" tabindex="-1" autocomplete="off">
+      </div>
+
+      <div class="field">
+        <label for="full_name">Фамилия, имя, отчество</label>
+        <input id="full_name" name="full_name" maxlength="120" required value="<%= values.full_name || '' %>">
+        <p class="field-hint">Публикуется всегда — это основа записи в реестре.</p>
+      </div>
+
+      <div class="field">
+        <label for="email">E-mail для связи с Федерацией</label>
+        <input id="email" name="email" type="email" maxlength="160" required value="<%= values.email || '' %>">
+        <p class="field-hint">На сайте НЕ публикуется. Нужен, чтобы секретарь мог уточнить сведения.</p>
+      </div>
+
+      <% fields.forEach(function (f) { %>
+        <div class="field">
+          <label for="f-<%= f.key %>"><%= f.label %></label>
+          <input id="f-<%= f.key %>" name="<%= f.key %>" maxlength="200" value="<%= values[f.key] || '' %>">
+          <label class="check check--inline" for="a-<%= f.allow %>">
+            <input type="checkbox" id="a-<%= f.allow %>" name="<%= f.allow %>" <%= values[f.allow] ? 'checked' : '' %>>
+            <span>публиковать на сайте</span>
+          </label>
+        </div>
+      <% }); %>
+
+      <div class="field">
+        <label for="note">Что ещё сообщить Федерации</label>
+        <textarea id="note" name="note" rows="3" maxlength="500"><%= values.note || '' %></textarea>
+        <p class="field-hint">Не публикуется. Например: когда удобно связаться.</p>
+      </div>
+
+      <div class="consent-box">
+        <label class="check" for="consent_10_1">
+          <input type="checkbox" id="consent_10_1" name="consent_10_1" required>
+          <span>Даю согласие на обработку персональных данных, разрешённых для распространения (ст. 10.1 152-ФЗ): разрешаю <%= op.name %> опубликовать на сайте <%= op.site %> отмеченные мной сведения. Согласие действует до отзыва; отзыв — письмом на <%= op.email %>, сведения снимаются с сайта в течение трёх рабочих дней. Ознакомлен(а) с <a href="/privacy">Политикой обработки персональных данных</a> (<%= legalVersionLabel %>).</span>
+        </label>
+      </div>
+
+      <div><button class="btn btn--primary" type="submit">Отправить анкету</button></div>
+    </form>
+
+    <p class="small muted">Бумажный бланк согласия можно взять в Федерации — форма на сайте его заменяет, оба варианта равнозначны.</p>
+  </div>
+</section>
+</main>
+
+<%- include('partials/footer') %>

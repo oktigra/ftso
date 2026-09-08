@@ -587,6 +587,44 @@ CREATE TABLE IF NOT EXISTS coaches (
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- ЗАЯВКА ТРЕНЕРА В РЕЕСТР (08.09.2026). Карточка тренера — это РАСПРОСТРАНЕНИЕ
+-- персональных данных неопределённому кругу лиц, поэтому нужно согласие по ст. 10.1,
+-- а не основание из ст. 6. Бумажный бланк остаётся, но тренер может подать сведения
+-- и сам: форма на /coaches/apply с отдельными отметками по каждому полю — что именно
+-- разрешено публиковать. Заявка НЕ публикуется автоматически: секретарь проверяет и
+-- одобряет, одобрение создаёт карточку с основанием «согласие через сайт от <дата>».
+-- Поля allow_* — те самые отметки, они же определяют, что попадёт в карточку.
+CREATE TABLE IF NOT EXISTS coach_applications (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  full_name      TEXT NOT NULL CHECK (length(trim(full_name)) BETWEEN 1 AND 120),
+  city           TEXT,
+  club           TEXT,
+  specialization TEXT,
+  qualification  TEXT,
+  groups         TEXT,
+  contact        TEXT,
+  email          TEXT NOT NULL CHECK (length(trim(email)) BETWEEN 5 AND 160),
+  note           TEXT,
+  allow_city          INTEGER NOT NULL DEFAULT 0 CHECK (allow_city IN (0,1)),
+  allow_club          INTEGER NOT NULL DEFAULT 0 CHECK (allow_club IN (0,1)),
+  allow_specialization INTEGER NOT NULL DEFAULT 0 CHECK (allow_specialization IN (0,1)),
+  allow_qualification INTEGER NOT NULL DEFAULT 0 CHECK (allow_qualification IN (0,1)),
+  allow_groups        INTEGER NOT NULL DEFAULT 0 CHECK (allow_groups IN (0,1)),
+  allow_contact       INTEGER NOT NULL DEFAULT 0 CHECK (allow_contact IN (0,1)),
+  -- Само согласие по ст. 10.1: без него заявка не принимается вовсе.
+  consent_10_1   INTEGER NOT NULL CHECK (consent_10_1 = 1),
+  consent_text   TEXT NOT NULL,
+  status         TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
+  status_token   TEXT NOT NULL UNIQUE,
+  coach_id       INTEGER REFERENCES coaches(id) ON DELETE SET NULL,
+  decided_by     INTEGER REFERENCES users(id)   ON DELETE SET NULL,
+  decided_at     TEXT,
+  reject_reason  TEXT,
+  ip             TEXT,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_coach_applications_status ON coach_applications (status, id DESC);
+
 CREATE TABLE IF NOT EXISTS referees (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   full_name     TEXT NOT NULL CHECK (length(trim(full_name)) BETWEEN 1 AND 120),
