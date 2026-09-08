@@ -219,7 +219,10 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     limitWrites,
     guard((req, res) => {
       const id = intAtLeast(req.params.id, 'id');
-      const data = playerInput(req.body);
+      // При ПРАВКЕ имя не обязательно: карточки из импорта заводятся одной фамилией,
+      // и требование имени запирало их целиком — ни пол, ни город поменять нельзя.
+      // При СОЗДАНИИ игрока имя по-прежнему обязательно.
+      const data = playerInput(req.body, { requireFirst: false });
       const before = db.prepare('SELECT id, birth_date FROM players WHERE id = ?').get(id);
       if (!before) throw new ValidationError('Игрок не найден');
       // ДУБЛИ при правке: ФИО + дата (с учётом сохраняемой даты) и РНИ — не про себя.
