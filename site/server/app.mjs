@@ -158,6 +158,11 @@ export function createApp(config) {
     .digest('hex').slice(0, 8);
   app.locals.assetVersion = assetVersion;
 
+  // ДАТА ТУРНИРА НА ВИТРИНЕ: «24 авг». Один хелпер на главную и календарь —
+  // раньше он жил копией внутри home.ejs, и вторая витрина форматировала даты по-своему.
+  const MONTHS_RU = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  app.locals.dm = (d) => (d ? `${Number(d.slice(8, 10))} ${MONTHS_RU[Number(d.slice(5, 7)) - 1]}` : '');
+
   app.use(
     '/static',
     express.static(resolve(ROOT, 'public'), {

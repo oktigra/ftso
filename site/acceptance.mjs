@@ -1508,7 +1508,9 @@ await check('турниры (ТЗ 4.3): поля город/начало/тип/
   eq((await mk({ name: 'Фильтр Будущий', end_date: d(30), city: 'Смоленск', age_group: 'взрослые' })).status, 302, 'создание 3');
   eq((await mk({ name: 'Фильтр Кривой', end_date: d(1), start_date: d(5) })).status, 302, 'ответ на начало позже конца');
   assert(!db.prepare("SELECT 1 FROM tournaments WHERE name = 'Фильтр Кривой'").get(), 'турнир с началом позже конца не должен создаваться');
-  const names = (t) => [...t.matchAll(/<td class="t-name"><a href="\/tournaments\/\d+">([^<]+)<\/a>/g)].map((m) => m[1]).filter((n) => n.startsWith('Фильтр '));
+  // Календарь с 08.09.2026 — ящики, а не таблица: имя лежит в фасаде ящика,
+  // фасад же несёт ссылку на карточку турнира.
+  const names = (t) => [...t.matchAll(/<a class="tdrawer__face" href="\/tournaments\/\d+">[\s\S]*?<div class="tdrawer__name">([^<]+)<\/div>/g)].map((m) => m[1]).filter((n) => n.startsWith('Фильтр '));
   const all = await http('/tournaments');
   eq(all.status, 200, '/tournaments');
   assert(/name="month"/.test(all.text) && /name="city"/.test(all.text) && /name="category"/.test(all.text) && /name="age"/.test(all.text) && /name="status"/.test(all.text) && /name="kind"/.test(all.text), 'на списке нет шести фильтров ТЗ 4.3');
@@ -1532,6 +1534,45 @@ await check('турниры (ТЗ 4.3): поля город/начало/тип/
   db.prepare("DELETE FROM tournaments WHERE name LIKE 'Фильтр %'").run();
   db.prepare("DELETE FROM write_attempts").run();
   return 'три турнира, шесть фильтров работают по одному, статус считается от дат, мусор в фильтрах игнорируется, начало позже конца — отказ';
+});
+
+await check('календарь: ящики вместо таблицы, ни одно поле прежних колонок не потеряно', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/tournaments', { jar })).text);
+  const d = (days) => new Date(Date.now() + days * 864e5).toISOString().slice(0, 10);
+  eq(
+    (await http('/admin/tournaments', {
+      method: 'POST',
+      form: { _csrf, name: 'Ящик Проверочный', end_date: d(9), start_date: d(7), city: 'Ярцево', kind: 'championship', age_group: 'до 14', category: 'B', sex: 'M' },
+      jar,
+    })).status,
+    302,
+    'создание турнира для витрины',
+  );
+  const page = await http('/tournaments');
+  const boxes = (page.text.match(/class="tdrawer__box"/g) || []).length;
+  const published = db.prepare('SELECT COUNT(*) AS n FROM tournaments WHERE is_published = 1').get().n;
+  eq(boxes, published, `ящиков на календаре ${boxes} при ${published} опубликованных турнирах`);
+  assert(!/<td class="t-name"/.test(page.text), 'на календаре осталась прежняя таблица');
+  const one = page.text.match(/<li class="tdrawer">[\s\S]*?Ящик Проверочный[\s\S]*?<\/li>/);
+  assert(one, 'ящика с тестовым турниром на календаре нет');
+  const box = one[0];
+  // Девять колонок прежней таблицы — по одной проверке на каждую.
+  for (const [label, needle] of [
+    ['даты', d(9).slice(0, 4)],
+    ['название', 'Ящик Проверочный'],
+    ['город', 'Ярцево'],
+    ['тип', 'Чемпионат / первенство'],
+    ['возраст', 'до 14'],
+    ['пол', 'мужчины / юноши'],
+    ['категория', 'Кат. B'],
+    ['статус', 'Предстоящий'],
+    ['ссылка на сетку', '#grid'],
+  ]) assert(box.includes(needle), `в ящике нет поля «${label}» (искали «${needle}»)`);
+  assert(!box.includes('участников: 0'), 'пустой счёт участников не должен печататься');
+  db.prepare("DELETE FROM tournaments WHERE name = 'Ящик Проверочный'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return `ящиков ${boxes} = опубликованных турниров ${published}; в фасаде все девять полей прежней таблицы; таблицы больше нет`;
 });
 
 await check('MAX (ТЗ 8, решение владельца): кнопка только при MAX_URL вида https://max.ru/…', async () => {
@@ -5494,6 +5535,30 @@ try {
     assert(/inset|0px 4px 0px/.test(btn.shadow) || btn.shadow !== 'none', 'у кнопки нет борта');
     eq(reduced.прозрачных, 0, 'при reduced-motion секции не должны прятаться');
     return `секций ${shown.всего}, все доехали до is-in; переход кнопки ${btn.transition}; при reduced-motion .reveal у ${reduced.сReveal}, скрытых 0`;
+  });
+
+  await check('календарь: ящик раскрывается НАВЕДЕНИЕМ (поведение, а не объявление в CSS)', async () => {
+    // Урок 08.09: липкий заголовок был объявлен и не работал. Поэтому меряем движение
+    // мышью: корпус обязан наклониться, третья папка — выехать вверх из ящика.
+    const temp = db.prepare('SELECT COUNT(*) AS n FROM tournaments WHERE is_published = 1').get().n === 0;
+    if (temp) db.prepare("INSERT INTO tournaments (name, end_date, category, is_published) VALUES ('Ящик Наведения', date('now','+5 days'), 'B', 1)").run();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(inst.base + '/tournaments', { waitUntil: 'networkidle' });
+    const read = () => page.evaluate(() => {
+      const b = document.querySelector('.tdrawer__box');
+      const f = document.querySelectorAll('.tdrawer__folder')[2];
+      return { transform: getComputedStyle(b).transform, folderTop: Math.round(f.getBoundingClientRect().top) };
+    });
+    const before = await read();
+    await page.locator('.tdrawer__box').first().hover();
+    await page.waitForTimeout(1000); // переход корпуса .56s + задержка третьей папки .18s
+    const after = await read();
+    await page.close();
+    if (temp) db.prepare("DELETE FROM tournaments WHERE name = 'Ящик Наведения'").run();
+    assert(after.transform !== before.transform, 'корпус ящика не наклонился при наведении');
+    const lift = before.folderTop - after.folderTop;
+    assert(lift > 60, `третья папка не выехала: подъём ${lift} px вместо ожидаемых ~110`);
+    return `корпус наклонился (${before.transform.slice(0, 12)}… → ${after.transform.slice(0, 12)}…), третья папка поднялась на ${lift} px`;
   });
 
   await check('шрифты грузятся ЛОКАЛЬНО (нет обращений к Google)', async () => {
