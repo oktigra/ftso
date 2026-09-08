@@ -156,6 +156,21 @@
     }
   }
 
+  // --- высота липкой плашки «режим разработки» ------------------------------
+  // Плашка прилипает к верху, шапка садится под неё. Высота плашки зависит от
+  // ширины экрана (текст переносится), в CSS её не вычислить — меряем и кладём
+  // в переменную. Пересчитываем на resize: поворот телефона меняет число строк.
+  var devNotice = document.querySelector('.dev-notice');
+  if (devNotice) {
+    var syncNoticeHeight = function () {
+      document.documentElement.style.setProperty('--dev-notice-h', devNotice.offsetHeight + 'px');
+    };
+    syncNoticeHeight();
+    window.addEventListener('resize', syncNoticeHeight);
+    // Шрифты догружаются после первого кадра и могут изменить высоту строки.
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncNoticeHeight);
+  }
+
   // --- появление секций при прокрутке --------------------------------------
   // Секции въезжают снизу по одной, каждая один раз. Без IntersectionObserver
   // и при reduced-motion класс .reveal не вешается вовсе — страница обычная.

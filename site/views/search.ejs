@@ -7,7 +7,7 @@
       <h1>Поиск по сайту</h1>
       <form method="get" action="/search" class="filters" role="search">
         <div class="field field--wide"><label for="sq">Что ищем</label>
-          <input id="sq" type="search" name="q" value="<%= result.q %>" maxlength="80" placeholder="турнир, фамилия, город, корт…" autofocus></div>
+          <input id="sq" type="search" name="q" value="<%= result.q %>" maxlength="80" placeholder="турнир, фамилия, РНИ, город, корт…" autofocus></div>
         <div class="field"><button class="btn btn--primary" type="submit">Найти</button></div>
       </form>
       <% if (result.q.length < 2) { %>
