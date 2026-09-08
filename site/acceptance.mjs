@@ -2643,6 +2643,30 @@ await check('импорт турнира из текста: сетка с bye/о
   return 'сетка 8 с bye, отказом и матчем за 3-е, группа, пары → черновик; 15 игроков, 11 матчей, места 1/2/3/4/5 и пар; ошибка — без записи';
 });
 
+await check('инструкция Word собирается из того же файла, что и /admin/guide: все 12 разделов на месте', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const { readFileSync, existsSync, unlinkSync } = await import('node:fs');
+  const out = '/tmp/ftso-guide-acceptance.docx';
+  if (existsSync(out)) unlinkSync(out);
+  execFileSync('node', ['tools/build-guide.mjs', out], { stdio: 'pipe' });
+  assert(existsSync(out), 'документ не собрался');
+  const buf = readFileSync(out);
+  eq(buf.slice(0, 2).toString('latin1'), 'PK', 'docx должен быть zip-контейнером');
+  // Внутри — текст инструкции: сверяем по заголовкам разделов из шаблона.
+  const { default: AdmZip } = await import('adm-zip').catch(() => ({ default: null }));
+  let xml = '';
+  if (AdmZip) xml = new AdmZip(out).readAsText('word/document.xml');
+  else xml = execFileSync('sh', ['-c', `unzip -p ${out} word/document.xml`]).toString();
+  const heads = [...xml.matchAll(/<w:t[^>]*>(\d+\. [^<]+)<\/w:t>/g)].map((m) => m[1]);
+  eq(heads.length, 12, `разделов в документе ${heads.length}, ожидалось 12`);
+  assert(/Персональные данные/.test(xml) && /Рейтинг/.test(xml), 'нет ключевых разделов');
+  assert(!/Ваша роль/.test(xml), 'служебная строка админки не должна попадать в документ');
+  // Свежесть: документ обязан содержать то, что появилось в инструкции последним.
+  assert(/микст/i.test(xml), 'в документе нет микста — инструкция и сборка разошлись');
+  unlinkSync(out);
+  return `12 разделов, ${Math.round(buf.length / 1024)} КБ, собран из views/admin/guide.ejs`;
+});
+
 await check('игрока без имени (из импорта) можно править: пол и город меняются, при создании имя обязательно', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   // Карточка одной фамилией — ровно то, что заводит импорт протокола ветеранов.
