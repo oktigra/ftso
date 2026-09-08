@@ -43,7 +43,7 @@
                   <td class="rank"><%= p.place %></td>
                   <td class="player<%= p.anonymized ? ' player--anonymized' : '' %>"><% if (p.playerId) { %><a href="/player/<%= p.playerId %>"><%= p.name %></a><% } else { %><%= p.name %><% } %></td>
                   <td><%= p.city || '—' %></td>
-                  <td><%= p.discipline === 'double' ? 'парный' : 'одиночный' %></td>
+                  <td><%= ({ single: 'одиночный', double: 'парный', mixed: 'микст' })[p.discipline] || 'одиночный' %></td>
                 </tr>
               <% }); %>
             </tbody>
