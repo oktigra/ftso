@@ -71,6 +71,7 @@ import {
 import { revokeGuardianSessions, revokePlayerSessions } from '../lib/erasure.mjs';
 import { withConsentErasure } from '../lib/consent-journal.mjs';
 import { guardianInput, isMinor, ageOn } from '../lib/validate.mjs';
+import { buildGuideDocx } from '../lib/guide-docx.mjs';
 import {
   queueMail,
   flushOutbox,
@@ -1325,6 +1326,22 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
   // ИНСТРУКЦИЯ ПО АДМИНИСТРИРОВАНИЮ (ТЗ п. 11) — всем ролям, разделы по правам.
   app.get('/admin/guide', requireRole(...ANY_ROLE), (req, res) => {
     res.render('admin/guide', { title: 'Инструкция — админка ФТСО' });
+  });
+
+  // ТА ЖЕ ИНСТРУКЦИЯ ФАЙЛОМ (приложение к акту сдачи-приёмки). Документ собирается
+  // на лету из того же шаблона, что и страница выше, — отдельной копии, которая
+  // может отстать, не существует. Разделы в файле идут ВСЕ, независимо от роли:
+  // это документ о системе, а не о правах конкретного сотрудника.
+  app.get('/admin/guide.docx', requireRole(...ANY_ROLE), async (req, res, next) => {
+    try {
+      const { buf } = await buildGuideDocx();
+      const stamp = new Date().toISOString().slice(0, 10);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="ftso-instrukciya-${stamp}.docx"`);
+      res.send(buf);
+    } catch (e) {
+      next(e);
+    }
   });
 
   app.get('/admin/account', requireRole(...ANY_ROLE), (req, res) => {
