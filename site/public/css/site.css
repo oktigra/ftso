@@ -12,10 +12,8 @@
   --shadow-md:0 6px 24px rgba(18,61,104,.08), 0 2px 6px rgba(18,61,104,.05);
   --shadow-lg:0 18px 48px rgba(18,61,104,.12), 0 6px 16px rgba(18,61,104,.07);
   --noise-op:.16; --texture-op:.07;
-  --tex-line:rgba(18,61,104,.55);
   --cta-grad:linear-gradient(135deg,#123d68,#0f5b79);
   --photo-filter:none;
-  --card-hover-bg:linear-gradient(160deg,#eef6f1,#e7f0f8);
   --page-bg:#b3bcc4;
   --partner-inset:rgba(255,255,255,.55);
 }
@@ -29,10 +27,8 @@ html[data-theme="dark"]{
   --shadow-md:0 6px 24px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
   --shadow-lg:0 20px 52px rgba(0,0,0,.55), 0 8px 18px rgba(0,0,0,.4);
   --noise-op:.2; --texture-op:.06;
-  --tex-line:rgba(120,182,236,.6);
   --cta-grad:linear-gradient(135deg,#16293d,#123d68);
   --photo-filter:brightness(.9);
-  --card-hover-bg:linear-gradient(160deg,#16232f,#182b3b);
   --page-bg:#15222d;
   --partner-inset:rgba(255,255,255,.06);
 }
@@ -49,10 +45,8 @@ html[data-theme="warm"]{
   --shadow-md:0 6px 24px rgba(96,74,26,.1), 0 2px 6px rgba(96,74,26,.06);
   --shadow-lg:0 18px 48px rgba(96,74,26,.14), 0 6px 16px rgba(96,74,26,.08);
   --noise-op:.22; --texture-op:.09;
-  --tex-line:rgba(138,106,30,.5);
   --cta-grad:linear-gradient(135deg,#123d68,#0f5b79);
   --photo-filter:none;
-  --card-hover-bg:linear-gradient(160deg,#fbf6ea,#f4ece0);
   --page-bg:#e8dfcd;
   --partner-inset:rgba(255,255,255,.75);
 }
