@@ -2712,6 +2712,26 @@ await check('анкета тренера: публикуется только о
   return 'отмеченные поля публикуются, неотмеченные не сохраняются; без согласия 400; основание «согласие через сайт от <дата>» проставлено само';
 });
 
+await check('поиск находит игрока по РНИ целиком, а не по куску номера; заголовки таблиц липкие', async () => {
+  const id = Number(db.prepare("INSERT INTO players (full_name, city, sex, rni) VALUES ('Рнишкин Пётр', 'Смоленск', 'M', '123456')").run().lastInsertRowid);
+  const other = Number(db.prepare("INSERT INTO players (full_name, city, sex, rni) VALUES ('Другов Иван', 'Вязьма', 'M', '991234')").run().lastInsertRowid);
+
+  const byRni = await http('/search?q=123456');
+  assert(/Рнишкин Пётр/.test(byRni.text), 'игрок не найден по РНИ');
+  assert(/РНИ 123456/.test(byRni.text), 'в выдаче не показан РНИ');
+  assert(!/Другов Иван/.test(byRni.text), 'по полному РНИ не должен находиться чужой номер');
+
+  // Кусок номера не должен вытаскивать всех: «1234» есть в обоих номерах.
+  const byPart = await http('/search?q=1234');
+  assert(!/Рнишкин Пётр/.test(byPart.text) && !/Другов Иван/.test(byPart.text), 'РНИ должен сравниваться целиком');
+
+  // Фамилия по-прежнему ищется.
+  assert(/Рнишкин Пётр/.test((await http('/search?q=Рнишкин')).text), 'поиск по фамилии сломался');
+
+  db.prepare('DELETE FROM players WHERE id IN (?, ?)').run(id, other);
+  return 'РНИ ищется целиком: 123456 находит своего и не находит чужого, кусок «1234» не находит никого; фамилия ищется по-прежнему';
+});
+
 await check('анкета судьи: поля по требованиям к судьям, инструкция про категории, публикуется только отмеченное', async () => {
   const page = await http('/referees/apply');
   eq(page.status, 200, 'страница анкеты судьи');
@@ -5415,7 +5435,44 @@ try {
     assert(shown.всего > 0, 'на главной нет секций');
     eq(shown.сReveal, shown.всего, 'не все секции получили .reveal');
     eq(shown.видимы, shown.всего, 'часть секций осталась невидимой после появления');
+    // ЛИПКИЕ ШАПКИ (08.09.2026): плашка режима разработки прилипает первой,
+    // шапка садится под неё, заголовки таблиц — под обе.
+    const sticky = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await sticky.goto(inst.base + '/courts', { waitUntil: 'networkidle' });
+    await sticky.waitForTimeout(400);
+    const bars = await sticky.evaluate(() => {
+      const notice = document.querySelector('.dev-notice');
+      const header = document.querySelector('.site-header');
+      const th = document.querySelector('thead th');
+      const cs = (el) => (el ? getComputedStyle(el) : null);
+      return {
+        noticePos: notice ? cs(notice).position : 'нет плашки',
+        noticeVar: getComputedStyle(document.documentElement).getPropertyValue('--dev-notice-h').trim(),
+        headerTop: header ? cs(header).top : null,
+        thPos: th ? cs(th).position : 'нет таблицы',
+        thBg: th ? cs(th).backgroundColor : null,
+      };
+    });
+    // Прокручиваем и смотрим, что плашка осталась в кадре.
+    await sticky.evaluate(() => window.scrollTo(0, 1500));
+    await sticky.waitForTimeout(300);
+    const noticeVisible = await sticky.evaluate(() => {
+      const n = document.querySelector('.dev-notice');
+      if (!n) return 'нет плашки';
+      const r = n.getBoundingClientRect();
+      return r.top >= -1 && r.bottom > 0;
+    });
+    await sticky.close();
+
     assert(btn.transition.startsWith('0.18'), `у кнопки ожидался свой переход .18s, получен ${btn.transition}`);
+    if (bars.noticePos !== 'нет плашки') {
+      eq(bars.noticePos, 'sticky', 'плашка режима разработки должна быть липкой');
+      assert(/^\d+(\.\d+)?px$/.test(bars.noticeVar), `высота плашки не измерена: «${bars.noticeVar}»`);
+      assert(bars.headerTop && bars.headerTop !== '0px', `шапка должна садиться под плашку, а не на неё: top=${bars.headerTop}`);
+      eq(noticeVisible, true, 'плашка уехала при прокрутке');
+    }
+    eq(bars.thPos, 'sticky', 'заголовки таблиц должны быть липкими');
+    assert(bars.thBg && bars.thBg !== 'rgba(0, 0, 0, 0)', 'у липкого заголовка обязателен непрозрачный фон');
     assert(/inset|0px 4px 0px/.test(btn.shadow) || btn.shadow !== 'none', 'у кнопки нет борта');
     eq(reduced.прозрачных, 0, 'при reduced-motion секции не должны прятаться');
     return `секций ${shown.всего}, все доехали до is-in; переход кнопки ${btn.transition}; при reduced-motion .reveal у ${reduced.сReveal}, скрытых 0`;
@@ -6259,10 +6316,11 @@ await check('фраза о сборе ПДн привязана к рубиль�
   const priv = await closedHttp('/privacy');
   assert(priv.text.includes(PHRASE), '/privacy без предупреждения о режиме разработки');
 
-  // В админке баннер лишний.
+  // С 08.09.2026 баннер виден и в админке — решение владельца «на всех страницах»:
+  // заодно напоминает секретарю, что плашка всё ещё висит и её пора снять.
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const adm = await http('/admin', { jar });
-  assert(!/режиме разработки/.test(adm.text), 'баннер просочился в админку');
+  assert(/режиме разработки/.test(adm.text), 'баннер должен показываться и в админке');
   return 'фраза есть при закрытом приёме (включая /privacy), отсутствует при открытом, в админке баннера нет';
 });
 
