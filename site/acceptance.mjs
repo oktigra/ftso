@@ -4157,7 +4157,9 @@ await check('ТЗ 4.2/4.5/4.6: поиск по новостям; фильтры 
   eq((await add('courts', { name: 'Фильтров Корт Хард', city: 'Смоленск', address: 'ул. Кортовая, 1', surface: 'хард', courts_count: '4', season: 'круглый год' })).status, 302, 'корт 1');
   eq((await add('courts', { name: 'Фильтров Корт Грунт', city: 'Вязьма', address: 'ул. Грунтовая, 2', surface: 'грунт', map_url: 'https://yandex.ru/maps/?text=test' })).status, 302, 'корт 2');
   eq((await add('clubs', { name: 'Фильтров Клуб', city: 'Смоленск', address: 'пр. Клубный, 3' })).status, 302, 'клуб');
-  const rows = (t, prefix) => (t.match(new RegExp(prefix + '[^<]+', 'g')) || []).length;
+  // Справочник — карточки: имя записи стоит заголовком карточки. Прежний счёт ловил
+  // пробелы внутри ячейки таблицы и на карточке дал бы ноль.
+  const rows = (t, prefix) => (t.match(new RegExp('dir-card__title">' + prefix + '[^<]*<', 'g')) || []).length;
   // Тренеры: селекты город и клуб; фильтры работают.
   const c = await http('/coaches');
   assert(/name="city"/.test(c.text) && /name="club"/.test(c.text), 'у тренеров нет фильтров город/клуб');
@@ -4192,6 +4194,61 @@ await check('ТЗ 4.2/4.5/4.6: поиск по новостям; фильтры 
   db.prepare("DELETE FROM clubs WHERE name LIKE 'Фильтров %'").run();
   db.prepare('DELETE FROM write_attempts').run();
   return 'тренеры: город/клуб; корты: город/покрытие + кортов/сезонность + карта; клубы: город; новости: поиск по заголовку и тексту, черновики скрыты, % экранирован';
+});
+
+await check('справочники: карточки вместо таблицы, ни одно заполненное поле не потеряно', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/directories/courts', { jar })).text);
+  eq(
+    (await http('/admin/directories/courts', {
+      method: 'POST',
+      form: {
+        _csrf, name: 'Карточный Корт', city: 'Дорогобуж', address: 'ул. Карточная, 7', surface: 'ковёр',
+        courts_count: '3', season: 'зимний', club: 'Карточный клуб', contact: '+7 900 111-22-33',
+        hours: 'будни 9:00–21:00', prices: '700 ₽/ч', note: 'вход со двора',
+      },
+      jar,
+    })).status,
+    302,
+    'корт для витрины',
+  );
+  const page = await http('/courts');
+  assert(!/<table/.test(page.text), 'на /courts осталась таблица');
+  assert(/class="dir-cards"/.test(page.text), 'нет сетки карточек справочника');
+  const one = page.text.match(/<li class="dir-card[\s\S]*?Карточный Корт[\s\S]*?<\/li>/);
+  assert(one, 'карточки созданного корта нет на витрине');
+  const card = one[0];
+  // Каждое заполненное поле описания раздела обязано быть в карточке подписью и значением.
+  for (const [label, value] of [
+    ['Город', 'Дорогобуж'],
+    ['Адрес', 'ул. Карточная, 7'],
+    ['Покрытие', 'ковёр'],
+    ['Кортов', '3'],
+    ['Сезонность', 'зимний'],
+    ['Клуб / организация', 'Карточный клуб'],
+    ['Контакт', '+7 900 111-22-33'],
+    ['Режим работы', 'будни 9:00–21:00'],
+    ['Цены', '700 ₽/ч'],
+    ['Примечание', 'вход со двора'],
+  ]) {
+    assert(card.includes(`<dt>${label}</dt>`), `в карточке нет подписи «${label}»`);
+    assert(card.includes(value), `в карточке нет значения «${value}»`);
+  }
+  // Пустые поля не печатаются вовсе — в таблице на их месте стоял прочерк.
+  eq(
+    (await http('/admin/directories/clubs', { method: 'POST', form: { _csrf: tokenFrom((await http('/admin/directories/clubs', { jar })).text), name: 'Пустой Клуб', city: 'Ельня' }, jar })).status,
+    302,
+    'клуб с двумя полями',
+  );
+  const empty = (await http('/clubs')).text.match(/<li class="dir-card[\s\S]*?Пустой Клуб[\s\S]*?<\/li>/);
+  assert(empty, 'карточки пустого клуба нет');
+  assert(!/<dt>Сайт<\/dt>/.test(empty[0]) && !/—/.test(empty[0]), 'незаполненные поля печатаются в карточке');
+  // Один шаблон на четыре раздела — карточки должны прийти во все, где есть записи.
+  assert(/class="dir-cards"/.test((await http('/clubs')).text), 'у клубов не карточки');
+  db.prepare("DELETE FROM courts WHERE name = 'Карточный Корт'").run();
+  db.prepare("DELETE FROM clubs WHERE name = 'Пустой Клуб'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'корты и клубы — карточки, десять заполненных полей с подписями на месте, пустые поля не печатаются';
 });
 
 await check('публичный файл отдаётся защищённым путём, документ с модерации — нет', async () => {
@@ -5538,6 +5595,15 @@ try {
       docWidth: `${document.documentElement.scrollWidth} при ${document.documentElement.clientWidth}`,
     })));
     await sticky.close();
+    // Справочники с 08.09.2026 — карточки, таблицы на /courts больше нет. Сторож
+    // «липкий заголовок не вернулся» переезжает на страницу, где таблица осталась.
+    const tablePage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await tablePage.goto(inst.base + '/tournaments/1', { waitUntil: 'domcontentloaded' });
+    bars.thPos = await tablePage.evaluate(() => {
+      const th = document.querySelector('thead th');
+      return th ? getComputedStyle(th).position : 'нет таблицы';
+    });
+    await tablePage.close();
 
     assert(btn.transition.startsWith('0.18'), `у кнопки ожидался свой переход .18s, получен ${btn.transition}`);
     if (bars.noticePos !== 'нет плашки') {
@@ -5608,6 +5674,31 @@ try {
     assert(lift >= 8, `пластина не поднялась при наведении: ${lift} px`);
     assert(after.infoH > before.infoH + 20, `справка не раскрылась: ${before.infoH} → ${after.infoH} px`);
     return `подъём ${lift} px, справка раскрылась с ${before.infoH} до ${after.infoH} px`;
+  });
+
+  await check('справочник: карточка отзывается на наведение (поведение, а не объявление)', async () => {
+    const temp = db.prepare('SELECT COUNT(*) AS n FROM courts').get().n === 0;
+    if (temp) db.prepare("INSERT INTO courts (name, city, surface) VALUES ('Корт Наведения','Смоленск','хард')").run();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(inst.base + '/courts', { waitUntil: 'networkidle' });
+    const read = () => page.evaluate(() => {
+      const c = document.querySelector('.dir-card');
+      return {
+        title: getComputedStyle(c.querySelector('.dir-card__title')).color,
+        mark: getComputedStyle(c.querySelector('.fx-court')).opacity,
+        ring: getComputedStyle(c, '::after').opacity,
+      };
+    });
+    const before = await read();
+    await page.locator('.dir-card').first().hover();
+    await page.waitForTimeout(800);
+    const after = await read();
+    await page.close();
+    if (temp) db.prepare("DELETE FROM courts WHERE name = 'Корт Наведения'").run();
+    assert(after.title !== before.title, 'заголовок карточки не подсветился');
+    assert(Number(after.mark) > Number(before.mark), `водяной знак корта не проявился: ${before.mark} → ${after.mark}`);
+    assert(Number(after.ring) > Number(before.ring), `градиентная рамка не появилась: ${before.ring} → ${after.ring}`);
+    return `заголовок ${before.title} → ${after.title}, знак ${before.mark} → ${after.mark}, рамка ${before.ring} → ${after.ring}`;
   });
 
   await check('шрифты грузятся ЛОКАЛЬНО (нет обращений к Google)', async () => {

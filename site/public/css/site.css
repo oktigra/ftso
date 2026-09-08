@@ -272,6 +272,17 @@ html[data-theme="warm"] .theme-menu__icon .i-warm{display:block;}
 .photo .ph-label{position:absolute; inset:0; display:grid; place-items:center; text-align:center;}
 .photo .ph-label span{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.8rem; color:var(--muted); background:color-mix(in srgb,var(--surface) 80%, transparent); padding:.5rem .9rem; border-radius:999px; border:1px solid var(--border);}
 .info-card{background:var(--surface); border:1px solid var(--border); border-radius:1.25rem; padding:1.1rem 1.25rem; box-shadow:var(--shadow-md); display:flex; align-items:center; gap:1rem; flex-wrap:wrap;}
+/* СПРАВОЧНИКИ (тренеры, судьи, корты, клубы): карточка вместо строки таблицы —
+   то же оформление, что у карточек главной, включая наведение fx-card. Ширина
+   колонки задана содержимым, а не числом: разделы разной плотности. */
+.dir-cards{list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:1rem;}
+.dir-card{display:flex; flex-direction:column; gap:.6rem; padding:1.15rem 1.25rem 1.25rem; background:var(--surface); border:1px solid var(--border); border-radius:1.25rem; box-shadow:var(--shadow-md);}
+.dir-card__photo img{width:72px; height:72px; border-radius:.9rem; object-fit:cover; border:1px solid var(--border);}
+.dir-card__title{margin:0; font-family:'Manrope',sans-serif; font-size:1.15rem; font-weight:800; line-height:1.25; transition:color .3s ease;}
+.dir-card:hover .dir-card__title{color:var(--accent);}
+.dir-card__facts{display:grid; grid-template-columns:auto 1fr; gap:.35rem .8rem; margin:0;}
+.dir-card__facts dt{color:var(--muted); font-size:.85rem;}
+.dir-card__facts dd{margin:0; min-width:0; overflow-wrap:anywhere;}
 .info-card .ic-item{display:flex; flex-direction:column; gap:.15rem;}
 .info-card .ic-item small{font-size:.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600;}
 .info-card .ic-item b{font-family:'Manrope',sans-serif; font-size:1.05rem;}
