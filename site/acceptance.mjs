@@ -1788,7 +1788,7 @@ await check('ТЗ п. 5/7 SEO: уникальные description по разде�
   eq(desc((await http(`/news/${nid}`)).text), 'Короткий анонс для description', 'description новости — из анонса');
   const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, city, kind) VALUES ('SEO-турнир', '2026-09-01', 'A', 'Вязьма', 'championship')").run().lastInsertRowid);
   const td = desc((await http(`/tournaments/${tid}`)).text);
-  assert(/Первенство «SEO-турнир», Вязьма, 2026-09-01, категория A/.test(td), `description турнира: ${td}`);
+  assert(/Чемпионат \/ первенство «SEO-турнир», Вязьма, 2026-09-01, категория A/.test(td), `description турнира: ${td}`);
   const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Сеошников Сео Сеович','Рославль','M')").run().lastInsertRowid);
   assert(/Сеошников Сео Сеович, Рославль — результаты/.test(desc((await http(`/player/${pid}`)).text)), 'description профиля игрока');
   // Админка: правка title/description раздела; og-теги совпадают; чужой адрес отбит.

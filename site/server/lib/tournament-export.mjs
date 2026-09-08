@@ -12,7 +12,7 @@ import { scoreFor } from './groups.mjs';
 const FONT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../assets/fonts');
 const FONT = readFileSync(resolve(FONT_DIR, 'DejaVuSans.ttf'));
 const FONT_BOLD = readFileSync(resolve(FONT_DIR, 'DejaVuSans-Bold.ttf'));
-const KIND_RU = { team: 'Командная встреча', championship: 'Первенство', other: 'Турнир' };
+const KIND_RU = { team: 'Командная встреча', championship: 'Чемпионат / первенство', other: 'Турнир' };
 
 /** Общая «модель листа» из данных турнира: заголовок, группы (таблицы), сетки (по раундам), результаты. */
 export function sheetModel({ tournament, groups, brackets, results }) {

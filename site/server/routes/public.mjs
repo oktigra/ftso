@@ -190,7 +190,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
     res.status(200).render('tournament', {
       title: `${tournament.name} — ФТСО`,
       metaDescription: descriptionFrom(
-        `${({ team: 'Командная встреча', championship: 'Первенство', other: 'Турнир' })[tournament.kind] || 'Турнир'} «${tournament.name}»` +
+        `${({ team: 'Командная встреча', championship: 'Чемпионат / первенство', other: 'Турнир' })[tournament.kind] || 'Турнир'} «${tournament.name}»` +
         `${tournament.city ? ', ' + tournament.city : ''}, ${tournament.start_date ? tournament.start_date + ' — ' : ''}${tournament.end_date}, ` +
         `категория ${tournament.category}${tournament.age_group ? ', ' + tournament.age_group : ''}. Участники, результаты и матчи — на сайте Федерации тенниса Смоленской области.`,
       ),

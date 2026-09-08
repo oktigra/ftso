@@ -18,7 +18,9 @@ export const SEXES = ['M', 'F'];
 export const CATEGORIES = ['A', 'B', 'C']; // C — прочие/любительские турниры (06.09.2026), коэффициент в rating/rating.mjs
 // Типы турниров по ТЗ п. 4.3: командные встречи, первенства, иные турниры.
 export const TOURNAMENT_KINDS = ['team', 'championship', 'other'];
-export const TOURNAMENT_KIND_RU = { team: 'Командная встреча', championship: 'Первенство', other: 'Турнир' };
+// «championship» покрывает и чемпионаты, и первенства: в календаре Федерации это
+// одна категория А, а подпись «Первенство» на чемпионате области выглядела ошибкой.
+export const TOURNAMENT_KIND_RU = { team: 'Командная встреча', championship: 'Чемпионат / первенство', other: 'Турнир' };
 // Возраст турнира: список (решение владельца 06.09.2026) + «ввод вручную» — своя подпись.
 export const TOURNAMENT_AGES = ['до 12', 'до 14', 'до 16', 'до 18', 'взрослые', '45+', '55+'];
 export const TOURNAMENT_SEX_RU = { M: 'мужчины / юноши', F: 'женщины / девушки', X: 'смешанный' };
