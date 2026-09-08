@@ -955,8 +955,10 @@ await check('retention: хранятся последние 24 снимка', as
 
 await check('город и пол показываются и фильтруются', async () => {
   const page = await http('/rating');
-  assert(page.text.includes('<th>Город</th>') && page.text.includes('<th>Пол</th>'), 'нет колонок «Город» и «Пол»');
-  assert(page.text.includes('Смоленск'), 'нет города в таблице');
+  // С 08.09.2026 витрина — пластины: «Город» стоит шапкой пластин, «Пол» — в справке строки.
+  assert(page.text.includes('<span>Город</span>'), 'нет колонки «Город» в шапке пластин');
+  assert(/rplate__chips[\s\S]*?(муж\.|жен\.)/.test(page.text), 'пол не показан в справке пластины');
+  assert(page.text.includes('Смоленск'), 'нет города в рейтинге');
 
   const women = await http('/rating?sex=F');
   eq(women.status, 200, 'фильтр по полу');
@@ -970,6 +972,34 @@ await check('город и пол показываются и фильтруют
   const byAge = await http('/rating?age=' + encodeURIComponent('до 19'));
   assert(byAge.text.includes('Мария Лебедева'), 'фильтр по возрастной группе не сработал');
   return 'фильтры по полу, возрастной группе и поиск по фамилии работают';
+});
+
+await check('рейтинг: пластины вместо таблицы, все восемь колонок на месте, экспорт цел', async () => {
+  const page = await http('/rating');
+  const plates = (page.text.match(/<li class="rplate/g) || []).length;
+  const namesInPlates = (page.text.match(/<span class="rplate__name">/g) || []).length;
+  eq(plates, namesInPlates, 'пластин и имён в них разное количество');
+  assert(plates > 0, 'на /rating нет ни одной пластины');
+  assert(!/class="rating-table"/.test(page.text), 'на /rating осталась прежняя таблица');
+  assert(!/<div class="table-scroll">/.test(page.text), 'осталась обёртка таблицы с прокруткой');
+  // Восемь колонок прежней таблицы: пять в строке, три — в раскрывающейся справке.
+  const first = page.text.match(/<li class="rplate[\s\S]*?<\/li>/)[0];
+  for (const [label, re] of [
+    ['место', /rplate__place">\d/],
+    ['игрок', /rplate__name">/],
+    ['город', /rplate__city">/],
+    ['очки', /rplate__pts">\d/],
+    ['изменение', /class="chg chg--/],
+    ['пол', /<span>(муж\.|жен\.|пол не указан)<\/span>/],
+    ['возраст', /<span>возраст: /],
+    ['группа', /<span>группа: /],
+  ]) assert(re.test(first), `в пластине нет колонки «${label}»`);
+  // Выгрузки не должны зависеть от витрины — состав тот же, что был у таблицы.
+  const csv = await http('/rating.csv');
+  eq(csv.status, 200, 'CSV после смены витрины');
+  assert(csv.text.split('\r\n')[0].includes('Возрастная группа'), 'в CSV пропала колонка группы');
+  eq((await http('/rating/print')).status, 200, 'печатная версия рейтинга');
+  return `пластин ${plates}, в строке пять колонок и три в справке, CSV и печать не тронуты`;
 });
 
 await check('CSV-экспорт с корректными заголовками', async () => {
@@ -1117,11 +1147,11 @@ section('11. Журнал согласий и публикуемость (152-Ф
 
 const journal = await import('./server/lib/consent-journal.mjs');
 const { LEGAL_VERSION } = await import('./server/lib/legal.mjs');
-// Имена игроков в таблице рейтинга, В ПОРЯДКЕ строк.
-// Имя в строке рейтинга — ссылкой на профиль (/player/:id) либо текстом
-// («Игрок удалён»): снимаем содержимое ячейки без тегов.
+// Имена игроков в рейтинге, В ПОРЯДКЕ строк. С 08.09.2026 витрина /rating — пластины,
+// а не таблица: имя лежит в .rplate__name ссылкой на профиль (/player/:id) либо текстом
+// («Игрок удалён») — снимаем содержимое без тегов.
 const rowNames = (html) =>
-  [...html.matchAll(/<td class="player[^"]*">(.*?)<\/td>/gs)].map((m) => m[1].replace(/<[^>]+>/g, '').trim());
+  [...html.matchAll(/<span class="rplate__name">(.*?)<\/span>/gs)].map((m) => m[1].replace(/<[^>]+>/g, '').trim());
 
 await check('регистрация пишет ОДНУ запись (обработка); распространение — только фото (модель РТТ)', async () => {
   const id = Number(
@@ -5244,7 +5274,7 @@ await check('§8.4 игрок стоит во всех подходящих во
   const y14 = await http('/rating?slice=y14');
   const names = rowNames(y14.text);
   eq(names.length, 2, 'в срезе «14 лет» должно быть двое');
-  assert(/<td class="rank">1 /.test(y14.text) || y14.text.includes('<td class="rank">1<'), 'место внутри среза не с единицы');
+  assert(/<span class="rplate__place">1[ <]/.test(y14.text), 'место внутри среза не с единицы');
   assert(y14.text.includes('срез: 14 лет'), 'подпись среза');
   // Парный разряд — своя таблица и фильтр.
   const dbl = await http('/rating?discipline=double');
@@ -5561,6 +5591,25 @@ try {
     return `корпус наклонился (${before.transform.slice(0, 12)}… → ${after.transform.slice(0, 12)}…), третья папка поднялась на ${lift} px`;
   });
 
+  await check('рейтинг: пластина поднимается и раскрывает справку НАВЕДЕНИЕМ', async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(inst.base + '/rating', { waitUntil: 'networkidle' });
+    const read = () => page.evaluate(() => {
+      const p = document.querySelector('.rplates--full .rplate');
+      const info = p.querySelector('.rplate__info');
+      return { top: Math.round(p.getBoundingClientRect().top), infoH: Math.round(info.getBoundingClientRect().height) };
+    });
+    const before = await read();
+    await page.locator('.rplates--full .rplate').first().hover();
+    await page.waitForTimeout(700); // подъём .32s + раскрытие справки .34s
+    const after = await read();
+    await page.close();
+    const lift = before.top - after.top;
+    assert(lift >= 8, `пластина не поднялась при наведении: ${lift} px`);
+    assert(after.infoH > before.infoH + 20, `справка не раскрылась: ${before.infoH} → ${after.infoH} px`);
+    return `подъём ${lift} px, справка раскрылась с ${before.infoH} до ${after.infoH} px`;
+  });
+
   await check('шрифты грузятся ЛОКАЛЬНО (нет обращений к Google)', async () => {
     const page = await browser.newPage();
     const external = [];
@@ -5757,14 +5806,17 @@ try {
     const newsOneColumn = await page.evaluate(
       () => getComputedStyle(document.querySelector('.news-grid')).gridTemplateColumns.split(' ').length === 1,
     );
-    // Таблица с прокруткой живёт на /rating: топ-10 на главной с 07.09.2026 —
-    // пластины, а не таблица, и горизонтально не скроллится по замыслу.
+    // ТАБЛИЦЫ НА /rating БОЛЬШЕ НЕТ (08.09.2026): там пластины, как в топе главной,
+    // и горизонтально они не скроллятся по замыслу — колонки сворачиваются, а
+    // пол/возраст/группа лежат в справке, раскрытой на телефоне сразу.
     const rating = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await rating.goto(inst.base + '/rating', { waitUntil: 'networkidle' });
-    const tableScrolls = await rating.evaluate(() => {
-      const box = document.querySelector('.table-scroll');
-      if (!box) return 'таблицы рейтинга нет на странице';
-      return getComputedStyle(box).overflowX === 'auto' && box.scrollWidth > box.clientWidth;
+    const ratingPlates = await rating.evaluate(() => {
+      if (document.querySelector('.table-scroll')) return 'на /rating осталась таблица с прокруткой';
+      const info = document.querySelector('.rplates--full .rplate__info');
+      if (!info) return 'нет пластин на /rating';
+      const cs = getComputedStyle(info);
+      return cs.position === 'static' && cs.opacity === '1';
     });
     const ratingNoHScroll = await rating.evaluate(
       () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
@@ -5787,10 +5839,10 @@ try {
     assert(menuOpen, 'меню не открылось по бургеру');
     assert(heroOneColumn, 'hero не свернулся в одну колонку');
     assert(newsOneColumn, 'новости не свернулись в одну колонку');
-    eq(tableScrolls, true, `таблица рейтинга не скроллится горизонтально: ${tableScrolls}`);
+    eq(ratingPlates, true, `пластины рейтинга на телефоне: ${ratingPlates}`);
     assert(platesOpen === true || platesOpen === 'нет пластин', `справка в пластине должна быть раскрыта на телефоне: ${platesOpen}`);
     assert(noHScroll && ratingNoHScroll, 'страница уезжает вбок по горизонтали');
-    return '390px: бургер работает, hero и новости в одну колонку, таблица рейтинга скроллится, справка в пластинах раскрыта, страницы не уезжают вбок';
+    return '390px: бургер работает, hero и новости в одну колонку, рейтинг пластинами без горизонтальной прокрутки, справка в пластинах раскрыта, страницы не уезжают вбок';
   });
 
   await check('новые экраны кабинета: адаптив и доступность за логином', async () => {
@@ -5875,16 +5927,16 @@ try {
     await page.goto(inst.base + '/rating', { waitUntil: 'networkidle' });
     await page.waitForTimeout(400);
     const asText = await page.evaluate(() => {
-      const cells = [...document.querySelectorAll('td.player')];
+      const cells = [...document.querySelectorAll('.rplate__name')];
       const hit = cells.find((c) => c.textContent.includes('alert(1)'));
       return hit ? { text: hit.textContent.trim(), scripts: hit.querySelectorAll('script').length } : null;
     });
     await page.close();
     assert(!alerted, 'сработал alert — XSS выполнился');
-    assert(asText, 'ячейка с «злым» именем не найдена');
-    eq(asText.scripts, 0, 'внутри ячейки оказался тег script');
-    eq(asText.text, '<script>alert(1)</script>', 'текст в ячейке не совпал');
-    return `в ячейке текст «${asText.text}», тегов script 0, alert не сработал`;
+    assert(asText, 'пластина со «злым» именем не найдена');
+    eq(asText.scripts, 0, 'внутри пластины оказался тег script');
+    eq(asText.text, '<script>alert(1)</script>', 'текст в пластине не совпал');
+    return `в пластине текст «${asText.text}», тегов script 0, alert не сработал`;
   });
 
   await check('профиль: фото грузится под CSP, «злое» имя в заголовке и ссылках — текст, alert не срабатывает', async () => {

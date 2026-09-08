@@ -373,6 +373,9 @@ tbody tr:hover{background:var(--surface-2);}
 .rplate::before{content:''; position:absolute; left:0; top:0; bottom:0; width:4px; border-radius:.65rem 0 0 .65rem; background:var(--primary); opacity:0; transition:opacity .26s ease;}
 .rplate:hover::before, .rplate:focus-visible::before, .rplate:focus-within::before{opacity:1;}
 .rplate__row{padding:.85rem 1.25rem;}
+/* РЕЙТИНГ ЦЕЛИКОМ (/rating): те же пластины, но в возрастном срезе место идёт
+   с местом в общей таблице в скобках — 56px под это мало. */
+.rplates--full .rplates__head, .rplates--full .rplate__row{grid-template-columns:5.5rem 1fr 9rem 5rem 6rem;}
 .rplate__place{font-family:'Manrope',sans-serif; font-weight:600; color:var(--muted);}
 .rplate__name{font-weight:500; min-width:0; overflow-wrap:anywhere;}
 .rplate__city{color:var(--muted); font-size:.9rem;}
@@ -559,6 +562,8 @@ tbody tr:hover{background:var(--surface-2);}
      наводить нечем, а прятать данные за жестом нельзя. */
   .rplates__head{display:none;}
   .rplates__head, .rplate__row{grid-template-columns:2.2rem 1fr 4.5rem;}
+  /* Специфичность правила --full выше, поэтому мобильные колонки задаём и ему явно. */
+  .rplates--full .rplates__head, .rplates--full .rplate__row{grid-template-columns:2.2rem 1fr 4.5rem;}
   .rplate__city, .rplate__row .chg{display:none;}
   .rplate{transition:none;}
   .rplate:hover, .rplate:focus-within{transform:none; box-shadow:inset 0 1px 0 var(--partner-inset), inset 0 -2px 0 var(--border);}

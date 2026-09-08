@@ -87,31 +87,47 @@
       <% if (players.length === 0) { %>
         <div class="panel notice">По заданным фильтрам игроков не найдено.</div>
       <% } else { %>
-        <div class="table-scroll">
-          <table class="rating-table">
-            <thead><tr><th>Место</th><th>Игрок</th><th>Город</th><th>Пол</th><th>Возраст</th><th>Группа</th><th>Очки</th><th>Изменение</th></tr></thead>
-            <tbody>
-              <% players.forEach(function (p) { %>
-                <tr>
-                  <td class="rank"><%= p.rank %><% if (p.overallRank && p.overallRank !== p.rank) { %> <span class="muted">(<%= p.overallRank %>)</span><% } %></td>
-                  <%
-                  /* ЭКРАНИРОВАНИЕ: вывод данных из БД — только экранирующим тегом,
-                     никогда «сырым». Игрок с именем <script>alert(1)</script>
-                     покажется ТЕКСТОМ, скрипт не выполнится.
-                     Строка ведёт на публичный профиль /player/:id (как у РТТ);
-                     обезличенный по ст. 21 — без ссылки. */
-                  %>
-                  <td class="player<%= p.anonymized ? ' player--anonymized' : '' %>"><% if (p.anonymized) { %><%= p.playerName %><% } else { %><a href="/player/<%= p.playerId %>"><%= p.playerName %></a><% } %></td>
-                  <td><%= p.city || '—' %></td>
-                  <td><%= sexRu[p.sex] || p.sex || '—' %></td>
-                  <td><%= p.ageLabel %></td>
-                  <td><%= p.ageGroup || '—' %></td>
-                  <td class="pts"><%= p.ratingPoints %></td>
-                  <td class="chg chg--<%= p.change.kind %>"><%= p.change.label %></td>
-                </tr>
-              <% }); %>
-            </tbody>
-          </table>
+        <%
+        /* ПЛАСТИНЫ ВМЕСТО ТАБЛИЦЫ (08.09.2026): та же конструкция, что в топе главной,
+           но строк здесь полсотни и колонок восемь. В самой пластине — пять, которые
+           читаются на бегу (место, игрок, город, очки, изменение); пол, возраст, группа
+           и зачёт уходят в справку, что раскрывается наведением и фокусом. Ничего из
+           колонок таблицы не потеряно, а выгрузки CSV/XLSX/печать не тронуты.
+           ЭКРАНИРОВАНИЕ: имя из БД — только экранирующим тегом; игрок с именем
+           <script>alert(1)</script> покажется ТЕКСТОМ. Обезличенный по ст. 21 — без ссылки. */
+        const best = (p) => {
+          const list = Array.isArray(p.counted) ? p.counted : [];
+          if (!list.length) return null;
+          return list.reduce((a, b) => (b.place < a.place ? b : a), list[0]);
+        };
+        const placeRu = (n) => (n === 1 ? 'победа' : n === 2 ? 'финал' : n === 3 || n === 4 ? 'полуфинал' : `${n} место`);
+        %>
+        <div class="rplates rplates--full">
+          <div class="rplates__head" aria-hidden="true">
+            <span>Место</span><span>Игрок</span><span>Город</span><span>Очки</span><span>Изменение</span>
+          </div>
+          <ol class="rplates__list">
+            <% players.forEach(function (p) { const b = best(p); %>
+              <li class="rplate<%= p.anonymized ? ' rplate--anonymized' : '' %>" tabindex="0">
+                <div class="rplate__row">
+                  <span class="rplate__place"><%= p.rank %><% if (p.overallRank && p.overallRank !== p.rank) { %> <span class="muted">(<%= p.overallRank %>)</span><% } %></span>
+                  <span class="rplate__name"><% if (p.anonymized) { %><%= p.playerName %><% } else { %><a href="/player/<%= p.playerId %>"><%= p.playerName %></a><% } %></span>
+                  <span class="rplate__city"><%= p.city || '—' %></span>
+                  <span class="rplate__pts"><%= p.ratingPoints %></span>
+                  <span class="chg chg--<%= p.change.kind %>"><%= p.change.label %></span>
+                </div>
+                <div class="rplate__info">
+                  <div class="rplate__chips">
+                    <% if (b) { %><span>лучший результат: <%= placeRu(b.place) %> · <%= b.name %></span><% } %>
+                    <span><%= sexRu[p.sex] || p.sex || 'пол не указан' %></span>
+                    <span>возраст: <%= p.ageLabel %></span>
+                    <span>группа: <%= p.ageGroup || '—' %></span>
+                    <% if (Array.isArray(p.counted) && p.counted.length) { %><span>в зачёте турниров: <%= p.counted.length %><%= p.totalInWindow && p.totalInWindow > p.counted.length ? ' из ' + p.totalInWindow : '' %></span><% } %>
+                  </div>
+                </div>
+              </li>
+            <% }); %>
+          </ol>
         </div>
       <% } %>
 
