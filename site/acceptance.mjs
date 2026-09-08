@@ -2643,6 +2643,22 @@ await check('импорт турнира из текста: сетка с bye/о
   return 'сетка 8 с bye, отказом и матчем за 3-е, группа, пары → черновик; 15 игроков, 11 матчей, места 1/2/3/4/5 и пар; ошибка — без записи';
 });
 
+await check('микст подписан на витрине турнира отдельно, а не как одиночный разряд', async () => {
+  // Колонка «Разряд» брала только 'double', и микст показывался «одиночный» — из-за
+  // этого при внешней сверке рейтинга микстовые места двоились с одиночными.
+  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, city, is_published) VALUES ('Микст-подпись', '2026-08-20', 'B', 'Ярцево', 1)").run().lastInsertRowid);
+  const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex, is_public) VALUES ('Микстов Тест', 'Ярцево', 'M', 1)").run().lastInsertRowid);
+  const ins = db.prepare('INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
+  ins.run(tid, pid, 1, 'single'); ins.run(tid, pid, 2, 'double'); ins.run(tid, pid, 3, 'mixed');
+  const page = (await http(`/tournaments/${tid}`)).text;
+  const table = (page.match(/Итоговые места участников[\s\S]*?<\/table>/) || [''])[0];
+  const kinds = (table.match(/<td>(одиночный|парный|микст)<\/td>/g) || []).map((x) => x.replace(/<\/?td>/g, ''));
+  eq(kinds.sort().join(','), 'микст,одиночный,парный', `разряды в таблице мест: ${kinds.join(',')}`);
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
+  db.prepare('DELETE FROM players WHERE id = ?').run(pid);
+  return 'три записи одного игрока — одиночный, парный и микст — подписаны каждая своим разрядом';
+});
+
 await check('категория C: принимается формой, коэффициент ×0,5 в движке, показана в правилах на витрине', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const _csrf = tokenFrom((await http('/admin/tournaments', { jar })).text);
