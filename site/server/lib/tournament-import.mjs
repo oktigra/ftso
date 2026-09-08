@@ -129,7 +129,35 @@ export function importTournament(db, text, { userId = null } = {}) {
     if (idm) return Number(idm[1]);
     if (found.length === 1) { seen.set(normalizeName(found[0].full_name), found[0].id); return found[0].id; }
     if (isShort) report.warnings.push(`«${name}»: заведён без имени — дозаполните в «Игроках»`);
-    const id = Number(db.prepare('INSERT INTO players (full_name, city, sex) VALUES (?, ?, ?)').run(name, t.city || 'Смоленская область', sex || 'M').lastInsertRowid);
+    // ВОЗМОЖНЫЙ ДУБЛЬ: в базе есть «Фамилия Имя Отчество», а в протоколе — «Фамилия Имя».
+    // Точное сравнение их не связывает, и появляется вторая карточка того же человека.
+    // Молча склеивать нельзя (тёзки), поэтому предупреждаем и показываем номер.
+    const prefix = db
+      .prepare('SELECT id, full_name FROM players WHERE anonymized_at IS NULL')
+      .all()
+      .filter((p) => {
+        const n = normalizeName(p.full_name);
+        return n !== key && (n.startsWith(`${key} `) || key.startsWith(`${n} `));
+      });
+    if (prefix.length) {
+      report.warnings.push(
+        `«${name}»: возможно, это уже заведённый игрок ${prefix.map((p) => `#${p.id} ${p.full_name}`).join(', ')} — сверьте и объедините вручную`,
+      );
+    }
+    // ПОЛ В МИКСТЕ. Раздел микста помечен «пол: X», и раньше такой игрок молча
+    // становился мужчиной (sex || 'M'). Пробуем определить по окончанию фамилии —
+    // для русских фамилий это надёжно, — а когда не выходит, предупреждаем.
+    let useSex = sex;
+    if (!useSex || useSex === 'X') {
+      const surname = normalizeName(name).split(' ')[0] || '';
+      if (/(ова|ева|ёва|ина|ына|ская|цкая|ая)$/.test(surname)) useSex = 'F';
+      else if (/(ов|ев|ёв|ин|ын|ский|цкий|ый|ий|ко|ук|юк|ич)$/.test(surname)) useSex = 'M';
+      else {
+        useSex = 'M';
+        report.warnings.push(`«${name}»: пол не определяется по фамилии, записан «мужской» — проверьте в «Игроках»`);
+      }
+    }
+    const id = Number(db.prepare('INSERT INTO players (full_name, city, sex) VALUES (?, ?, ?)').run(name, t.city || 'Смоленская область', useSex).lastInsertRowid);
     report.players_created.push({ id, name });
     seen.set(key, id);
     return id;
@@ -139,7 +167,9 @@ export function importTournament(db, text, { userId = null } = {}) {
       .run(t.name, t.start_date, t.end_date, t.category, t.city || null, /первенств|чемпионат/i.test(t.name) ? 'championship' : 'other', t.venue || null, t.organizer || null, t.judge ? `Главный судья: ${t.judge}` : (t.organizer_contact || null)).lastInsertRowid);
     for (const s of t.sections) {
       const sec = { title: s.title, type: s.type, matches: 0, places: 0 };
-      const sex = s.sex === 'F' ? 'F' : 'M';
+      // Пол раздела: «X» (микст) НЕ схлопываем в мужской — ниже findOrCreate
+      // определит его по фамилии каждого игрока отдельно.
+      const sex = s.sex === 'F' ? 'F' : s.sex === 'X' ? 'X' : 'M';
       if (s.type === 'group') {
         const gid = Number(db.prepare('INSERT INTO tournament_groups (tournament_id, name, kind) VALUES (?, ?, ?)').run(tid, s.title.slice(0, 40), 'single').lastInsertRowid);
         const members = new Map();

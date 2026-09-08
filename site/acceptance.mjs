@@ -2643,6 +2643,28 @@ await check('импорт турнира из текста: сетка с bye/о
   return 'сетка 8 с bye, отказом и матчем за 3-е, группа, пары → черновик; 15 игроков, 11 матчей, места 1/2/3/4/5 и пар; ошибка — без записи';
 });
 
+await check('импорт: пол в миксте по фамилии, а не «мужской» по умолчанию; возможный дубль — предупреждение', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/tournaments/import', { jar })).text);
+  // В базе уже есть игрок с отчеством — импорт по «Фамилия Имя» не должен молча
+  // заводить второго, а обязан предупредить.
+  const oldId = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Дублёв Пётр Иванович', 'Смоленск', 'M')").run().lastInsertRowid);
+  const text = ['Турнир: Микст-пол', 'Даты: 2026-08-10', 'Город: Ярцево | Категория: B',
+    'Пары: Микст | пол: X', 'Итог: 1 Миксурова/Миксуров, 2 Дублёв Пётр/Миксберг'].join('\n');
+  const ok = await http('/admin/tournaments/import', { method: 'POST', form: { _csrf, text }, jar });
+  eq(ok.status, 200, 'импорт микста');
+  const sexOf = (n) => (db.prepare('SELECT sex FROM players WHERE full_name = ?').get(n) || {}).sex;
+  eq(sexOf('Миксурова'), 'F', 'женская фамилия в миксте не должна становиться мужской');
+  eq(sexOf('Миксуров'), 'M', 'мужская фамилия в миксте');
+  assert(/пол не определяется по фамилии/.test(ok.text), 'нет предупреждения о неопределимом поле');
+  assert(new RegExp(`#${oldId} Дублёв Пётр Иванович`).test(ok.text), 'нет предупреждения о возможном дубле игрока с отчеством');
+  const tid = db.prepare("SELECT id FROM tournaments WHERE name = 'Микст-пол'").get().id;
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
+  db.prepare("DELETE FROM players WHERE full_name LIKE 'Микс%' OR full_name LIKE 'Дублёв%'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'Миксурова → F, Миксуров → M, неопределимая фамилия → предупреждение, «Фамилия Имя» при наличии «Фамилия Имя Отчество» → предупреждение о дубле';
+});
+
 await check('микст подписан на витрине турнира отдельно, а не как одиночный разряд', async () => {
   // Колонка «Разряд» брала только 'double', и микст показывался «одиночный» — из-за
   // этого при внешней сверке рейтинга микстовые места двоились с одиночными.
