@@ -36,5 +36,27 @@ fi
 
 nginx -t || { echo "СТОП: nginx -t недоволен — верни файл из $BAKDIR и сообщи в чат"; exit 1; }
 systemctl reload nginx || { echo "СТОП: reload не прошёл"; exit 1; }
+
+# Приложение должно знать тот же потолок: форма галереи печатает его в подсказке и
+# не даёт отправить пачку крупнее. Иначе секретарь упирается в сырую страницу 413.
+ENV_FILE=${ENV_FILE:-/var/www/ftso/site/.env}
+MB=${LIMIT%m}
+if [ -f "$ENV_FILE" ] && [ -n "$MB" ] && [ "$MB" -eq "$MB" ] 2>/dev/null; then
+  # Запас 4 МБ: nginx считает всё тело, а в нём ещё границы и поля формы.
+  APP_MB=$(( MB > 4 ? MB - 4 : MB ))
+  if grep -qE "^UPLOAD_MAX_MB=" "$ENV_FILE"; then
+    sed -i -E "s/^UPLOAD_MAX_MB=.*/UPLOAD_MAX_MB=$APP_MB/" "$ENV_FILE"
+  else
+    printf 'UPLOAD_MAX_MB=%s\n' "$APP_MB" >> "$ENV_FILE"
+  fi
+  echo "в $ENV_FILE: UPLOAD_MAX_MB=$APP_MB"
+  if [ "${RESTART_APP:-1}" = "1" ]; then
+    runuser -u ftso -- env HOME=/home/ftso PM2_HOME=/home/ftso/.pm2 bash -lc 'pm2 restart all' >/dev/null 2>&1 \
+      && echo "приложение перезапущено (pm2)" || echo "ВНИМАНИЕ: pm2 restart не прошёл — подсказка в форме останется старой"
+  fi
+else
+  echo "ВНИМАНИЕ: $ENV_FILE не найден — UPLOAD_MAX_MB не записан, форма продолжит обещать прежний потолок"
+fi
+
 echo "готово; проверка:"
 grep -nE "client_max_body_size" "$FILE"

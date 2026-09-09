@@ -48,10 +48,11 @@
           <% tournaments.forEach(function (t) { %><option value="<%= t.id %>"><%= t.name %><%= t.end_date ? " (" + t.end_date + ")" : "" %></option><% }); %>
         </select>
       </div>
-      <div class="field"><label for="g-file">Изображение</label><input id="g-file" name="file" type="file" multiple required aria-describedby="g-hint">
+      <div class="field"><label for="g-file">Изображение</label><input id="g-file" name="file" type="file" multiple required aria-describedby="g-hint" accept="image/*" data-max-mb="<%= uploadMaxMb %>">
+        <p class="field-error" data-size-warning hidden></p>
         <p class="field-hint" id="g-hint">
           Можно выбрать сразу несколько кадров — до десяти за раз, они добавятся одной пачкой
-          (суммарно до 60 МБ: столько пропускает сервер).
+          (суммарно до <%= uploadMaxMb %> МБ: столько пропускает сервер).
           Только репортажная съёмка соревнований: общий план, ход игры, награждение — по
           подп. 2 п. 1 ст. 152.1 ГК РФ согласие изображённых не требуется. Снимок, где
           конкретный человек — основной объект (портрет крупным планом), требует его согласия:

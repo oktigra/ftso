@@ -423,4 +423,35 @@
       window.location.href = row.getAttribute('data-href');
     });
   });
+
+  // ПАЧКА ФОТО: сервер режет тело запроса на своём пороге, и делает это ДО нашего кода —
+  // пользователь видел бы сырую страницу 413 без объяснений. Считаем сумму заранее.
+  Array.prototype.forEach.call(document.querySelectorAll('input[type="file"][data-max-mb]'), function (input) {
+    var limit = Number(input.getAttribute('data-max-mb')) || 0;
+    if (!limit) return;
+    var form = input.form;
+    var note = form ? form.querySelector('[data-size-warning]') : null;
+    var tooBig = false;
+    var check = function () {
+      var total = 0;
+      Array.prototype.forEach.call(input.files || [], function (f) { total += f.size; });
+      var mb = total / (1024 * 1024);
+      tooBig = mb > limit;
+      if (!note) return;
+      if (tooBig) {
+        note.textContent = 'Выбрано ' + mb.toFixed(1) + ' МБ, сервер примет до ' + limit + ' МБ. Загрузите частями.';
+        note.hidden = false;
+      } else {
+        note.hidden = true;
+        note.textContent = '';
+      }
+    };
+    input.addEventListener('change', check);
+    if (form) {
+      form.addEventListener('submit', function (e) {
+        check();
+        if (tooBig) { e.preventDefault(); if (note) note.scrollIntoView({ block: 'center' }); }
+      });
+    }
+  });
 })();
