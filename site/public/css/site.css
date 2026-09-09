@@ -317,7 +317,20 @@ tbody tr:hover{background:var(--surface-2);}
    сетка, заявка, регламент. Каждая папка — отдельная ссылка, поэтому корпус НЕ
    ссылка целиком: вложенные ссылки в разметке недопустимы. */
 .tdrawers{display:grid; grid-template-columns:repeat(2,1fr); gap:1.1rem;}
-.tdrawer{perspective:1100px; perspective-origin:62% 6%; padding:124px 6px 24px;}
+/* КАЛЕНДАРЬ: тот же ящик, но карточек десятки — третья колонка от 1200px и список
+   без маркеров (на /tournaments это ul/li, чтобы страница осталась перечнем). */
+/* Верхний отступ ящика (124px) держит место для выезжающих папок; на календаре
+   над сеткой стоят фильтры, и без подтяжки между ними зияет пустая полоса. */
+.tdrawers--calendar{list-style:none; margin:-56px 0 0; padding:0;}
+/* Соседи в ряду разной высоты выглядят как сбой сетки — тянем корпус и фасад на всю ячейку. */
+.tdrawers--calendar .tdrawer{display:flex;}
+.tdrawers--calendar .tdrawer__box{flex:1 1 auto; display:flex; flex-direction:column;}
+.tdrawers--calendar .tdrawer__face{flex:1 1 auto;}
+@media (min-width:1200px){ .tdrawers--calendar{grid-template-columns:repeat(3,1fr);} }
+/* Наклонённый ящик выезжает на 92px к зрителю и заходит на соседа: без подъёма
+   по слоям сосед перекрывает его правым краем. */
+.tdrawer{position:relative; perspective:1100px; perspective-origin:62% 6%; padding:124px 6px 24px;}
+.tdrawer:hover, .tdrawer:focus-within{z-index:5;}
 .tdrawer__box{position:relative; cursor:pointer; transform-style:preserve-3d; transform:rotateX(0deg) rotateY(0deg) translateZ(0px); transition:transform .56s cubic-bezier(.16,.84,.24,1);}
 .tdrawer__box::before, .tdrawer__box::after{content:''; position:absolute; inset:0; border-radius:1.25rem; background:var(--surface-2);}
 .tdrawer__box::before{transform:translateZ(-19px);}
@@ -533,6 +546,8 @@ tbody tr:hover{background:var(--surface-2);}
   .photo__caption{position:static; opacity:1; transform:none; padding:.6rem .9rem; background:color-mix(in srgb, var(--surface) 88%, transparent); color:var(--text);}
   /* Ящик турнира: перспектива снимается, папки становятся тремя ссылками под карточкой. */
   .tdrawers{grid-template-columns:1fr; gap:.9rem;}
+  /* Подтяжка календаря компенсировала место под выезд папок; здесь его нет — иначе сетка наедет на фильтры. */
+  .tdrawers--calendar{margin-top:0;}
   .tdrawer{perspective:none; padding:0;}
   .tdrawer__box{transform:none; display:flex; flex-direction:column;}
   .tdrawer__box:hover, .tdrawer__box:focus-within{transform:none;}

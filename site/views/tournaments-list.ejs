@@ -81,27 +81,42 @@
         </div>
       <% } %>
     <% } else { %>
-      <div class="table-scroll">
-        <table>
-          <caption class="visually-hidden">Список турниров Федерации</caption>
-          <thead><tr><th scope="col">Даты</th><th scope="col">Турнир</th><th scope="col">Город</th><th scope="col">Тип</th><th scope="col">Возраст</th><th scope="col">Пол</th><th scope="col">Кат.</th><th scope="col">Статус</th><th scope="col">Участников</th></tr></thead>
-          <tbody>
-            <% tournaments.forEach(function (t) { %>
-              <tr>
-                <td class="t-date"><%= t.start_date ? t.start_date + ' — ' : '' %><%= t.end_date %></td>
-                <td class="t-name"><a href="/tournaments/<%= t.id %>"><%= t.name %></a></td>
-                <td><%= t.city || '—' %></td>
-                <td><%= kindRu[t.kind] || '—' %></td>
-                <td><%= t.age_group || '—' %></td>
-                <td><%= t.sex ? ({ M: 'муж.', F: 'жен.', X: 'смеш.' })[t.sex] : '—' %></td>
-                <td><span class="badge badge--<%= t.category.toLowerCase() %>"><%= t.category %></span></td>
-                <td><span class="tag tag--<%= t.status %>"><%= statusRu[t.status] %></span></td>
-                <td><%= t.participants %></td>
-              </tr>
-            <% }); %>
-          </tbody>
-        </table>
-      </div>
+      <%
+      /* ЯЩИКИ ТУРНИРОВ (08.09.2026): та же конструкция, что на главной, но карточек
+         тут десятки — своя сетка на три колонки (--calendar) и год в дате, потому что
+         календарь копится сезонами. Все девять колонок прежней таблицы на месте:
+         даты, название, город, тип, возраст, пол, категория, статус, участники.
+         Корпус не ссылка целиком — ссылками служат фасад и три папки, иначе получились
+         бы вложенные ссылки; с клавиатуры ящик раскрывается табом (:focus-within). */
+      const year = (d) => (d ? ' ' + d.slice(0, 4) : '');
+      %>
+      <ul class="tdrawers tdrawers--calendar">
+        <% tournaments.forEach(function (t) { %>
+          <li class="tdrawer">
+            <div class="tdrawer__box">
+              <div class="tdrawer__folders">
+                <a class="tdrawer__folder" href="/tournaments/<%= t.id %>#grid">Сетка</a>
+                <a class="tdrawer__folder" href="/tournament-request">Заявка</a>
+                <a class="tdrawer__folder" href="/documents">Регламент</a>
+              </div>
+              <a class="tdrawer__face" href="/tournaments/<%= t.id %>">
+                <div class="tdrawer__top">
+                  <span class="tdrawer__date"><%= dm(t.start_date || t.end_date) %><% if (t.start_date && t.start_date !== t.end_date) { %> — <%= dm(t.end_date) %><% } %><%= year(t.end_date || t.start_date) %></span>
+                  <span class="badge badge--<%= t.category.toLowerCase() %>">Кат. <%= t.category %></span>
+                </div>
+                <div class="tdrawer__name"><%= t.name %></div>
+                <div class="tdrawer__meta"><%= t.city || 'Смоленская область' %> · <%= kindRu[t.kind] || 'турнир' %><%= t.participants ? ' · участников: ' + t.participants : '' %></div>
+                <div class="tdrawer__tags">
+                  <span class="tag tag--<%= t.status %>"><%= statusRu[t.status] %></span>
+                  <% if (t.age_group) { %><span class="tag"><%= t.age_group %></span><% } %>
+                  <% if (t.sex) { %><span class="tag"><%= sexRu[t.sex] %></span><% } %>
+                </div>
+                <div class="tdrawer__handle" aria-hidden="true"></div>
+              </a>
+            </div>
+          </li>
+        <% }); %>
+      </ul>
     <% } %>
     <p class="table-foot"><a class="link-more" href="/tournament-request">Провести свой турнир <span aria-hidden="true">→</span></a></p>
   </div>
