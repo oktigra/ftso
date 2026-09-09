@@ -90,6 +90,12 @@ export function loadConfig({ requireSecrets = true } = {}) {
       // Каталог site/storage статикой не раздаётся, файл уходит только через
       // наш маршрут, который ставит attachment и проверяет права.
       dir: process.env.UPLOAD_DIR || resolve(ROOT, 'storage/uploads'),
+      // Сколько сервер реально пропустит в одном запросе. Режет ПРОКСИ, а не мы:
+      // без правки nginx это его дефолтный 1 МБ (замер на бою 09.09.2026 — 1048576
+      // проходит, 1100000 отдаёт 413 до приложения). deploy/set-upload-limit.sh
+      // поднимает лимит в nginx и вписывает сюда то же число, чтобы форма не обещала
+      // больше, чем пройдёт.
+      maxMb: Number(process.env.UPLOAD_MAX_MB || 1),
     },
     smtp: {
       host: process.env.SMTP_HOST || 'smtp.yandex.ru',

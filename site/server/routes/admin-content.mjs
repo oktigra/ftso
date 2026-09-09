@@ -559,6 +559,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       documents: federationDocuments(db),
       gallery: galleryItems(db),
       tournaments: db.prepare('SELECT id, name, end_date FROM tournaments ORDER BY end_date DESC, id DESC').all(),
+      uploadMaxMb: config.upload.maxMb,
     });
   });
 

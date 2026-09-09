@@ -6737,7 +6737,15 @@ await check('галерея: пачка кадров одной формой, н
   await http('/admin/library/gallery', { method: 'POST', jar, multipart: { fields: { _csrf, title: 'Перебор', tournament_id: String(t.id) }, files: many } });
   eq(db.prepare('SELECT COUNT(*) AS n FROM gallery_items').get().n, over, 'пачка сверх потолка всё-таки записалась');
   // Форма разрешает множественный выбор — иначе секретарь про пачку не узнает.
-  assert(/name="file" type="file" multiple/.test((await http('/admin/library', { jar })).text), 'в форме нет множественного выбора файлов');
+  const libPage = (await http('/admin/library', { jar })).text;
+  assert(/name="file" type="file" multiple/.test(libPage), 'в форме нет множественного выбора файлов');
+  // Потолок, который реально пропустит сервер: форма печатает его и отдаёт скрипту.
+  // Режет прокси ДО приложения, поэтому обещать больше нельзя — увидят сырую 413.
+  const shownLimit = libPage.match(/data-max-mb="(\d+)"/);
+  assert(shownLimit, 'в форме нет data-max-mb — клиентская проверка размера не включится');
+  eq(Number(shownLimit[1]), config.upload.maxMb, 'форма обещает не тот потолок, что знает приложение');
+  assert(libPage.includes(`суммарно до ${config.upload.maxMb} МБ`), 'в подсказке не назван потолок');
+  assert(/\[data-max-mb\]/.test(readFileSync(resolve(HERE, 'public/js/app.js'), 'utf8')), 'в app.js нет проверки суммарного размера');
   db.prepare("DELETE FROM gallery_items WHERE title LIKE 'Первенство ветеранов%'").run();
   db.prepare('DELETE FROM write_attempts').run();
   return 'три кадра одной формой с нумерацией подписей, EXIF снят с каждого, сбой в середине откатывает всю пачку, одиннадцатый файл не проходит';
@@ -7386,7 +7394,9 @@ await check('set-upload-limit.sh: поднимает лимит тела в ко
   // На стенде nginx нет — подменяем две последние команды заглушками, остальное как в бою.
   const stand = resolve(tmp, 'run.sh');
   writeFileSync(stand, readFileSync(SCRIPT, 'utf8').replace(/^nginx -t.*$/m, 'true').replace(/^systemctl reload nginx.*$/m, 'true').replace('nginx -t && exit 0', 'exit 0'));
-  const run = (limit) => spawnSync('bash', [stand], { encoding: 'utf8', env: { ...process.env, NGDIR: ngdir, BAKDIR: bak, LIMIT: limit } });
+  const envFile = resolve(tmp, 'env');
+  writeFileSync(envFile, 'PORT=3000\n');
+  const run = (limit) => spawnSync('bash', [stand], { encoding: 'utf8', env: { ...process.env, NGDIR: ngdir, BAKDIR: bak, LIMIT: limit, ENV_FILE: envFile, RESTART_APP: '0' } });
   const first = run('64m');
   eq(first.status, 0, `первый запуск упал: ${first.stdout}${first.stderr}`);
   assert(/client_max_body_size 64m;/.test(readFileSync(resolve(ngdir, 'ftso'), 'utf8')), 'лимит не вставлен');
@@ -7402,8 +7412,12 @@ await check('set-upload-limit.sh: поднимает лимит тела в ко
   assert(!/client_max_body_size/.test(readFileSync(resolve(ngdir, 'other'), 'utf8')), 'скрипт залез в чужой конфиг');
   // Бэкап рядом с конфигом = повторный запуск нашёл бы его вместо оригинала (ловил стенд).
   assert(!readdirSync(ngdir).some((f) => f.includes('.bak')), 'бэкап остался в каталоге конфигов');
+  // Приложение обязано знать тот же потолок, иначе форма обещает больше, чем пройдёт.
+  const envText = readFileSync(envFile, 'utf8');
+  assert(/^UPLOAD_MAX_MB=28$/m.test(envText), `в .env не записан потолок приложения: ${envText}`);
+  eq((envText.match(/UPLOAD_MAX_MB=/g) || []).length, 1, 'строк UPLOAD_MAX_MB стало больше одной');
   rmSync(tmp, { recursive: true, force: true });
-  return 'вставка, повтор без изменений, смена лимита, один бэкап вне каталога конфигов, чужой конфиг цел';
+  return 'вставка, повтор без изменений, смена лимита, один бэкап вне каталога, чужой конфиг цел, .env приложения синхронизирован';
 });
 
 await check('smtp-set.sh: пароль приложения в .env (пробелы сняты), SMTP_USER дописан; пустой/короткий/спецсимвол → код 1 без изменений', async () => {
