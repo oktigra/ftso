@@ -272,6 +272,17 @@ html[data-theme="warm"] .theme-menu__icon .i-warm{display:block;}
 .photo .ph-label{position:absolute; inset:0; display:grid; place-items:center; text-align:center;}
 .photo .ph-label span{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.8rem; color:var(--muted); background:color-mix(in srgb,var(--surface) 80%, transparent); padding:.5rem .9rem; border-radius:999px; border:1px solid var(--border);}
 .info-card{background:var(--surface); border:1px solid var(--border); border-radius:1.25rem; padding:1.1rem 1.25rem; box-shadow:var(--shadow-md); display:flex; align-items:center; gap:1rem; flex-wrap:wrap;}
+/* СПРАВОЧНИКИ (тренеры, судьи, корты, клубы): карточка вместо строки таблицы —
+   то же оформление, что у карточек главной, включая наведение fx-card. Ширина
+   колонки задана содержимым, а не числом: разделы разной плотности. */
+.dir-cards{list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr)); gap:1rem;}
+.dir-card{display:flex; flex-direction:column; gap:.6rem; padding:1.15rem 1.25rem 1.25rem; background:var(--surface); border:1px solid var(--border); border-radius:1.25rem; box-shadow:var(--shadow-md);}
+.dir-card__photo img{width:72px; height:72px; border-radius:.9rem; object-fit:cover; border:1px solid var(--border);}
+.dir-card__title{margin:0; font-family:'Manrope',sans-serif; font-size:1.15rem; font-weight:800; line-height:1.25; transition:color .3s ease;}
+.dir-card:hover .dir-card__title{color:var(--accent);}
+.dir-card__facts{display:grid; grid-template-columns:auto 1fr; gap:.35rem .8rem; margin:0;}
+.dir-card__facts dt{color:var(--muted); font-size:.85rem;}
+.dir-card__facts dd{margin:0; min-width:0; overflow-wrap:anywhere;}
 .info-card .ic-item{display:flex; flex-direction:column; gap:.15rem;}
 .info-card .ic-item small{font-size:.78rem; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; font-weight:600;}
 .info-card .ic-item b{font-family:'Manrope',sans-serif; font-size:1.05rem;}
@@ -373,6 +384,9 @@ tbody tr:hover{background:var(--surface-2);}
 .rplate::before{content:''; position:absolute; left:0; top:0; bottom:0; width:4px; border-radius:.65rem 0 0 .65rem; background:var(--primary); opacity:0; transition:opacity .26s ease;}
 .rplate:hover::before, .rplate:focus-visible::before, .rplate:focus-within::before{opacity:1;}
 .rplate__row{padding:.85rem 1.25rem;}
+/* РЕЙТИНГ ЦЕЛИКОМ (/rating): те же пластины, но в возрастном срезе место идёт
+   с местом в общей таблице в скобках — 56px под это мало. */
+.rplates--full .rplates__head, .rplates--full .rplate__row{grid-template-columns:5.5rem 1fr 9rem 5rem 6rem;}
 .rplate__place{font-family:'Manrope',sans-serif; font-weight:600; color:var(--muted);}
 .rplate__name{font-weight:500; min-width:0; overflow-wrap:anywhere;}
 .rplate__city{color:var(--muted); font-size:.9rem;}
@@ -559,6 +573,8 @@ tbody tr:hover{background:var(--surface-2);}
      наводить нечем, а прятать данные за жестом нельзя. */
   .rplates__head{display:none;}
   .rplates__head, .rplate__row{grid-template-columns:2.2rem 1fr 4.5rem;}
+  /* Специфичность правила --full выше, поэтому мобильные колонки задаём и ему явно. */
+  .rplates--full .rplates__head, .rplates--full .rplate__row{grid-template-columns:2.2rem 1fr 4.5rem;}
   .rplate__city, .rplate__row .chg{display:none;}
   .rplate{transition:none;}
   .rplate:hover, .rplate:focus-within{transform:none; box-shadow:inset 0 1px 0 var(--partner-inset), inset 0 -2px 0 var(--border);}
@@ -718,6 +734,15 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
   overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap; border:0;
 }
 .doc-list{margin:0; padding-left:1.35rem; display:flex; flex-direction:column; gap:.6rem;}
+/* ПЛИТКИ ДОКУМЕНТОВ: перечень остаётся списком, но пункт выглядит файлом —
+   ярлык формата, название, выходные данные; наведение как у остальных карточек. */
+.doc-list--tiles{list-style:none; padding-left:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,340px),1fr)); gap:.7rem;}
+.doc-item{display:flex; align-items:flex-start; gap:.85rem; padding:.85rem 1rem; border:1px solid var(--border); border-radius:.9rem; background:var(--surface); color:var(--text); text-decoration:none; transition:border-color .18s ease, background-color .18s ease, transform .18s ease;}
+.doc-item:hover{border-color:var(--primary); background:var(--surface-2); transform:translateY(-2px);}
+.doc-item__type{flex:0 0 auto; padding:.2rem .5rem; border-radius:.45rem; background:var(--accent-soft); color:var(--primary); font-family:'Manrope',sans-serif; font-size:.7rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase;}
+.doc-item__body{display:flex; flex-direction:column; gap:.2rem; min-width:0;}
+.doc-item__title{font-weight:600; overflow-wrap:anywhere;}
+.doc-item__meta{font-size:.85rem; color:var(--muted);}
 .doc-list li{padding-left:.15rem;}
 .news-card-title{font-size:1.15rem;}
 .news-card-title a{color:var(--text);}

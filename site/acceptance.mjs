@@ -955,8 +955,10 @@ await check('retention: хранятся последние 24 снимка', as
 
 await check('город и пол показываются и фильтруются', async () => {
   const page = await http('/rating');
-  assert(page.text.includes('<th>Город</th>') && page.text.includes('<th>Пол</th>'), 'нет колонок «Город» и «Пол»');
-  assert(page.text.includes('Смоленск'), 'нет города в таблице');
+  // С 08.09.2026 витрина — пластины: «Город» стоит шапкой пластин, «Пол» — в справке строки.
+  assert(page.text.includes('<span>Город</span>'), 'нет колонки «Город» в шапке пластин');
+  assert(/rplate__chips[\s\S]*?(муж\.|жен\.)/.test(page.text), 'пол не показан в справке пластины');
+  assert(page.text.includes('Смоленск'), 'нет города в рейтинге');
 
   const women = await http('/rating?sex=F');
   eq(women.status, 200, 'фильтр по полу');
@@ -970,6 +972,34 @@ await check('город и пол показываются и фильтруют
   const byAge = await http('/rating?age=' + encodeURIComponent('до 19'));
   assert(byAge.text.includes('Мария Лебедева'), 'фильтр по возрастной группе не сработал');
   return 'фильтры по полу, возрастной группе и поиск по фамилии работают';
+});
+
+await check('рейтинг: пластины вместо таблицы, все восемь колонок на месте, экспорт цел', async () => {
+  const page = await http('/rating');
+  const plates = (page.text.match(/<li class="rplate/g) || []).length;
+  const namesInPlates = (page.text.match(/<span class="rplate__name">/g) || []).length;
+  eq(plates, namesInPlates, 'пластин и имён в них разное количество');
+  assert(plates > 0, 'на /rating нет ни одной пластины');
+  assert(!/class="rating-table"/.test(page.text), 'на /rating осталась прежняя таблица');
+  assert(!/<div class="table-scroll">/.test(page.text), 'осталась обёртка таблицы с прокруткой');
+  // Восемь колонок прежней таблицы: пять в строке, три — в раскрывающейся справке.
+  const first = page.text.match(/<li class="rplate[\s\S]*?<\/li>/)[0];
+  for (const [label, re] of [
+    ['место', /rplate__place">\d/],
+    ['игрок', /rplate__name">/],
+    ['город', /rplate__city">/],
+    ['очки', /rplate__pts">\d/],
+    ['изменение', /class="chg chg--/],
+    ['пол', /<span>(муж\.|жен\.|пол не указан)<\/span>/],
+    ['возраст', /<span>возраст: /],
+    ['группа', /<span>группа: /],
+  ]) assert(re.test(first), `в пластине нет колонки «${label}»`);
+  // Выгрузки не должны зависеть от витрины — состав тот же, что был у таблицы.
+  const csv = await http('/rating.csv');
+  eq(csv.status, 200, 'CSV после смены витрины');
+  assert(csv.text.split('\r\n')[0].includes('Возрастная группа'), 'в CSV пропала колонка группы');
+  eq((await http('/rating/print')).status, 200, 'печатная версия рейтинга');
+  return `пластин ${plates}, в строке пять колонок и три в справке, CSV и печать не тронуты`;
 });
 
 await check('CSV-экспорт с корректными заголовками', async () => {
@@ -1117,11 +1147,11 @@ section('11. Журнал согласий и публикуемость (152-Ф
 
 const journal = await import('./server/lib/consent-journal.mjs');
 const { LEGAL_VERSION } = await import('./server/lib/legal.mjs');
-// Имена игроков в таблице рейтинга, В ПОРЯДКЕ строк.
-// Имя в строке рейтинга — ссылкой на профиль (/player/:id) либо текстом
-// («Игрок удалён»): снимаем содержимое ячейки без тегов.
+// Имена игроков в рейтинге, В ПОРЯДКЕ строк. С 08.09.2026 витрина /rating — пластины,
+// а не таблица: имя лежит в .rplate__name ссылкой на профиль (/player/:id) либо текстом
+// («Игрок удалён») — снимаем содержимое без тегов.
 const rowNames = (html) =>
-  [...html.matchAll(/<td class="player[^"]*">(.*?)<\/td>/gs)].map((m) => m[1].replace(/<[^>]+>/g, '').trim());
+  [...html.matchAll(/<span class="rplate__name">(.*?)<\/span>/gs)].map((m) => m[1].replace(/<[^>]+>/g, '').trim());
 
 await check('регистрация пишет ОДНУ запись (обработка); распространение — только фото (модель РТТ)', async () => {
   const id = Number(
@@ -4127,7 +4157,9 @@ await check('ТЗ 4.2/4.5/4.6: поиск по новостям; фильтры 
   eq((await add('courts', { name: 'Фильтров Корт Хард', city: 'Смоленск', address: 'ул. Кортовая, 1', surface: 'хард', courts_count: '4', season: 'круглый год' })).status, 302, 'корт 1');
   eq((await add('courts', { name: 'Фильтров Корт Грунт', city: 'Вязьма', address: 'ул. Грунтовая, 2', surface: 'грунт', map_url: 'https://yandex.ru/maps/?text=test' })).status, 302, 'корт 2');
   eq((await add('clubs', { name: 'Фильтров Клуб', city: 'Смоленск', address: 'пр. Клубный, 3' })).status, 302, 'клуб');
-  const rows = (t, prefix) => (t.match(new RegExp(prefix + '[^<]+', 'g')) || []).length;
+  // Справочник — карточки: имя записи стоит заголовком карточки. Прежний счёт ловил
+  // пробелы внутри ячейки таблицы и на карточке дал бы ноль.
+  const rows = (t, prefix) => (t.match(new RegExp('dir-card__title">' + prefix + '[^<]*<', 'g')) || []).length;
   // Тренеры: селекты город и клуб; фильтры работают.
   const c = await http('/coaches');
   assert(/name="city"/.test(c.text) && /name="club"/.test(c.text), 'у тренеров нет фильтров город/клуб');
@@ -4162,6 +4194,91 @@ await check('ТЗ 4.2/4.5/4.6: поиск по новостям; фильтры 
   db.prepare("DELETE FROM clubs WHERE name LIKE 'Фильтров %'").run();
   db.prepare('DELETE FROM write_attempts').run();
   return 'тренеры: город/клуб; корты: город/покрытие + кортов/сезонность + карта; клубы: город; новости: поиск по заголовку и тексту, черновики скрыты, % экранирован';
+});
+
+await check('справочники: карточки вместо таблицы, ни одно заполненное поле не потеряно', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/directories/courts', { jar })).text);
+  eq(
+    (await http('/admin/directories/courts', {
+      method: 'POST',
+      form: {
+        _csrf, name: 'Карточный Корт', city: 'Дорогобуж', address: 'ул. Карточная, 7', surface: 'ковёр',
+        courts_count: '3', season: 'зимний', club: 'Карточный клуб', contact: '+7 900 111-22-33',
+        hours: 'будни 9:00–21:00', prices: '700 ₽/ч', note: 'вход со двора',
+      },
+      jar,
+    })).status,
+    302,
+    'корт для витрины',
+  );
+  const page = await http('/courts');
+  assert(!/<table/.test(page.text), 'на /courts осталась таблица');
+  assert(/class="dir-cards"/.test(page.text), 'нет сетки карточек справочника');
+  const one = page.text.match(/<li class="dir-card[\s\S]*?Карточный Корт[\s\S]*?<\/li>/);
+  assert(one, 'карточки созданного корта нет на витрине');
+  const card = one[0];
+  // Каждое заполненное поле описания раздела обязано быть в карточке подписью и значением.
+  for (const [label, value] of [
+    ['Город', 'Дорогобуж'],
+    ['Адрес', 'ул. Карточная, 7'],
+    ['Покрытие', 'ковёр'],
+    ['Кортов', '3'],
+    ['Сезонность', 'зимний'],
+    ['Клуб / организация', 'Карточный клуб'],
+    ['Контакт', '+7 900 111-22-33'],
+    ['Режим работы', 'будни 9:00–21:00'],
+    ['Цены', '700 ₽/ч'],
+    ['Примечание', 'вход со двора'],
+  ]) {
+    assert(card.includes(`<dt>${label}</dt>`), `в карточке нет подписи «${label}»`);
+    assert(card.includes(value), `в карточке нет значения «${value}»`);
+  }
+  // Пустые поля не печатаются вовсе — в таблице на их месте стоял прочерк.
+  eq(
+    (await http('/admin/directories/clubs', { method: 'POST', form: { _csrf: tokenFrom((await http('/admin/directories/clubs', { jar })).text), name: 'Пустой Клуб', city: 'Ельня' }, jar })).status,
+    302,
+    'клуб с двумя полями',
+  );
+  const empty = (await http('/clubs')).text.match(/<li class="dir-card[\s\S]*?Пустой Клуб[\s\S]*?<\/li>/);
+  assert(empty, 'карточки пустого клуба нет');
+  assert(!/<dt>Сайт<\/dt>/.test(empty[0]) && !/—/.test(empty[0]), 'незаполненные поля печатаются в карточке');
+  // Один шаблон на четыре раздела — карточки должны прийти во все, где есть записи.
+  assert(/class="dir-cards"/.test((await http('/clubs')).text), 'у клубов не карточки');
+  db.prepare("DELETE FROM courts WHERE name = 'Карточный Корт'").run();
+  db.prepare("DELETE FROM clubs WHERE name = 'Пустой Клуб'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'корты и клубы — карточки, десять заполненных полей с подписями на месте, пустые поля не печатаются';
+});
+
+await check('пустые разделы приглашают, а не сообщают о пустоте', async () => {
+  // Эффект дизайн-чата «пустое состояние как приглашение» доехал только до главной,
+  // /news и /tournaments. Сторож: где раздел пуст, обязана быть рамка-приглашение
+  // с действием, а не сухая плашка. Фильтровые «ничего не найдено» — не приглашения.
+  const checks = [
+    ['/coaches', /class="dir-cards"/],
+    ['/referees', /class="dir-cards"/],
+    ['/courts', /class="dir-cards"/],
+    ['/clubs', /class="dir-cards"/],
+    ['/gallery', /class="gallery-grid"/],
+  ];
+  const seen = [];
+  for (const [path, hasContent] of checks) {
+    const page = await http(path);
+    eq(page.status, 200, `GET ${path}`);
+    if (hasContent.test(page.text)) { seen.push(`${path}: с содержимым`); continue; }
+    assert(/notice--invite/.test(page.text), `${path} пуст, но плашка не приглашение`);
+    assert(/class="btn btn--secondary btn--small"/.test(page.text), `${path}: в приглашении нет действия`);
+    seen.push(`${path}: приглашение`);
+  }
+  // Документы: регистрационные плитки есть всегда, приглашение — у второй половины.
+  const docs = await http('/documents');
+  assert(/class="doc-item"/.test(docs.text), 'документы не плитками');
+  assert(/Регистрационные документы/.test(docs.text), 'пропал блок регистрационных документов');
+  if (!/<h2>(?!Регистрационные)/.test(docs.text)) {
+    assert(/notice--invite/.test(docs.text), 'остальные документы пусты, но без приглашения');
+  }
+  return seen.join('; ');
 });
 
 await check('публичный файл отдаётся защищённым путём, документ с модерации — нет', async () => {
@@ -5244,7 +5361,7 @@ await check('§8.4 игрок стоит во всех подходящих во
   const y14 = await http('/rating?slice=y14');
   const names = rowNames(y14.text);
   eq(names.length, 2, 'в срезе «14 лет» должно быть двое');
-  assert(/<td class="rank">1 /.test(y14.text) || y14.text.includes('<td class="rank">1<'), 'место внутри среза не с единицы');
+  assert(/<span class="rplate__place">1[ <]/.test(y14.text), 'место внутри среза не с единицы');
   assert(y14.text.includes('срез: 14 лет'), 'подпись среза');
   // Парный разряд — своя таблица и фильтр.
   const dbl = await http('/rating?discipline=double');
@@ -5508,6 +5625,15 @@ try {
       docWidth: `${document.documentElement.scrollWidth} при ${document.documentElement.clientWidth}`,
     })));
     await sticky.close();
+    // Справочники с 08.09.2026 — карточки, таблицы на /courts больше нет. Сторож
+    // «липкий заголовок не вернулся» переезжает на страницу, где таблица осталась.
+    const tablePage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await tablePage.goto(inst.base + '/tournaments/1', { waitUntil: 'domcontentloaded' });
+    bars.thPos = await tablePage.evaluate(() => {
+      const th = document.querySelector('thead th');
+      return th ? getComputedStyle(th).position : 'нет таблицы';
+    });
+    await tablePage.close();
 
     assert(btn.transition.startsWith('0.18'), `у кнопки ожидался свой переход .18s, получен ${btn.transition}`);
     if (bars.noticePos !== 'нет плашки') {
@@ -5559,6 +5685,50 @@ try {
     const lift = before.folderTop - after.folderTop;
     assert(lift > 60, `третья папка не выехала: подъём ${lift} px вместо ожидаемых ~110`);
     return `корпус наклонился (${before.transform.slice(0, 12)}… → ${after.transform.slice(0, 12)}…), третья папка поднялась на ${lift} px`;
+  });
+
+  await check('рейтинг: пластина поднимается и раскрывает справку НАВЕДЕНИЕМ', async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(inst.base + '/rating', { waitUntil: 'networkidle' });
+    const read = () => page.evaluate(() => {
+      const p = document.querySelector('.rplates--full .rplate');
+      const info = p.querySelector('.rplate__info');
+      return { top: Math.round(p.getBoundingClientRect().top), infoH: Math.round(info.getBoundingClientRect().height) };
+    });
+    const before = await read();
+    await page.locator('.rplates--full .rplate').first().hover();
+    await page.waitForTimeout(700); // подъём .32s + раскрытие справки .34s
+    const after = await read();
+    await page.close();
+    const lift = before.top - after.top;
+    assert(lift >= 8, `пластина не поднялась при наведении: ${lift} px`);
+    assert(after.infoH > before.infoH + 20, `справка не раскрылась: ${before.infoH} → ${after.infoH} px`);
+    return `подъём ${lift} px, справка раскрылась с ${before.infoH} до ${after.infoH} px`;
+  });
+
+  await check('справочник: карточка отзывается на наведение (поведение, а не объявление)', async () => {
+    const temp = db.prepare('SELECT COUNT(*) AS n FROM courts').get().n === 0;
+    if (temp) db.prepare("INSERT INTO courts (name, city, surface) VALUES ('Корт Наведения','Смоленск','хард')").run();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.goto(inst.base + '/courts', { waitUntil: 'networkidle' });
+    const read = () => page.evaluate(() => {
+      const c = document.querySelector('.dir-card');
+      return {
+        title: getComputedStyle(c.querySelector('.dir-card__title')).color,
+        mark: getComputedStyle(c.querySelector('.fx-court')).opacity,
+        ring: getComputedStyle(c, '::after').opacity,
+      };
+    });
+    const before = await read();
+    await page.locator('.dir-card').first().hover();
+    await page.waitForTimeout(800);
+    const after = await read();
+    await page.close();
+    if (temp) db.prepare("DELETE FROM courts WHERE name = 'Корт Наведения'").run();
+    assert(after.title !== before.title, 'заголовок карточки не подсветился');
+    assert(Number(after.mark) > Number(before.mark), `водяной знак корта не проявился: ${before.mark} → ${after.mark}`);
+    assert(Number(after.ring) > Number(before.ring), `градиентная рамка не появилась: ${before.ring} → ${after.ring}`);
+    return `заголовок ${before.title} → ${after.title}, знак ${before.mark} → ${after.mark}, рамка ${before.ring} → ${after.ring}`;
   });
 
   await check('шрифты грузятся ЛОКАЛЬНО (нет обращений к Google)', async () => {
@@ -5757,14 +5927,17 @@ try {
     const newsOneColumn = await page.evaluate(
       () => getComputedStyle(document.querySelector('.news-grid')).gridTemplateColumns.split(' ').length === 1,
     );
-    // Таблица с прокруткой живёт на /rating: топ-10 на главной с 07.09.2026 —
-    // пластины, а не таблица, и горизонтально не скроллится по замыслу.
+    // ТАБЛИЦЫ НА /rating БОЛЬШЕ НЕТ (08.09.2026): там пластины, как в топе главной,
+    // и горизонтально они не скроллятся по замыслу — колонки сворачиваются, а
+    // пол/возраст/группа лежат в справке, раскрытой на телефоне сразу.
     const rating = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await rating.goto(inst.base + '/rating', { waitUntil: 'networkidle' });
-    const tableScrolls = await rating.evaluate(() => {
-      const box = document.querySelector('.table-scroll');
-      if (!box) return 'таблицы рейтинга нет на странице';
-      return getComputedStyle(box).overflowX === 'auto' && box.scrollWidth > box.clientWidth;
+    const ratingPlates = await rating.evaluate(() => {
+      if (document.querySelector('.table-scroll')) return 'на /rating осталась таблица с прокруткой';
+      const info = document.querySelector('.rplates--full .rplate__info');
+      if (!info) return 'нет пластин на /rating';
+      const cs = getComputedStyle(info);
+      return cs.position === 'static' && cs.opacity === '1';
     });
     const ratingNoHScroll = await rating.evaluate(
       () => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1,
@@ -5787,10 +5960,10 @@ try {
     assert(menuOpen, 'меню не открылось по бургеру');
     assert(heroOneColumn, 'hero не свернулся в одну колонку');
     assert(newsOneColumn, 'новости не свернулись в одну колонку');
-    eq(tableScrolls, true, `таблица рейтинга не скроллится горизонтально: ${tableScrolls}`);
+    eq(ratingPlates, true, `пластины рейтинга на телефоне: ${ratingPlates}`);
     assert(platesOpen === true || platesOpen === 'нет пластин', `справка в пластине должна быть раскрыта на телефоне: ${platesOpen}`);
     assert(noHScroll && ratingNoHScroll, 'страница уезжает вбок по горизонтали');
-    return '390px: бургер работает, hero и новости в одну колонку, таблица рейтинга скроллится, справка в пластинах раскрыта, страницы не уезжают вбок';
+    return '390px: бургер работает, hero и новости в одну колонку, рейтинг пластинами без горизонтальной прокрутки, справка в пластинах раскрыта, страницы не уезжают вбок';
   });
 
   await check('новые экраны кабинета: адаптив и доступность за логином', async () => {
@@ -5875,16 +6048,16 @@ try {
     await page.goto(inst.base + '/rating', { waitUntil: 'networkidle' });
     await page.waitForTimeout(400);
     const asText = await page.evaluate(() => {
-      const cells = [...document.querySelectorAll('td.player')];
+      const cells = [...document.querySelectorAll('.rplate__name')];
       const hit = cells.find((c) => c.textContent.includes('alert(1)'));
       return hit ? { text: hit.textContent.trim(), scripts: hit.querySelectorAll('script').length } : null;
     });
     await page.close();
     assert(!alerted, 'сработал alert — XSS выполнился');
-    assert(asText, 'ячейка с «злым» именем не найдена');
-    eq(asText.scripts, 0, 'внутри ячейки оказался тег script');
-    eq(asText.text, '<script>alert(1)</script>', 'текст в ячейке не совпал');
-    return `в ячейке текст «${asText.text}», тегов script 0, alert не сработал`;
+    assert(asText, 'пластина со «злым» именем не найдена');
+    eq(asText.scripts, 0, 'внутри пластины оказался тег script');
+    eq(asText.text, '<script>alert(1)</script>', 'текст в пластине не совпал');
+    return `в пластине текст «${asText.text}», тегов script 0, alert не сработал`;
   });
 
   await check('профиль: фото грузится под CSP, «злое» имя в заголовке и ссылках — текст, alert не срабатывает', async () => {

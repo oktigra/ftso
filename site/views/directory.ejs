@@ -47,38 +47,65 @@
       </form>
     <% } %>
     <% if (!rows.length) { %>
-      <div class="panel notice"><%= anyFilter ? 'По выбранным фильтрам записей нет.' : 'Записей пока нет — реестр формируется.' %></div>
+      <% if (anyFilter) { %>
+        <div class="panel notice">По выбранным фильтрам записей нет.</div>
+      <% } else { %>
+        <%
+        /* ПУСТОЕ СОСТОЯНИЕ — ПРИГЛАШЕНИЕ (эффект дизайн-чата, доехавший только до
+           главной): сухая плашка «записей нет» ничего не предлагает сделать.
+           Действие подставляется по разделу: тренеру и судье — анкета, кортам и
+           клубам — контакты Федерации. */
+        const invite = {
+          coaches: ['Реестр тренеров формируется', 'Тренеры Федерации появятся здесь по мере проверки анкет. Вы тренер — заполните анкету: вы сами отмечаете, что публиковать.', '/coaches/apply', 'Заполнить анкету тренера'],
+          referees: ['Реестр судей формируется', 'Судьи появятся здесь после проверки сведений. Вы судья — заполните анкету: категория, роли на турнирах и опыт.', '/referees/apply', 'Заполнить анкету судьи'],
+          courts: ['Список кортов собирается', 'Здесь будут корты области: адрес, покрытие, сезонность и контакт. Знаете корт, которого не хватает — напишите нам.', '/contacts', 'Написать в Федерацию'],
+          clubs: ['Список клубов собирается', 'Здесь будут теннисные клубы области с адресами и контактами. Знаете клуб, которого не хватает — напишите нам.', '/contacts', 'Написать в Федерацию'],
+        }[spec.key];
+        %>
+        <div class="panel notice notice--invite">
+          <b><%= invite[0] %></b>
+          <span><%= invite[1] %></span>
+          <a class="btn btn--secondary btn--small" href="<%= invite[2] %>"><%= invite[3] %></a>
+        </div>
+      <% } %>
     <% } else { %>
-      <div class="table-scroll">
-        <table>
-          <caption class="visually-hidden"><%= spec.title %></caption>
-          <thead>
-            <tr><% if (spec.photo) { %><th scope="col">Фото</th><% } %><% spec.fields.forEach(function (f) { %><th scope="col"><%= f.label %></th><% }); %></tr>
-          </thead>
-          <tbody>
-            <% rows.forEach(function (row) { %>
-              <tr>
-                <% if (spec.photo) { %>
-                  <td class="dir-photo"><% if (row.photo_upload_id) { %><img src="<%= spec.path %>/<%= row.id %>/photo" alt="" loading="lazy" width="72" height="72"><% } else { %><span class="muted">—</span><% } %></td>
-                <% } %>
-                <% spec.fields.forEach(function (f) { %>
-                  <td>
-                    <% if (f.player) { %>
-                      <% if (row.player) { %><a href="/player/<%= row.player.id %>">профиль игрока <span aria-hidden="true">→</span></a><% } else { %>—<% } %>
-                    <% } else if (f.name === 'map_url' && row[f.name]) { %>
-                      <a href="<%= row[f.name] %>" rel="nofollow noopener" target="_blank">на карте ↗</a>
-                    <% } else if (f.name === 'address' && row[f.name] && !row.map_url) { %>
-                      <%= row[f.name] %> · <a href="https://yandex.ru/maps/?text=<%= encodeURIComponent(row[f.name]) %>" rel="nofollow noopener" target="_blank">на карте ↗</a>
-                    <% } else if (f.name === 'site' && row[f.name]) { %>
-                      <a href="<%= row[f.name] %>" rel="nofollow noopener"><%= row[f.name] %></a>
-                    <% } else { %><%= row[f.name] || '—' %><% } %>
-                  </td>
-                <% }); %>
-              </tr>
-            <% }); %>
-          </tbody>
-        </table>
-      </div>
+      <%
+      /* КАРТОЧКИ ВМЕСТО ТАБЛИЦЫ (08.09.2026): оформление главной доехало и сюда.
+         Шаблон по-прежнему ОДИН на четыре раздела — карточка собирается из того же
+         описания (server/lib/directories.mjs), первое поле идёт заголовком, остальные
+         заполненные — парами «подпись — значение». Пустые поля не печатаются: в
+         таблице на их месте стоял прочерк, в карточке он был бы шумом.
+         Спец-виды значений (профиль игрока, карта, адрес, сайт) сохранены как были. */
+      const titleField = spec.fields[0];
+      const restFields = spec.fields.slice(1);
+      const filled = (row, f) => (f.player ? Boolean(row.player) : Boolean(row[f.name]));
+      %>
+      <ul class="dir-cards">
+        <% rows.forEach(function (row) { %>
+          <li class="dir-card fx-card"><%- include('partials/court-card') %>
+            <% if (spec.photo && row.photo_upload_id) { %>
+              <span class="dir-card__photo"><img src="<%= spec.path %>/<%= row.id %>/photo" alt="" loading="lazy" width="72" height="72"></span>
+            <% } %>
+            <h2 class="dir-card__title"><%= row[titleField.name] || '—' %></h2>
+            <dl class="dir-card__facts">
+              <% restFields.forEach(function (f) { if (!filled(row, f)) return; %>
+                <dt><%= f.label %></dt>
+                <dd>
+                  <% if (f.player) { %>
+                    <a href="/player/<%= row.player.id %>">профиль игрока <span aria-hidden="true">→</span></a>
+                  <% } else if (f.name === 'map_url') { %>
+                    <a href="<%= row[f.name] %>" rel="nofollow noopener" target="_blank">на карте ↗</a>
+                  <% } else if (f.name === 'address' && !row.map_url) { %>
+                    <%= row[f.name] %> · <a href="https://yandex.ru/maps/?text=<%= encodeURIComponent(row[f.name]) %>" rel="nofollow noopener" target="_blank">на карте ↗</a>
+                  <% } else if (f.name === 'site') { %>
+                    <a href="<%= row[f.name] %>" rel="nofollow noopener"><%= row[f.name] %></a>
+                  <% } else { %><%= row[f.name] %><% } %>
+                </dd>
+              <% }); %>
+            </dl>
+          </li>
+        <% }); %>
+      </ul>
     <% } %>
   </div>
 </section>
