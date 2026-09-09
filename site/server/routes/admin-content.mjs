@@ -688,21 +688,55 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
     limitWrites,
     guard(async (req, res) => {
       // Профиль gallery -> только изображения; ресайз и снятие EXIF делает слой.
-      const { fields, upload } = await oneFile(req, { profile: 'gallery', field: 'file' });
+      // ПАЧКОЙ ДО ДЕСЯТИ (09.09.2026): репортаж с турнира — это десяток кадров, а
+      // форма принимала по одному, и на альбом уходило десять кругов. Больше десяти
+      // за раз не берём намеренно: файлы разбираются в память, 10 x 10 МБ — потолок,
+      // на который сервер рассчитан.
+      const { fields, files } = await parseMultipart(req, { maxFiles: 10 });
+      const chosen = files.filter((f) => f.field === 'file');
+      if (!chosen.length) throw new ValidationError('Файл не выбран.');
+      const data = galleryInput(fields);
+      if (data.tournament_id && !db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(data.tournament_id)) {
+        throw new ValidationError('Турнир не найден');
+      }
+      // Подпись у пачки общая; чтобы кадры различались, к ней приписывается номер.
+      // 200 — предел поля, поэтому под номер режем хвост, а не выходим за длину.
+      const caption = (i) => {
+        if (chosen.length === 1) return data.title;
+        const suffix = ` — ${i + 1}`;
+        return data.title.slice(0, 200 - suffix.length) + suffix;
+      };
+      const uploads = [];
       try {
-        const data = galleryInput(fields);
-        if (data.tournament_id && !db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(data.tournament_id)) {
-          throw new ValidationError('Турнир не найден');
+        for (const [i, file] of chosen.entries()) {
+          const upload = await storeUpload(db, {
+            buffer: file.buffer,
+            filename: file.filename,
+            profile: 'gallery',
+            dir: config.upload.dir,
+            uploadedBy: req.session.user.id,
+          });
+          uploads.push(upload);
+          const info = db
+            .prepare('INSERT INTO gallery_items (title, upload_id, tournament_id) VALUES (?, ?, ?)')
+            .run(caption(i), upload.id, data.tournament_id);
+          logAction(db, req.session.user.id, 'gallery.create', Number(info.lastInsertRowid), { ...data, title: caption(i) });
         }
-        const info = db
-          .prepare('INSERT INTO gallery_items (title, upload_id, tournament_id) VALUES (?, ?, ?)')
-          .run(data.title, upload.id, data.tournament_id);
-        logAction(db, req.session.user.id, 'gallery.create', Number(info.lastInsertRowid), data);
       } catch (err) {
-        deleteUpload(db, upload.id, config.upload.dir);
+        // Половина пачки в галерее — хуже, чем ничего: чистим всё, что успели принять.
+        for (const u of uploads) {
+          db.prepare('DELETE FROM gallery_items WHERE upload_id = ?').run(u.id);
+          deleteUpload(db, u.id, config.upload.dir);
+        }
         throw err;
       }
-      flash(req, res, 'ok', 'Фотография добавлена.', '/admin/library');
+      flash(
+        req,
+        res,
+        'ok',
+        chosen.length === 1 ? 'Фотография добавлена.' : `Добавлено фотографий: ${chosen.length}.`,
+        '/admin/library',
+      );
     }),
   );
 
