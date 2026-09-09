@@ -39,15 +39,18 @@
     <h2>Добавить фотографию</h2>
     <form method="post" action="/admin/library/gallery" class="stacked-form" enctype="multipart/form-data">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-      <div class="field"><label for="g-title">Подпись</label><input id="g-title" name="title" maxlength="200" required></div>
+      <div class="field"><label for="g-title">Подпись</label><input id="g-title" name="title" maxlength="200" required>
+        <p class="field-hint">Одна на пачку: если выбрать несколько кадров, к подписи припишется номер — «Первенство ветеранов — 1», «— 2» и так далее.</p>
+      </div>
       <div class="field"><label for="g-tournament">Соревнование</label>
         <select id="g-tournament" name="tournament_id">
           <option value="">— без привязки —</option>
           <% tournaments.forEach(function (t) { %><option value="<%= t.id %>"><%= t.name %><%= t.end_date ? " (" + t.end_date + ")" : "" %></option><% }); %>
         </select>
       </div>
-      <div class="field"><label for="g-file">Изображение</label><input id="g-file" name="file" type="file" required aria-describedby="g-hint">
+      <div class="field"><label for="g-file">Изображение</label><input id="g-file" name="file" type="file" multiple required aria-describedby="g-hint">
         <p class="field-hint" id="g-hint">
+          Можно выбрать сразу несколько кадров — до десяти за раз, они добавятся одной пачкой.
           Только репортажная съёмка соревнований: общий план, ход игры, награждение — по
           подп. 2 п. 1 ст. 152.1 ГК РФ согласие изображённых не требуется. Снимок, где
           конкретный человек — основной объект (портрет крупным планом), требует его согласия:

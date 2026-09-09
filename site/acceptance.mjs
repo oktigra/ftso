@@ -6687,6 +6687,63 @@ await check('галерея: снимок с EXIF → без EXIF, привяз�
 });
 
 // ---------------------------------------------------------------------------
+// Галерея пачкой: репортаж — это десяток кадров, а не один
+// ---------------------------------------------------------------------------
+await check('галерея: пачка кадров одной формой, нумерация подписей, откат при сбое, потолок 10', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/library', { jar })).text);
+  const t = db.prepare('SELECT id, name FROM tournaments ORDER BY id LIMIT 1').get();
+  const shot = async (tint) =>
+    sharpLib({ create: { width: 900, height: 600, channels: 3, background: tint } })
+      .jpeg().withExif({ IFD0: { Make: 'TestCam' } }).toBuffer();
+  const files = [];
+  for (const tint of ['#111111', '#227744', '#aa3355']) {
+    files.push({ field: 'file', filename: `max-${files.length + 1}.jpg`, type: 'image/jpeg', buffer: await shot(tint) });
+  }
+  const before = db.prepare('SELECT COUNT(*) AS n FROM gallery_items').get().n;
+  const up = await http('/admin/library/gallery', {
+    method: 'POST', jar,
+    multipart: { fields: { _csrf, title: 'Первенство ветеранов', tournament_id: String(t.id) }, files },
+  });
+  eq(up.status, 302, 'загрузка пачки');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM gallery_items').get().n, before + 3, 'из пачки в три кадра пришли не три записи');
+  const rows = db.prepare('SELECT title, tournament_id, upload_id FROM gallery_items ORDER BY id DESC LIMIT 3').all().reverse();
+  eq(rows.map((r) => r.title).join(' | '), 'Первенство ветеранов — 1 | Первенство ветеранов — 2 | Первенство ветеранов — 3', 'подписи пачки не пронумерованы');
+  assert(rows.every((r) => r.tournament_id === t.id), 'не все кадры пачки привязаны к соревнованию');
+  // EXIF снимается с КАЖДОГО кадра пачки, не только с первого.
+  for (const r of rows) {
+    const u = db.prepare('SELECT stored_name FROM uploads WHERE id = ?').get(r.upload_id);
+    assert(!(await sharpLib(readFileSync(resolve(UPLOAD_DIR, u.stored_name))).metadata()).exif, 'EXIF остался в кадре пачки');
+  }
+  // Сбой на середине: половина пачки в галерее хуже, чем ничего.
+  const mid = db.prepare('SELECT COUNT(*) AS n FROM gallery_items').get().n;
+  const bad = await http('/admin/library/gallery', {
+    method: 'POST', jar,
+    multipart: {
+      fields: { _csrf, title: 'Битая пачка', tournament_id: String(t.id) },
+      files: [
+        { field: 'file', filename: 'ok.jpg', type: 'image/jpeg', buffer: await shot('#334455') },
+        { field: 'file', filename: 'fake.jpg', type: 'image/jpeg', buffer: Buffer.from('это не картинка, а текст') },
+      ],
+    },
+  });
+  eq(bad.status, 302, 'битая пачка отвечает редиректом с ошибкой');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM gallery_items').get().n, mid, 'после сбоя в пачке остались записи — отката не было');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM gallery_items WHERE title LIKE 'Битая пачка%'").get().n, 0, 'кадр из сорванной пачки сохранился');
+  // Потолок: одиннадцатый файл не проходит, галерея не меняется.
+  const many = [];
+  for (let i = 0; i < 11; i++) many.push({ field: 'file', filename: `over-${i}.jpg`, type: 'image/jpeg', buffer: await shot('#666666') });
+  const over = db.prepare('SELECT COUNT(*) AS n FROM gallery_items').get().n;
+  await http('/admin/library/gallery', { method: 'POST', jar, multipart: { fields: { _csrf, title: 'Перебор', tournament_id: String(t.id) }, files: many } });
+  eq(db.prepare('SELECT COUNT(*) AS n FROM gallery_items').get().n, over, 'пачка сверх потолка всё-таки записалась');
+  // Форма разрешает множественный выбор — иначе секретарь про пачку не узнает.
+  assert(/name="file" type="file" multiple/.test((await http('/admin/library', { jar })).text), 'в форме нет множественного выбора файлов');
+  db.prepare("DELETE FROM gallery_items WHERE title LIKE 'Первенство ветеранов%'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'три кадра одной формой с нумерацией подписей, EXIF снят с каждого, сбой в середине откатывает всю пачку, одиннадцатый файл не проходит';
+});
+
+// ---------------------------------------------------------------------------
 // Временный пароль: до смены — только /admin/account; смена снимает флаг
 // ---------------------------------------------------------------------------
 await check('временный пароль: вход ведёт на смену, остальная админка закрыта, после смены открыта', async () => {
