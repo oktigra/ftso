@@ -6,7 +6,7 @@
 // включённом CSP, localStorage, адаптив, экранирование XSS, локальные шрифты)
 // проверяются реальным Chromium через Playwright.
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync, readFileSync, copyFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, copyFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -7369,6 +7369,43 @@ await check('set-secrets.sh: временный пароль в базу (хэш
 // ---------------------------------------------------------------------------
 // smtp-set.sh: пароль приложения пишется в .env без эха; пустой/короткий/со спецсимволом — отказ
 // ---------------------------------------------------------------------------
+await check('set-upload-limit.sh: поднимает лимит тела в конфиге домена, идемпотентен, чужие конфиги и бэкапы не трогает', async () => {
+  // Замер на бою 09.09.2026: nginx резал тело на 1 МБ (1048576 проходил, 1100000 → 413),
+  // из-за чего пачка снимков отлетала ДО приложения. Скрипт правит ровно тот конфиг,
+  // где живёт домен, и только после nginx -t перезагружает сервер.
+  const SCRIPT = resolve(HERE, '..', 'deploy', 'set-upload-limit.sh');
+  assert(existsSync(SCRIPT), 'нет deploy/set-upload-limit.sh');
+  eq(spawnSync('bash', ['-n', SCRIPT], { encoding: 'utf8' }).status, 0, 'скрипт не проходит проверку синтаксиса');
+  const tmp = mkdtempSync('/tmp/ng-');
+  const ngdir = resolve(tmp, 'sites-enabled');
+  const bak = resolve(tmp, 'bak');
+  mkdirSync(ngdir, { recursive: true });
+  mkdirSync(bak, { recursive: true });
+  writeFileSync(resolve(ngdir, 'ftso'), 'server {\n    server_name ftso67.ru;\n    location / { proxy_pass http://127.0.0.1:3000; }\n}\n');
+  writeFileSync(resolve(ngdir, 'other'), 'server { server_name example.com; }\n');
+  // На стенде nginx нет — подменяем две последние команды заглушками, остальное как в бою.
+  const stand = resolve(tmp, 'run.sh');
+  writeFileSync(stand, readFileSync(SCRIPT, 'utf8').replace(/^nginx -t.*$/m, 'true').replace(/^systemctl reload nginx.*$/m, 'true').replace('nginx -t && exit 0', 'exit 0'));
+  const run = (limit) => spawnSync('bash', [stand], { encoding: 'utf8', env: { ...process.env, NGDIR: ngdir, BAKDIR: bak, LIMIT: limit } });
+  const first = run('64m');
+  eq(first.status, 0, `первый запуск упал: ${first.stdout}${first.stderr}`);
+  assert(/client_max_body_size 64m;/.test(readFileSync(resolve(ngdir, 'ftso'), 'utf8')), 'лимит не вставлен');
+  const again = run('64m');
+  eq(again.status, 0, 'повторный запуск упал');
+  assert(/менять нечего/.test(again.stdout), `повтор должен был ничего не делать: ${again.stdout}`);
+  eq(readdirSync(bak).length, 1, 'повторный запуск наплодил лишние бэкапы');
+  const changed = run('32m');
+  eq(changed.status, 0, 'смена лимита упала');
+  const conf = readFileSync(resolve(ngdir, 'ftso'), 'utf8');
+  assert(/client_max_body_size 32m;/.test(conf) && !/64m/.test(conf), 'лимит не заменился на новый');
+  eq((conf.match(/client_max_body_size/g) || []).length, 1, 'строк лимита стало больше одной');
+  assert(!/client_max_body_size/.test(readFileSync(resolve(ngdir, 'other'), 'utf8')), 'скрипт залез в чужой конфиг');
+  // Бэкап рядом с конфигом = повторный запуск нашёл бы его вместо оригинала (ловил стенд).
+  assert(!readdirSync(ngdir).some((f) => f.includes('.bak')), 'бэкап остался в каталоге конфигов');
+  rmSync(tmp, { recursive: true, force: true });
+  return 'вставка, повтор без изменений, смена лимита, один бэкап вне каталога конфигов, чужой конфиг цел';
+});
+
 await check('smtp-set.sh: пароль приложения в .env (пробелы сняты), SMTP_USER дописан; пустой/короткий/спецсимвол → код 1 без изменений', async () => {
   const SCRIPT = resolve(HERE, '..', 'deploy', 'smtp-set.sh');
   assert(existsSync(SCRIPT), 'нет deploy/smtp-set.sh');
