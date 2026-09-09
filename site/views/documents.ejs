@@ -13,26 +13,45 @@
     <div class="panel">
       <h2>Регистрационные документы</h2>
       <p class="muted">Сведения из открытых реестров — ЕГРЮЛ, Минюст, ФНС.</p>
-      <ul class="doc-list">
+      <%
+      /* ПЛИТКИ ВМЕСТО БУЛЛИТОВ (08.09.2026): документ — это файл, и ссылка на него
+         должна выглядеть как объект, а не как пункт списка. Разметка та же ul/li,
+         поэтому семантика перечня и адреса файлов не меняются. */
+      %>
+      <ul class="doc-list doc-list--tiles">
         <% publicDocuments.forEach(function (d) { %>
           <li>
-            <a href="<%= d.file %>"><%= d.title %></a>
-            <span class="muted">— <%= d.issuer %>, <%= d.date %> (PDF)</span>
+            <a class="doc-item" href="<%= d.file %>">
+              <span class="doc-item__type" aria-hidden="true">PDF</span>
+              <span class="doc-item__body">
+                <span class="doc-item__title"><%= d.title %></span>
+                <span class="doc-item__meta"><%= d.issuer %>, <%= d.date %></span>
+              </span>
+            </a>
           </li>
         <% }); %>
       </ul>
     </div>
     <% if (!groups.length) { %>
-      <div class="panel notice">Остальные документы Федерации пока не опубликованы.</div>
+      <div class="panel notice notice--invite">
+        <b>Остальные документы готовятся</b>
+        <span>Здесь появятся положения, регламенты и бланки Федерации. Нужен документ, которого пока нет — напишите нам, вышлем.</span>
+        <a class="btn btn--secondary btn--small" href="/contacts">Написать в Федерацию</a>
+      </div>
     <% } %>
     <% groups.forEach(function (group) { %>
       <div class="panel">
         <h2><%= group[0] %></h2>
-        <ul class="doc-list">
+        <ul class="doc-list doc-list--tiles">
           <% group[1].forEach(function (d) { %>
             <li>
-              <a href="/files/<%= d.upload_id %>"><%= d.title %></a>
-              <span class="muted">— <%= Math.max(1, Math.round(d.size_bytes / 1024)) %> КБ</span>
+              <a class="doc-item" href="/files/<%= d.upload_id %>">
+                <span class="doc-item__type" aria-hidden="true">файл</span>
+                <span class="doc-item__body">
+                  <span class="doc-item__title"><%= d.title %></span>
+                  <span class="doc-item__meta"><%= Math.max(1, Math.round(d.size_bytes / 1024)) %> КБ</span>
+                </span>
+              </a>
             </li>
           <% }); %>
         </ul>
