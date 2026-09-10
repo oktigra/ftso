@@ -33,7 +33,7 @@
       <% if (!participants.length) { %>
         <p class="muted">Результаты ещё не внесены.</p>
       <% } else { %>
-        <div class="table-scroll">
+        <div class="table-scroll<%= participants.length > 12 ? ' table-scroll--tall' : '' %>">
           <table>
             <caption class="visually-hidden">Итоговые места участников</caption>
             <thead><tr><th scope="col">Место</th><th scope="col">Участник</th><th scope="col">Город</th><th scope="col">Разряд</th></tr></thead>
@@ -120,7 +120,7 @@
       <% if (!matches.length) { %>
         <p class="muted">Матчи ещё не внесены.</p>
       <% } else { %>
-        <div class="table-scroll">
+        <div class="table-scroll<%= matches.length > 12 ? ' table-scroll--tall' : '' %>">
           <table>
             <caption class="visually-hidden">Сыгранные матчи турнира</caption>
             <thead><tr><th scope="col">Дата</th><th scope="col">Победитель</th><th scope="col">Соперник</th><th scope="col">Счёт</th></tr></thead>

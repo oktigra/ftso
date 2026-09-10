@@ -5702,6 +5702,42 @@ try {
     return `секций ${shown.всего}, все доехали до is-in; переход кнопки ${btn.transition}; при reduced-motion .reveal у ${reduced.сReveal}, скрытых 0`;
   });
 
+  await check('липкие заголовки: на длинной таблице шапка держится при прокрутке ВНУТРИ обёртки', async () => {
+    // История: 08.09 sticky липнул к .table-scroll (там overflow-x ради телефона) и
+    // уезжал вместе с ней — замер на бою давал top:-503. Рабочий путь: длинная таблица
+    // получает свою вертикальную прокрутку, и шапка липнет к ней. Класс вешается только
+    // при числе строк больше 12, поэтому проверяем на турнире с длинным списком.
+    const t = db.prepare('SELECT id FROM tournaments WHERE is_published = 1 ORDER BY id LIMIT 1').get();
+    const made = [];
+    while (db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(t.id).n <= 12) {
+      const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES (?, 'Смоленск', 'M')").run(`Длинный Список ${made.length + 1}`).lastInsertRowid);
+      db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, 'single')").run(t.id, pid, 20 + made.length);
+      made.push(pid);
+    }
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await page.goto(`${inst.base}/tournaments/${t.id}`, { waitUntil: 'networkidle' });
+    const measured = await page.evaluate(async () => {
+      const box = document.querySelector('.table-scroll--tall');
+      if (!box) return { нет: 'обёртка с прокруткой не появилась' };
+      const th = box.querySelector('thead th');
+      const before = Math.round(th.getBoundingClientRect().top - box.getBoundingClientRect().top);
+      box.scrollTop = box.scrollHeight;
+      await new Promise((r) => setTimeout(r, 250));
+      const after = Math.round(th.getBoundingClientRect().top - box.getBoundingClientRect().top);
+      return { before, after, прокручено: box.scrollTop > 50, позиция: getComputedStyle(th).position };
+    });
+    await page.close();
+    for (const pid of made) {
+      db.prepare('DELETE FROM results WHERE player_id = ?').run(pid);
+      db.prepare('DELETE FROM players WHERE id = ?').run(pid);
+    }
+    assert(!measured.нет, measured.нет);
+    eq(measured.позиция, 'sticky', 'заголовок не липкий');
+    assert(measured.прокручено, 'обёртка не прокрутилась — проверка ничего не показала');
+    assert(Math.abs(measured.after) <= 2, `шапка уехала при прокрутке: ${measured.before} → ${measured.after} px от верха обёртки`);
+    return `шапка держится у верха обёртки: ${measured.before} → ${measured.after} px после прокрутки донизу`;
+  });
+
   await check('календарь: пустая зона ящика НЕ перехватывает клики по фильтрам', async () => {
     // Замер на бою 09.09.2026: сетка подтянута под фильтры, и верхние 124px ячейки
     // (место под выезд папок) накрывали кнопку «Показать» — elementFromPoint в центре
