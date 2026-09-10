@@ -424,6 +424,12 @@ tbody tr:hover{background:var(--surface-2);}
 .reg-card .btn{width:100%; justify-content:center;}
 
 /* rating meta */
+/* ВКЛАДКИ РАЗРЯДА на рейтинге: одиночная и парная классификации равноправны,
+   поэтому это переключатель уровня страницы, а не поле среди фильтров. */
+.tabs{display:flex; gap:.4rem; flex-wrap:wrap; margin:1rem 0 0;}
+.tabs__item{padding:.55rem 1.1rem; border:1px solid var(--border); border-radius:999px; background:var(--surface); color:var(--text); text-decoration:none; font-weight:600; font-size:.95rem; transition:background-color .18s ease, border-color .18s ease, color .18s ease;}
+.tabs__item:hover{border-color:var(--primary);}
+.tabs__item.is-active{background:var(--primary); border-color:var(--primary); color:#fff;}
 .rating-meta{display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-top:.5rem;}
 .tag--upcoming{color:var(--primary); border-color:var(--primary);}
 .tag--ongoing{color:#b45309; border-color:#b45309;}

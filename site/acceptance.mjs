@@ -974,6 +974,27 @@ await check('город и пол показываются и фильтруют
   return 'фильтры по полу, возрастной группе и поиск по фамилии работают';
 });
 
+await check('рейтинг: одиночная и парная классификации — равноправные вкладки, фильтры переживают переключение', async () => {
+  // Как у РТТ (проверено у источника 09.09.2026): классификация составляется
+  // РАЗДЕЛЬНО для одиночного и парного разрядов, сводной у них нет. Значит разряд —
+  // переключатель уровня страницы, а не поле среди фильтров вроде города.
+  const page = await http('/rating');
+  assert(/class="tabs"/.test(page.text), 'нет вкладок разряда');
+  assert(/href="\/rating\?discipline=single"[^>]*aria-current="page"/.test(page.text), 'на одиночном разряде вкладка не помечена текущей');
+  assert(/href="\/rating\?discipline=double"/.test(page.text), 'нет вкладки парного разряда');
+  assert(!/<select id="f-discipline"/.test(page.text), 'разряд остался полем в фильтрах');
+  // Разряд не теряется при отправке формы фильтров.
+  assert(/<input type="hidden" name="discipline" value="single">/.test(page.text), 'форма фильтров не несёт разряд');
+  const dbl = await http('/rating?discipline=double');
+  eq(dbl.status, 200, 'парная классификация');
+  assert(/<input type="hidden" name="discipline" value="double">/.test(dbl.text), 'на парном форма теряет разряд');
+  assert(/href="\/rating\?discipline=single"/.test(dbl.text), 'с парного нет пути обратно на одиночный');
+  // Прочие фильтры сохраняются в ссылках вкладок — иначе срез сбрасывается.
+  const withFilter = await http('/rating?discipline=double&sex=M');
+  assert(/href="\/rating\?discipline=single&amp;sex=M"/.test(withFilter.text), 'вкладка не сохраняет выбранный пол');
+  return 'две вкладки классификаций, текущая помечена aria-current, форма несёт разряд, фильтры переживают переключение';
+});
+
 await check('рейтинг: пластины вместо таблицы, все восемь колонок на месте, экспорт цел', async () => {
   const page = await http('/rating');
   const plates = (page.text.match(/<li class="rplate/g) || []).length;
