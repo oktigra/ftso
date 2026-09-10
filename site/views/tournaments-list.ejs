@@ -31,11 +31,17 @@
           </select>
         </div>
         <div class="field">
-          <label for="tf-category">Категория</label>
-          <select id="tf-category" name="category">
-            <option value="">все</option>
-            <% categories.forEach(function (c) { %><option value="<%= c %>"<%= filters.category === c ? ' selected' : '' %>><%= c %></option><% }); %>
-          </select>
+          <%
+          /* КАТЕГОРИЙ МОЖНО ВЫБРАТЬ НЕСКОЛЬКО (09.09.2026): «покажи B и C разом» раньше
+             было нельзя. Флажки, а не select multiple: тот на телефоне требует долгого
+             тапа с прокруткой, а здесь значений всего три. Пусто = все категории. */
+          %>
+          <fieldset class="field-group">
+            <legend>Категория</legend>
+            <% categories.forEach(function (c) { %>
+              <label class="check"><input type="checkbox" name="category" value="<%= c %>"<%= filters.category.includes(c) ? ' checked' : '' %>> <%= c %></label>
+            <% }); %>
+          </fieldset>
         </div>
         <div class="field">
           <label for="tf-age">Возраст</label>

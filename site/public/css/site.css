@@ -342,6 +342,12 @@ tbody tr:hover{background:var(--surface-2);}
    по слоям сосед перекрывает его правым краем. */
 .tdrawer{position:relative; perspective:1100px; perspective-origin:62% 6%; padding:124px 6px 24px;}
 .tdrawer:hover, .tdrawer:focus-within{z-index:5;}
+/* Верхние 124px ячейки — пустое место под выезд папок, но кликам оно НЕПРОЗРАЧНО:
+   на календаре сетка подтянута под фильтры и эта зона накрывала кнопку «Показать»
+   (замер на бою 09.09.2026: elementFromPoint в центре кнопки возвращал li.tdrawer).
+   Мышь пропускаем насквозь везде, кроме самого корпуса ящика. */
+.tdrawers--calendar, .tdrawers--calendar .tdrawer{pointer-events:none;}
+.tdrawers--calendar .tdrawer__box{pointer-events:auto;}
 .tdrawer__box{position:relative; cursor:pointer; transform-style:preserve-3d; transform:rotateX(0deg) rotateY(0deg) translateZ(0px); transition:transform .56s cubic-bezier(.16,.84,.24,1);}
 .tdrawer__box::before, .tdrawer__box::after{content:''; position:absolute; inset:0; border-radius:1.25rem; background:var(--surface-2);}
 .tdrawer__box::before{transform:translateZ(-19px);}
@@ -688,6 +694,12 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 .consent-box{border:1px solid var(--border); border-radius:.75rem; padding:1rem; display:flex; flex-direction:column; gap:.85rem; min-inline-size:0;}
 .stacked-form input[type=file]{max-width:100%; width:100%;}
 .consent-box legend{padding:0 .4rem; font-weight:600;}
+/* Группа флажков в строке фильтров: рамку и отступы фиксируем сами — браузерный
+   fieldset тащит свои и ломает выравнивание с соседними полями. */
+.field-group{border:0; margin:0; padding:0; min-width:0;}
+.field-group legend{padding:0; margin:0 0 .35rem; font-size:.78rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-weight:700;}
+.field-group .check{display:inline-flex; align-items:center; gap:.35rem; margin-right:.9rem; font-size:.95rem; cursor:pointer;}
+.field-group .check input{margin:0; width:1rem; height:1rem;}
 .check{display:flex; gap:.6rem; align-items:flex-start;}
 .check input{margin-top:.25rem; flex:0 0 auto; width:1.05rem; height:1.05rem;}
 .check label{font-size:.93rem; line-height:1.45;}

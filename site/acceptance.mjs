@@ -1550,6 +1550,24 @@ await check('турниры (ТЗ 4.3): поля город/начало/тип/
   eq(names((await http('/tournaments?status=upcoming')).text).join(','), 'Фильтр Будущий', 'фильтр статус=предстоящий');
   eq(names((await http('/tournaments?city=' + encodeURIComponent('Смоленск'))).text).length, 2, 'фильтр город');
   eq(names((await http('/tournaments?category=A')).text).join(','), 'Фильтр Текущий', 'фильтр категория');
+  // Категорий можно выбрать несколько; старая ссылка с одной категорией продолжает работать.
+  // Категории у тестовых турниров: «Текущий» — A, «Прошлый» и «Будущий» — B (дефолт mk).
+  eq(
+    names((await http('/tournaments?category=A&category=B')).text).sort().join(','),
+    ['Фильтр Текущий', 'Фильтр Прошлый', 'Фильтр Будущий'].sort().join(','),
+    'две категории разом',
+  );
+  eq(
+    names((await http('/tournaments?category=B')).text).sort().join(','),
+    ['Фильтр Прошлый', 'Фильтр Будущий'].sort().join(','),
+    'одна категория из двух возможных',
+  );
+  eq(names((await http('/tournaments?category=A&category=%D0%97')).text).join(','), 'Фильтр Текущий', 'чужая категория в списке должна отбрасываться');
+  eq(names((await http('/tournaments?category=&category=')).text).length, 3, 'пустые значения категории должны означать «все»');
+  // Флажки, а не одиночный список: иначе выбрать две категории нечем.
+  const catForm = (await http('/tournaments')).text;
+  eq((catForm.match(/name="category" value="/g) || []).length, 3, 'в фильтре не три флажка категорий');
+  assert(!/<select id="tf-category"/.test(catForm), 'категория осталась одиночным списком');
   eq(names((await http('/tournaments?age=' + encodeURIComponent('взрослые'))).text).length, 2, 'фильтр возраст');
   eq(names((await http('/tournaments?kind=team')).text).join(','), 'Фильтр Прошлый', 'фильтр тип');
   // Пол турнира (как у РТТ/БТФ): поле и фильтр.
@@ -5661,6 +5679,31 @@ try {
     assert(/inset|0px 4px 0px/.test(btn.shadow) || btn.shadow !== 'none', 'у кнопки нет борта');
     eq(reduced.прозрачных, 0, 'при reduced-motion секции не должны прятаться');
     return `секций ${shown.всего}, все доехали до is-in; переход кнопки ${btn.transition}; при reduced-motion .reveal у ${reduced.сReveal}, скрытых 0`;
+  });
+
+  await check('календарь: пустая зона ящика НЕ перехватывает клики по фильтрам', async () => {
+    // Замер на бою 09.09.2026: сетка подтянута под фильтры, и верхние 124px ячейки
+    // (место под выезд папок) накрывали кнопку «Показать» — elementFromPoint в центре
+    // кнопки возвращал li.tdrawer, кликнуть было нельзя.
+    const temp = db.prepare('SELECT COUNT(*) AS n FROM tournaments WHERE is_published = 1').get().n === 0;
+    if (temp) db.prepare("INSERT INTO tournaments (name, end_date, category, is_published) VALUES ('Ящик Кликов', date('now','+5 days'), 'B', 1)").run();
+    const page = await browser.newPage({ viewport: { width: 1440, height: 950 } });
+    await page.goto(inst.base + '/tournaments', { waitUntil: 'networkidle' });
+    const reach = await page.evaluate(() => {
+      const out = {};
+      for (const [key, sel] of [['кнопка', 'form.filters button[type="submit"]'], ['город', '#tf-city'], ['флажок', 'input[name="category"]']]) {
+        const el = document.querySelector(sel);
+        if (!el) { out[key] = 'нет элемента'; continue; }
+        const r = el.getBoundingClientRect();
+        const top = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+        out[key] = top === el || el.contains(top) ? 'доступен' : `перекрыт ${top ? top.tagName + '.' + top.className : '?'}`;
+      }
+      return out;
+    });
+    await page.close();
+    if (temp) db.prepare("DELETE FROM tournaments WHERE name = 'Ящик Кликов'").run();
+    for (const [key, val] of Object.entries(reach)) eq(val, 'доступен', `${key} на календаре: ${val}`);
+    return 'кнопка «Показать», список города и флажок категории кликабельны при разложенной сетке ящиков';
   });
 
   await check('календарь: ящик раскрывается НАВЕДЕНИЕМ (поведение, а не объявление в CSS)', async () => {

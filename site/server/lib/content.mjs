@@ -82,7 +82,13 @@ export function tournamentList(db, filters = {}) {
   const args = [];
   if (filters.month) { where.push("substr(t.end_date, 1, 7) = ?"); args.push(filters.month); }
   if (filters.city) { where.push('t.city = ?'); args.push(filters.city); }
-  if (filters.category) { where.push('t.category = ?'); args.push(filters.category); }
+  // КАТЕГОРИЯ — СПИСОК (09.09.2026): «покажи B и C разом» было нельзя, выбиралась одна.
+  // Строку принимаем по-прежнему: старые ссылки и закладки не должны отвалиться.
+  const cats = Array.isArray(filters.category) ? filters.category : (filters.category ? [filters.category] : []);
+  if (cats.length) {
+    where.push(`t.category IN (${cats.map(() => '?').join(', ')})`);
+    args.push(...cats);
+  }
   if (filters.age) { where.push('t.age_group = ?'); args.push(filters.age); }
   if (filters.kind) { where.push('t.kind = ?'); args.push(filters.kind); }
   if (filters.sex) { where.push('t.sex = ?'); args.push(filters.sex); }
