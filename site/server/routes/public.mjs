@@ -159,7 +159,12 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
     const filters = {
       month: /^\d{4}-\d{2}$/.test(q('month')) ? q('month') : '',
       city: q('city', 80),
-      category: CATEGORIES.includes(q('category')) ? q('category') : '',
+      // Категорий можно выбрать несколько: ?category=B&category=C. Чужие значения
+      // молча отбрасываются, порядок приводим к канону CATEGORIES, дубли снимаем.
+      category: CATEGORIES.filter((c) => []
+        .concat(req.query.category || [])
+        .map((v) => String(v).trim())
+        .includes(c)),
       age: q('age'),
       status: TOURNAMENT_STATUSES.includes(q('status')) ? q('status') : '',
       kind: TOURNAMENT_KINDS.includes(q('kind')) ? q('kind') : '',
