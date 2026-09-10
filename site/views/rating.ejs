@@ -11,9 +11,23 @@
         <span class="tag"><%= statusText %></span>
         <span class="tag">актуальность: <%= standings.asOf %></span>
         <span class="tag">обновлён: <%= standings.computedAt %> UTC</span>
-        <span class="tag">разряд: <%= disciplineRu[filters.discipline] %></span>
         <% if (slice) { %><span class="tag">срез: <%= slice.label %></span><% } %>
       </div>
+      <%
+      /* РАЗРЯД — ДВЕ РАВНОПРАВНЫЕ КЛАССИФИКАЦИИ (09.09.2026), как у РТТ: там одиночная
+         и парная считаются раздельно и лежат отдельными таблицами. У нас парная была
+         спрятана в фильтрах наравне с городом и выглядела второстепенной.
+         Прочие фильтры при переключении сохраняются — иначе срез сбрасывается. */
+      const keep = Object.entries(filters)
+        .filter(([k, v]) => k !== 'discipline' && v)
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+        .join('&');
+      const hrefFor = (d) => `/rating?discipline=${d}${keep ? '&' + keep : ''}`;
+      %>
+      <nav class="tabs" aria-label="Разряд">
+        <a class="tabs__item<%= filters.discipline === 'single' ? ' is-active' : '' %>" href="<%= hrefFor('single') %>"<%- filters.discipline === 'single' ? ' aria-current="page"' : '' %>>Одиночный разряд</a>
+        <a class="tabs__item<%= filters.discipline === 'double' ? ' is-active' : '' %>" href="<%= hrefFor('double') %>"<%- filters.discipline === 'double' ? ' aria-current="page"' : '' %>>Парный разряд</a>
+      </nav>
     <% } %>
   </div>
 </section>
@@ -52,17 +66,11 @@
             <% }); %>
           </select>
         </div>
-        <% if (hasDoubles) { %>
-        <div class="field">
-          <label for="f-discipline">Разряд</label>
-          <select id="f-discipline" name="discipline">
-            <option value="single"<%= filters.discipline === 'single' ? ' selected' : '' %>>одиночный</option>
-            <option value="double"<%= filters.discipline === 'double' ? ' selected' : '' %>>парный</option>
-          </select>
-        </div>
-        <% } else if (filters.discipline === 'double') { %>
-          <input type="hidden" name="discipline" value="double">
-        <% } %>
+        <%
+        /* Разряд выбирается вкладками выше; форма фильтров лишь несёт его дальше,
+           иначе «Показать» сбрасывало бы парную классификацию на одиночную. */
+        %>
+        <input type="hidden" name="discipline" value="<%= filters.discipline %>">
         <div class="field">
           <label for="f-sex">Пол</label>
           <select id="f-sex" name="sex">
