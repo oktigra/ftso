@@ -1,4 +1,4 @@
-import { currentStandings, statusLabel, RATING_CONFIG, DISCIPLINE_RU } from '../lib/rating-service.mjs';
+import { currentStandings, statusLabel, RATING_CONFIG, DISCIPLINE_RU, DISCIPLINES, tableFor } from '../lib/rating-service.mjs';
 import { toCSV as engineCSV } from '../../../rating/export.mjs';
 import { AGE_GROUPS, SEXES } from '../lib/validate.mjs';
 import { AGE_SLICES, sliceById } from '../lib/age.mjs';
@@ -69,9 +69,10 @@ function rerank(rows) {
   });
 }
 
-/** Разряд: single (по умолчанию) или double. */
+/** Разряд: single (по умолчанию), double или mixed. */
 function pickDiscipline(query) {
-  return String(query.discipline || '') === 'double' ? 'double' : 'single';
+  const d = String(query.discipline || '');
+  return DISCIPLINES.includes(d) ? d : 'single';
 }
 
 function csvCell(v) {
@@ -83,7 +84,7 @@ export default function mountRating(app, { db }) {
   app.get('/rating', (req, res) => {
     const standings = currentStandings(db);
     const discipline = pickDiscipline(req.query);
-    const table = standings ? (discipline === 'double' ? standings.doubles : standings.players) : [];
+    const table = tableFor(standings, discipline);
     // Пустой rating_cache -> «рейтинг ещё не рассчитан», НЕ 500 и не падение.
     const players = standings ? applyFilters(table, req.query) : [];
     const slice = sliceById(req.query.slice);
@@ -105,8 +106,9 @@ export default function mountRating(app, { db }) {
       sexes: SEXES,
       sexRu: SEX_RU,
       disciplineRu: DISCIPLINE_RU,
-      // Вкладка «парный» показывается, только когда парный рейтинг не пуст.
       hasDoubles: Boolean(standings && standings.doubles.length),
+      // Вкладка «микст» — только когда микстовый рейтинг не пуст (или он открыт).
+      hasMixed: Boolean(standings && standings.mixed.length) || discipline === 'mixed',
       rules: RATING_CONFIG,
       total: table.length,
     });
@@ -115,7 +117,7 @@ export default function mountRating(app, { db }) {
   // CSV-экспорт: заголовки Content-Disposition + Content-Type, BOM для Excel.
   app.get('/rating.csv', (req, res) => {
     const standings = currentStandings(db);
-    const table = standings ? (pickDiscipline(req.query) === 'double' ? standings.doubles : standings.players) : [];
+    const table = tableFor(standings, pickDiscipline(req.query));
     res.type('text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="rating.csv"');
     // BOM задаём кодом (﻿), а не литералом в исходнике: литерал легко теряется
@@ -135,7 +137,7 @@ export default function mountRating(app, { db }) {
   // Excel (ТЗ 4.4): настоящий .xlsx тем же составом, что и таблица.
   app.get('/rating.xlsx', (req, res) => {
     const standings = currentStandings(db);
-    const table = standings ? (pickDiscipline(req.query) === 'double' ? standings.doubles : standings.players) : [];
+    const table = tableFor(standings, pickDiscipline(req.query));
     res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="rating-${standings ? standings.asOf : 'empty'}.xlsx"`);
     res.send(xlsxFromRows(standings ? exportRows(table, req.query) : [['Рейтинг ещё не рассчитан']], { sheet: 'Рейтинг' }));
@@ -146,7 +148,7 @@ export default function mountRating(app, { db }) {
   app.get('/rating/print', (req, res) => {
     const standings = currentStandings(db);
     const discipline = pickDiscipline(req.query);
-    const table = standings ? (discipline === 'double' ? standings.doubles : standings.players) : [];
+    const table = tableFor(standings, discipline);
     res.render('rating-print', {
       title: 'Рейтинг игроков — ФТСО',
       standings,

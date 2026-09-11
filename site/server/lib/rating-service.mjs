@@ -7,10 +7,21 @@ import { ageOn, sliceAge, ageLabel, slicesFor } from './age.mjs';
 export { DEFAULT_CONFIG as RATING_CONFIG };
 
 // Разряды. Рейтинги считаются РАЗДЕЛЬНО (как у РТТ): одиночный по results с
-// discipline='single' и матчам kind='single', парный — по 'double'. Движок при
-// этом один и тот же и не переписывается.
+// discipline='single' и матчам kind='single', парный — по 'double', микст — по
+// 'mixed' (решение владельца 11.09.2026: у РТТ микста в классификации нет, у
+// федерации он есть в первом же турнире — третий список, ТЕ ЖЕ правила, без
+// скидок; в парный не подмешивается). Движок один и тот же и не переписывается.
 export const DISCIPLINES = ['single', 'double', 'mixed'];
 export const DISCIPLINE_RU = { single: 'одиночный', double: 'парный', mixed: 'микст' };
+// Поле снимка, где лежит список разряда.
+const SNAPSHOT_LIST = { single: 'players', double: 'doubles', mixed: 'mixed' };
+
+/** Список разряда из снимка/standings; снимки старше разряда поля не имеют — пусто. */
+export function tableFor(standings, discipline = 'single') {
+  if (!standings) return [];
+  const list = standings[SNAPSHOT_LIST[discipline] || 'players'];
+  return Array.isArray(list) ? list : [];
+}
 
 /** Вход движка ровно в его формате: {tournaments, results, matches} — для одного разряда. */
 export function collectEngineInput(db, discipline = 'single') {
@@ -71,15 +82,22 @@ function rowsWithMeta(standings, meta) {
 export function buildSnapshot(db, { asOf } = {}) {
   const single = collectEngineInput(db, 'single');
   const double = collectEngineInput(db, 'double');
+  const mixedIn = collectEngineInput(db, 'mixed');
   const standings = computeStandings(asOf ? { ...single, asOf } : single);
   const doubles = computeStandings(asOf ? { ...double, asOf } : double);
+  const mixed = computeStandings(asOf ? { ...mixedIn, asOf } : mixedIn);
   const meta = playerMeta(db);
   return {
     ratingStatus: standings.ratingStatus,
     asOf: standings.asOf,
-    warnings: [...standings.warnings, ...doubles.warnings.map((w) => `парный: ${w}`)],
+    warnings: [
+      ...standings.warnings,
+      ...doubles.warnings.map((w) => `парный: ${w}`),
+      ...mixed.warnings.map((w) => `микст: ${w}`),
+    ],
     players: rowsWithMeta(standings, meta),
     doubles: rowsWithMeta(doubles, meta),
+    mixed: rowsWithMeta(mixed, meta),
   };
 }
 
@@ -223,7 +241,12 @@ export function currentStandings(db) {
   if (snaps.length === 0) return null;
   const [current, previous] = snaps;
   const prev = previous ? previous.data : null;
-  const prevDoubles = prev && Array.isArray(prev.doubles) ? { players: prev.doubles } : null;
+  // Снимки, снятые до появления парного разряда и микста, этих полей не имеют — пусто.
+  const listOf = (data, key) => (data && Array.isArray(data[key]) ? data[key] : []);
+  const changed = (key) => anonymizeForPublic(
+    db,
+    withChange({ players: listOf(current.data, key) }, prev ? { players: listOf(prev, key) } : null),
+  );
   return {
     snapshotId: current.id,
     computedAt: current.computedAt,
@@ -231,11 +254,8 @@ export function currentStandings(db) {
     asOf: current.data.asOf,
     hasPrevious: Boolean(previous),
     players: anonymizeForPublic(db, withChange(current.data, prev)),
-    // Снимки, снятые до появления парного разряда, поля doubles не имеют.
-    doubles: anonymizeForPublic(
-      db,
-      withChange({ players: Array.isArray(current.data.doubles) ? current.data.doubles : [] }, prevDoubles),
-    ),
+    doubles: changed('doubles'),
+    mixed: changed('mixed'),
   };
 }
 
@@ -362,7 +382,7 @@ export function playerRatingHistory(db, playerId, discipline = 'single') {
   const byMonth = new Map();
   let best = null;
   for (const s of snaps) {
-    const list = discipline === 'double' ? (s.data.doubles || []) : (s.data.players || []);
+    const list = tableFor(s.data, discipline);
     const p = list.find((x) => x.playerId === playerId);
     if (!p) continue;
     const month = String(s.data.asOf || s.computedAt).slice(0, 7);
