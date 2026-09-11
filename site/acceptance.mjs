@@ -1848,7 +1848,7 @@ await check('ТЗ 4.5/4.6 «фото»: у тренера/корта/клуба 
 await check('ТЗ 4.2: автор, обложка-изображение, вложения (файл и ссылка) у новости; вложения черновика наружу не отдаются', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const _csrf = tokenFrom((await http('/admin/news', { jar })).text);
-  eq((await http('/admin/news', { method: 'POST', form: { _csrf, title: 'Новость с материалами', body: 'Текст.', is_published: '1', published_at: '2026-09-05', author: 'Пресс-служба ФТСО' }, jar })).status, 302, 'создание');
+  eq((await http('/admin/news', { method: 'POST', form: { _csrf, title: 'Новость с материалами', body: 'Анкеты: ftso67.ru/coaches/apply. Подробнее — https://tennis-russia.ru/rtt/ и <b>без html</b>.', is_published: '1', published_at: '2026-09-05', author: 'Пресс-служба ФТСО' }, jar })).status, 302, 'создание');
   const n = db.prepare("SELECT id, author FROM news WHERE title = 'Новость с материалами'").get();
   eq(n.author, 'Пресс-служба ФТСО', 'автор не сохранён');
   const sharpMod = (await import('sharp')).default;
@@ -1868,6 +1868,10 @@ await check('ТЗ 4.2: автор, обложка-изображение, вло
   assert(new RegExp(`<img src="/news/${n.id}/cover"`).test(page.text), 'обложка не показана картинкой');
   assert(/Положение/.test(page.text) && new RegExp(`/files/${atts[0].upload_id}`).test(page.text), 'файл-вложение не показано');
   assert(/https:\/\/example\.org\/results/.test(page.text) && /Результаты на сайте РТТ/.test(page.text), 'ссылка не показана');
+  // Адреса в тексте новости — кликабельны, свой домен без rel, чужой с noopener, HTML из текста экранирован.
+  assert(page.text.includes('<a href="https://ftso67.ru/coaches/apply">ftso67.ru/coaches/apply</a>.'), 'свой адрес в тексте не стал ссылкой (или точка попала в адрес)');
+  assert(page.text.includes('<a href="https://tennis-russia.ru/rtt/" rel="noopener noreferrer">https://tennis-russia.ru/rtt/</a>'), 'чужой адрес не стал ссылкой с noopener');
+  assert(page.text.includes('&lt;b&gt;без html&lt;/b&gt;'), 'HTML из текста новости попал в разметку');
   eq((await http(`/files/${atts[0].upload_id}`)).status, 200, 'файл вложения скачивается');
   assert(new RegExp(`<img src="/news/${n.id}/cover"`).test((await http('/news')).text), 'в списке новостей нет обложки');
   // Черновик — ни обложки, ни файла наружу.
