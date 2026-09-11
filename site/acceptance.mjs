@@ -5409,6 +5409,32 @@ await check('§8.4 игрок стоит во всех подходящих во
   return 'срезы y14,u15,u17,u19; чужие срезы пусты; без даты рождения — только общая; парный — отдельно';
 });
 
+await check('места как у РТТ: пол и срез — свой список с первого, делящие место делят и тут; поиск по фамилии — вид', async () => {
+  // Пластина: <span class="rplate__place">N (O)</span>, скобки только когда место списка ≠ месту общей таблицы.
+  const places = (html) => [...html.matchAll(/<span class="rplate__place">(\d+)(?: <span class="muted">\((\d+)\)<\/span>)?<\/span>/g)]
+    .map((m) => ({ place: Number(m[1]), overall: m[2] ? Number(m[2]) : Number(m[1]), paren: Boolean(m[2]) }));
+  const invariant = (rows, label) => {
+    assert(rows.length > 0, `${label}: список пуст`);
+    eq(rows[0].place, 1, `${label}: начинается не с первого места`);
+    for (let i = 1; i < rows.length; i++) {
+      const cur = rows[i]; const prev = rows[i - 1];
+      assert(cur.overall >= prev.overall, `${label}: порядок общей таблицы нарушен`);
+      if (cur.overall === prev.overall) eq(cur.place, prev.place, `${label}: делят место ${cur.overall} в общей, а в списке разошлись`);
+      else eq(cur.place, i + 1, `${label}: после разных мест ожидалось ${i + 1}`);
+    }
+  };
+  const all = places((await http('/rating')).text);
+  assert(all.length > 2 && all.every((r) => !r.paren), 'общая таблица: скобок быть не должно');
+  assert(all.some((r, i) => i > 0 && r.place === all[i - 1].place), 'в общей таблице нет делящих место — проверка деления не сработает');
+  invariant(places((await http('/rating?sex=F')).text), 'женщины');
+  invariant(places((await http('/rating?sex=M')).text), 'мужчины');
+  invariant(places((await http('/rating?slice=u19')).text), 'до 19');
+  invariant(places((await http('/rating?slice=u19&sex=M')).text), 'юноши до 19');
+  const byName = places((await http('/rating?q=' + encodeURIComponent('Волков'))).text);
+  assert(byName.length >= 1 && byName.every((r) => !r.paren), 'поиск по фамилии не должен пересчитывать места');
+  return `общая ${all.length} без скобок; пол/срез — с первого, деление наследуется; поиск — вид`;
+});
+
 await check('§8.5–8.6 фото: нет -> профиль без картинки; загрузил -> появилась; заменил -> новая; удалил -> исчезла сразу, прямая ссылка 404', async () => {
   const st0 = currentStandings(db).players.find((p) => p.playerId === p19);
   const before = await http(`/player/${p19}`);
