@@ -20,7 +20,7 @@
          обычным текстом, HTML из админки в разметку не попадает. */
       %>
       <% item.body.split(/\n{2,}/).forEach(function (para) { %>
-        <p><%= para %></p>
+        <p><%- linkify(para) %></p>
       <% }); %>
       <% if (attachments.length) { %>
         <h2 class="news-attach-title">Материалы</h2>

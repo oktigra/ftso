@@ -38,6 +38,7 @@ import mountServiceFiles from './routes/service-files.mjs';
 import mountAuth from './routes/auth.mjs';
 import mountAdmin from './routes/admin.mjs';
 import mountAdminContent from './routes/admin-content.mjs';
+import { linkify } from './lib/linkify.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -161,6 +162,7 @@ export function createApp(config) {
   // ДАТА ТУРНИРА НА ВИТРИНЕ: «24 авг». Один хелпер на главную и календарь —
   // раньше он жил копией внутри home.ejs, и вторая витрина форматировала даты по-своему.
   const MONTHS_RU = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  app.locals.linkify = linkify; // адреса в тексте новости — ссылками (server/lib/linkify.mjs)
   app.locals.dm = (d) => (d ? `${Number(d.slice(8, 10))} ${MONTHS_RU[Number(d.slice(5, 7)) - 1]}` : '');
 
   app.use(
