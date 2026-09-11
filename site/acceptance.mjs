@@ -3007,6 +3007,40 @@ await check('микст подписан на витрине турнира от
   return 'три записи одного игрока — одиночный, парный и микст — подписаны каждая своим разрядом';
 });
 
+await check('микст — третий рейтинг теми же правилами: своя вкладка (только когда не пуст), шкала как у парного, в одиночный и парный не подмешивается', async () => {
+  // Решение владельца 11.09.2026: у РТТ микста в классификации нет, у федерации он есть
+  // в первом же турнире — считать отдельным списком, без скидок.
+  const before = (await http('/rating')).text;
+  assert(!/href="\/rating\?discipline=mixed"/.test(before), 'вкладка микста показана при пустом микстовом рейтинге');
+  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, city, is_published) VALUES ('Микст-зачёт', '2026-08-21', 'B', 'Ярцево', 1)").run().lastInsertRowid);
+  const ins = db.prepare('INSERT INTO players (full_name, city, sex, is_public) VALUES (?, ?, ?, 1)');
+  const a = Number(ins.run('Микстова Первая', 'Ярцево', 'F').lastInsertRowid);
+  const b = Number(ins.run('Микстов Второй', 'Ярцево', 'M').lastInsertRowid);
+  const r = db.prepare('INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
+  r.run(tid, a, 1, 'mixed'); r.run(tid, b, 2, 'mixed'); r.run(tid, b, 1, 'double');
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  const st = currentStandings(db);
+  const mx = st.mixed.map((p) => [p.playerName, p.rank, p.ratingPoints]);
+  eq(JSON.stringify(mx.filter((x) => /Микстов/.test(x[0]))), JSON.stringify([['Микстова Первая', 1, 100], ['Микстов Второй', 2, 70]]), 'микст: места и очки по общей шкале (B×1: 100, 70)');
+  assert(!st.players.some((p) => /Микстов/.test(p.playerName)), 'микстовый результат попал в одиночный рейтинг');
+  assert(st.doubles.some((p) => p.playerName === 'Микстов Второй' && p.ratingPoints === 100) && !st.doubles.some((p) => p.playerName === 'Микстова Первая'), 'парный: место в миксте не должно ни добавлять очков, ни давать строку');
+  const page = await http('/rating?discipline=mixed');
+  eq(page.status, 200, 'страница микста');
+  assert(/href="\/rating\?discipline=mixed"[^>]*aria-current="page"/.test(page.text), 'вкладка микста не помечена текущей');
+  assert(/<input type="hidden" name="discipline" value="mixed">/.test(page.text), 'форма фильтров не несёт микст');
+  assert(rowNames(page.text).includes('Микстова Первая') && rowNames(page.text).includes('Микстов Второй'), 'микстовые игроки не показаны');
+  assert(/href="\/rating\?discipline=mixed"/.test((await http('/rating')).text), 'вкладка микста не появилась на одиночном при непустом миксте');
+  const csv = await http('/rating.csv?discipline=mixed');
+  assert(csv.text.includes('Микстова Первая') && !csv.text.includes('Ковалёв'), 'CSV микста не по микстовому списку');
+  const print = await http('/rating/print?discipline=mixed');
+  assert(/Разряд: микст/.test(print.text), 'печатная версия не подписана микстом');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
+  db.prepare('DELETE FROM players WHERE id IN (?, ?)').run(a, b);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  assert(!/href="\/rating\?discipline=mixed"/.test((await http('/rating')).text), 'после удаления микстовых результатов вкладка должна исчезнуть');
+  return 'микст: 1 → 100, 2 → 70 при B×1, свой список, вкладка появляется с данными и исчезает без них; одиночный и парный не тронуты';
+});
+
 await check('категория C: принимается формой, коэффициент ×0,5 в движке, показана в правилах на витрине', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const _csrf = tokenFrom((await http('/admin/tournaments', { jar })).text);

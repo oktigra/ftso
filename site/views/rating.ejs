@@ -14,7 +14,10 @@
         <% if (slice) { %><span class="tag">срез: <%= slice.label %></span><% } %>
       </div>
       <%
-      /* РАЗРЯД — ДВЕ РАВНОПРАВНЫЕ КЛАССИФИКАЦИИ (09.09.2026), как у РТТ: там одиночная
+      /* РАЗРЯД — РАВНОПРАВНЫЕ КЛАССИФИКАЦИИ (09.09.2026), как у РТТ: там одиночная
+         и парная; третья, микст, добавлена 11.09.2026 решением владельца — у РТТ
+         микста нет, у федерации есть; считается теми же правилами, вкладка видна,
+         пока список не пуст. Дальше — прежний комментарий: там одиночная
          и парная считаются раздельно и лежат отдельными таблицами. У нас парная была
          спрятана в фильтрах наравне с городом и выглядела второстепенной.
          Прочие фильтры при переключении сохраняются — иначе срез сбрасывается. */
@@ -27,6 +30,9 @@
       <nav class="tabs" aria-label="Разряд">
         <a class="tabs__item<%= filters.discipline === 'single' ? ' is-active' : '' %>" href="<%= hrefFor('single') %>"<%- filters.discipline === 'single' ? ' aria-current="page"' : '' %>>Одиночный разряд</a>
         <a class="tabs__item<%= filters.discipline === 'double' ? ' is-active' : '' %>" href="<%= hrefFor('double') %>"<%- filters.discipline === 'double' ? ' aria-current="page"' : '' %>>Парный разряд</a>
+        <% if (hasMixed) { %>
+        <a class="tabs__item<%= filters.discipline === 'mixed' ? ' is-active' : '' %>" href="<%= hrefFor('mixed') %>"<%- filters.discipline === 'mixed' ? ' aria-current="page"' : '' %>>Микст</a>
+        <% } %>
       </nav>
     <% } %>
   </div>
