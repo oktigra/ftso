@@ -41,6 +41,7 @@ import {
   ENTRY_STATUS_RU,
   entryStatus,
   entryDeadline,
+  calendarGrid,
 } from '../lib/content.mjs';
 import { uploadById, sendUpload, sendUploadInline } from '../lib/uploads.mjs';
 
@@ -176,9 +177,20 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       format: TOURNAMENT_FORMATS.includes(q('format')) ? q('format') : '',
       sex: ['M', 'F', 'X'].includes(q('sex')) ? q('sex') : '',
     };
+    // ВИД КАЛЕНДАРЯ (задача 4, 12.09.2026): «список» (ящики) или «сетка» (месяц по неделям,
+    // как у РТТ). Выбор запоминается cookie на год; параметр ?view= в адресе главнее cookie.
+    const cookieView = /(?:^|;\s*)ftso\.calendar=(grid|list)/.exec(req.headers.cookie || '');
+    const askedView = ['grid', 'list'].includes(String(req.query.view || '')) ? String(req.query.view) : '';
+    const view = askedView || (cookieView ? cookieView[1] : 'list');
+    if (askedView && (!cookieView || cookieView[1] !== askedView)) {
+      res.setHeader('Set-Cookie', `ftso.calendar=${askedView}; Path=/tournaments; Max-Age=31536000; SameSite=Lax`);
+    }
+    const gridMonth = /^\d{4}-\d{2}$/.test(String(req.query.gm || '')) ? String(req.query.gm) : (filters.month || new Date().toISOString().slice(0, 7));
     res.render('tournaments-list', {
       title: 'Турниры — ФТСО',
       tournaments: tournamentList(db, filters),
+      view,
+      grid: view === 'grid' ? calendarGrid(db, filters, gridMonth) : null,
       filters,
       options: tournamentFilterOptions(db),
       kindRu: TOURNAMENT_KIND_RU,

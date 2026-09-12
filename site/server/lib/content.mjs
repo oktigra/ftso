@@ -134,6 +134,40 @@ export function tournamentList(db, filters = {}) {
   return out;
 }
 
+/**
+ * МЕСЯЧНАЯ СЕТКА КАЛЕНДАРЯ (задача 4 START15, как у РТТ): недели с понедельника,
+ * турнир стоит в каждом дне своего интервала start_date..end_date (без start —
+ * в день end_date). Берём турниры, ПЕРЕСЕКАЮЩИЕ месяц, а не только с концом в нём —
+ * фильтр «месяц» списка тут не применяется, остальные фильтры — те же.
+ */
+export function calendarGrid(db, filters = {}, month) {
+  const [y, m] = month.split('-').map(Number);
+  const first = new Date(Date.UTC(y, m - 1, 1));
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const monthStart = month + '-01';
+  const monthEnd = month + '-' + String(daysInMonth).padStart(2, '0');
+  const rows = tournamentList(db, { ...filters, month: '' })
+    .filter((t) => (t.start_date || t.end_date) <= monthEnd && t.end_date >= monthStart);
+  const byDay = new Map();
+  for (const t of rows) {
+    const from = (t.start_date || t.end_date) < monthStart ? monthStart : (t.start_date || t.end_date);
+    const to = t.end_date > monthEnd ? monthEnd : t.end_date;
+    for (let d = Number(from.slice(8, 10)); d <= Number(to.slice(8, 10)); d++) {
+      if (!byDay.has(d)) byDay.set(d, []);
+      byDay.get(d).push({ ...t, first: d === Number(from.slice(8, 10)) });
+    }
+  }
+  const lead = (first.getUTCDay() + 6) % 7; // понедельник = 0
+  const cells = [];
+  for (let i = 0; i < lead; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push({ day: d, iso: month + '-' + String(d).padStart(2, '0'), items: byDay.get(d) || [] });
+  while (cells.length % 7) cells.push(null);
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  const shift = (k) => { const dt = new Date(Date.UTC(y, m - 1 + k, 1)); return dt.toISOString().slice(0, 7); };
+  return { month, weeks, prev: shift(-1), next: shift(1), count: rows.length };
+}
+
 /** Картинка сайта по ключу (например, 'home-hero') → id загрузки либо null. */
 export function siteAsset(db, key) {
   const row = db.prepare('SELECT upload_id FROM site_assets WHERE key = ?').get(key);

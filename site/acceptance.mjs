@@ -3163,6 +3163,31 @@ await check('система проведения турнира: сохраня�
   return 'round_robin и knockout_all сохранены, swiss отбит; карточка, календарь, фильтр и админка показывают систему';
 });
 
+await check('календарь: вид «сетка месяца» — недели с понедельника, турнир в каждом дне интервала, листание месяцев, выбор вида запоминается cookie', async () => {
+  const ins = db.prepare('INSERT INTO tournaments (name, start_date, end_date, category, city, kind, is_published) VALUES (?, ?, ?, ?, ?, ?, 1)');
+  const two = Number(ins.run('Сетка-двухдневный', '2031-05-14', '2031-05-15', 'B', 'Вязьма', 'other').lastInsertRowid);
+  const one = Number(ins.run('Сетка-однодневный', null, '2031-05-31', 'C', 'Вязьма', 'other').lastInsertRowid);
+  const span = Number(ins.run('Сетка-через-границу', '2031-05-30', '2031-06-02', 'C', 'Вязьма', 'other').lastInsertRowid);
+  const g = await http('/tournaments?view=grid&gm=2031-05');
+  eq(g.status, 200, 'сетка');
+  assert(/ftso\.calendar=grid/.test(g.headers.get('set-cookie') || ''), 'выбор вида не запомнен cookie');
+  assert(/<th scope="col">Пн<\/th>[\s\S]*<th scope="col">Вс<\/th>/.test(g.text) && /cal__title">май 2031/i.test(g.text), 'заголовок/дни недели');
+  const chips = (id) => (g.text.match(new RegExp(`class="cal__item[^"]*" href="/tournaments/${id}"`, 'g')) || []).length;
+  eq([chips(two), chips(one), chips(span)].join(','), '2,1,2', 'турнир должен стоять в каждом дне своего интервала в пределах месяца');
+  assert(/cal__item--upcoming is-first" href="\/tournaments\/${''}/.test('') || new RegExp(`is-first" href="/tournaments/${two}"`).test(g.text), 'первый день интервала помечен');
+  // 1 мая 2031 — четверг: перед ним три пустых ячейки (Пн, Вт, Ср).
+  assert(/<tr>\s*(<td class="cal__cell cal__cell--empty"><\/td>\s*){3}<td class="cal__cell/.test(g.text), 'недели должны начинаться с понедельника (1 мая 2031 — четверг)');
+  assert(g.text.includes('gm=2031-04') && g.text.includes('gm=2031-06'), 'нет ссылок на соседние месяцы');
+  const remembered = await http('/tournaments', { headers: { cookie: 'ftso.calendar=grid' } });
+  assert(/cal__table/.test(remembered.text), 'cookie=grid без ?view должен открывать сетку');
+  const back = await http('/tournaments?view=list', { headers: { cookie: 'ftso.calendar=grid' } });
+  assert(/ftso\.calendar=list/.test(back.headers.get('set-cookie') || '') && /tdrawers--calendar/.test(back.text) && !/cal__table/.test(back.text), 'возврат к списку с перезаписью cookie');
+  const plain = await http('/tournaments');
+  assert(!/cal__table/.test(plain.text) && !/ftso\.calendar=/.test(plain.headers.get('set-cookie') || ''), 'без cookie и без ?view — список, cookie вида не ставится');
+  db.prepare('DELETE FROM tournaments WHERE id IN (?, ?, ?)').run(two, one, span);
+  return 'май 2031: Пн-первый, 2+1+2 фишки, листание, cookie grid/list';
+});
+
 await check('тренер = игрок: связь записей (не слияние) — поле в карточке, ссылка на профиль, метка «Тренер», обезличивание снимает связь', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Тренеров Игрок Иванович', 'Смоленск', 'M')").run().lastInsertRowid);

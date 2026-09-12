@@ -1,10 +1,31 @@
 <%- include('partials/head') %>
 <%- include('partials/header') %>
 <main id="top">
+    <%
+    /* ПЕРЕКЛЮЧАТЕЛЬ ВИДА (задача 4): ссылки несут текущие фильтры, сервер запоминает выбор cookie. */
+    const qs = (extra) => {
+      const p = new URLSearchParams();
+      Object.keys(filters).forEach(function (k) {
+        const v = filters[k];
+        if (Array.isArray(v)) v.forEach(function (x) { p.append(k, x); }); else if (v) p.set(k, v);
+      });
+      Object.keys(extra).forEach(function (k) { if (extra[k]) p.set(k, extra[k]); else p.delete(k); });
+      const str = p.toString();
+      return '/tournaments' + (str ? '?' + str : '');
+    };
+    const MONTHS_FULL = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+    const monthTitle = (ym) => MONTHS_FULL[Number(ym.slice(5, 7)) - 1] + ' ' + ym.slice(0, 4);
+    %>
 <section class="page-head">
   <div class="container">
     <span class="eyebrow">Раздел сайта</span>
-    <h1>Турниры</h1>
+    <div class="page-head__row">
+      <h1>Турниры</h1>
+      <nav class="tabs tabs--head" aria-label="Вид календаря">
+        <a class="tabs__item<%= view === 'list' ? ' is-active' : '' %>" href="<%= qs({ view: 'list' }) %>"<%- view === 'list' ? ' aria-current="page"' : '' %>>Список</a>
+        <a class="tabs__item<%= view === 'grid' ? ' is-active' : '' %>" href="<%= qs({ view: 'grid' }) %>"<%- view === 'grid' ? ' aria-current="page"' : '' %>>Сетка месяца</a>
+      </nav>
+    </div>
     <p class="muted">Календарь соревнований Федерации. Категория задаёт рейтинговый коэффициент.</p>
   </div>
 </section>
@@ -90,7 +111,34 @@
         </div>
         <% if (anyFilter) { %><div class="field"><a class="btn btn--secondary" href="/tournaments">Сбросить</a></div><% } %>
     </form>
-    <% if (!tournaments.length) { %>
+    <% if (view === 'grid') { %>
+      <div class="cal">
+        <div class="cal__nav">
+          <a class="btn btn--secondary btn--small" href="<%= qs({ view: 'grid', gm: grid.prev }) %>" rel="nofollow">← <%= monthTitle(grid.prev) %></a>
+          <h2 class="cal__title"><%= monthTitle(grid.month) %><span class="muted"> · турниров: <%= grid.count %></span></h2>
+          <a class="btn btn--secondary btn--small" href="<%= qs({ view: 'grid', gm: grid.next }) %>" rel="nofollow"><%= monthTitle(grid.next) %> →</a>
+        </div>
+        <table class="cal__table" aria-label="Турниры по дням: <%= monthTitle(grid.month) %>">
+          <thead><tr><% ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].forEach(function (d) { %><th scope="col"><%= d %></th><% }); %></tr></thead>
+          <tbody>
+            <% grid.weeks.forEach(function (week) { %>
+              <tr>
+                <% week.forEach(function (cell) { %>
+                  <% if (!cell) { %><td class="cal__cell cal__cell--empty"></td><% } else { %>
+                    <td class="cal__cell<%= cell.items.length ? ' has-items' : '' %>">
+                      <span class="cal__day"><%= cell.day %></span>
+                      <% cell.items.forEach(function (t) { %>
+                        <a class="cal__item cal__item--<%= t.status %><%= t.first ? ' is-first' : '' %>" href="/tournaments/<%= t.id %>" title="<%= t.name %><%= t.city ? ', ' + t.city : '' %> · кат. <%= t.category %>"><%= t.name %></a>
+                      <% }); %>
+                    </td>
+                  <% } %>
+                <% }); %>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    <% } else if (!tournaments.length) { %>
       <% if (anyFilter) { %>
         <div class="panel notice">По выбранным фильтрам турниров нет.</div>
       <% } else { %>
