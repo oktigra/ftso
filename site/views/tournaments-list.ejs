@@ -58,6 +58,13 @@
           </select>
         </div>
         <div class="field">
+          <label for="tf-entry">Приём заявок</label>
+          <select id="tf-entry" name="entry">
+            <option value="">Любой</option>
+            <% Object.keys(entryRu).forEach(function (k) { %><option value="<%= k %>"<%= filters.entry === k ? ' selected' : '' %>><%= entryRu[k] %></option><% }); %>
+          </select>
+        </div>
+        <div class="field">
           <label for="tf-sex">Пол</label>
           <select id="tf-sex" name="sex">
             <option value="">все</option>
@@ -114,6 +121,7 @@
                 <div class="tdrawer__meta"><%= t.city || 'Смоленская область' %> · <%= kindRu[t.kind] || 'турнир' %><%= t.participants ? ' · участников: ' + t.participants : '' %></div>
                 <div class="tdrawer__tags">
                   <span class="tag tag--<%= t.status %>"><%= statusRu[t.status] %></span>
+                  <% if (t.status === 'upcoming' || filters.entry) { %><span class="tag tag--entry-<%= t.entry %>" title="Заявки до <%= t.entryDeadline ? t.entryDeadline.split('-').reverse().join('.') : '' %>"><%= entryRu[t.entry] %></span><% } %>
                   <% if (t.age_group) { %><span class="tag"><%= t.age_group %></span><% } %>
                   <% if (t.sex) { %><span class="tag"><%= sexRu[t.sex] %></span><% } %>
                 </div>

@@ -237,6 +237,19 @@ import { applyDirectorySeed } from '../server/lib/directory-seed.mjs';
 // писались как 'double', а UNIQUE (tournament_id, player_id, discipline) допускает
 // одну запись на игрока. Кто играл в турнире и пары, и микст, ТИХО терял одно место:
 // INSERT OR REPLACE перетирал предыдущее. Расширяем CHECK до трёх значений.
+// ДЕДЛАЙН ЗАЯВОК — ДАТА (11.09.2026, задача 3). Раньше поле было свободным текстом
+// («10.09.2026, 20:00»); теперь по нему считается статус приёма, так что храним
+// ГГГГ-ММ-ДД. Старые значения вида ДД.ММ.ГГГГ[, …] переводим, остальное — в NULL
+// (тогда дедлайн = накануне старта). На бою на 11.09 поле пустое у всех турниров.
+function entryDeadlineToDate(db) {
+  const rows = db.prepare("SELECT id, entry_deadline FROM tournaments WHERE entry_deadline IS NOT NULL AND entry_deadline NOT GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'").all();
+  const upd = db.prepare('UPDATE tournaments SET entry_deadline = ? WHERE id = ?');
+  for (const r of rows) {
+    const m = /^(\d{2})\.(\d{2})\.(\d{4})/.exec(String(r.entry_deadline).trim());
+    upd.run(m ? `${m[3]}-${m[2]}-${m[1]}` : null, r.id);
+  }
+}
+
 function allowMixedDiscipline(db) {
   const table = db
     .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'results'")
@@ -331,6 +344,7 @@ export function migrate() {
   addColumnIfMissing(db, 'tournaments', 'is_published', 'INTEGER NOT NULL DEFAULT 1'); // черновик/опубликован (06.09.2026)
   addColumnIfMissing(db, 'tournaments', 'sex', 'TEXT'); // пол участников M/F/X (06.09.2026)
   for (const c of ['venue', 'organizer', 'organizer_contact', 'fee', 'entry_deadline']) addColumnIfMissing(db, 'tournaments', c, 'TEXT'); // ТЗ 4.3 место/организатор; взнос/дедлайн
+  entryDeadlineToDate(db);
   // ТЗ 4.5/4.6 — поля справочников и фильтры (05.09.2026).
   for (const c of ['city', 'specialization', 'qualification', 'groups']) addColumnIfMissing(db, 'coaches', c, 'TEXT');
   for (const c of ['city', 'courts_count', 'season', 'club', 'contact']) addColumnIfMissing(db, 'courts', c, 'TEXT');

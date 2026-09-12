@@ -3092,13 +3092,52 @@ await check('подводки справочников (правятся в «Т
   const { loadTexts } = await import('./server/lib/texts.mjs'); loadTexts(db);
   // Взнос и срок подачи заявки.
   const c2 = tokenFrom((await http('/admin/tournaments', { jar })).text);
-  eq((await http('/admin/tournaments', { method: 'POST', form: { _csrf: c2, name: 'Турнир со взносом', end_date: '2026-09-30', category: 'B', kind: 'other', fee: '500 ₽ с игрока', entry_deadline: '28.09.2026, 20:00', action: 'publish' }, jar })).status, 302, 'создание');
+  eq((await http('/admin/tournaments', { method: 'POST', form: { _csrf: c2, name: 'Турнир со взносом', end_date: '2026-09-30', category: 'B', kind: 'other', fee: '500 ₽ с игрока', entry_deadline: '2026-09-28', action: 'publish' }, jar })).status, 302, 'создание');
   const t = db.prepare("SELECT id, fee, entry_deadline FROM tournaments WHERE name = 'Турнир со взносом'").get();
-  eq([t.fee, t.entry_deadline].join('|'), '500 ₽ с игрока|28.09.2026, 20:00', 'поля не сохранились');
+  eq([t.fee, t.entry_deadline].join('|'), '500 ₽ с игрока|2026-09-28', 'поля не сохранились');
   const card = (await http(`/tournaments/${t.id}`)).text;
-  assert(/Взнос: 500 ₽ с игрока · Заявки до: 28\.09\.2026, 20:00/.test(card), 'на карточке нет взноса/срока');
+  assert(/Взнос: 500 ₽ с игрока/.test(card) && /Заявки до: 28\.09\.2026/.test(card), 'на карточке нет взноса/срока');
+  // Дедлайн — только дата: свободный текст отбивается с сообщением, запись не создаётся.
+  const bad = await http('/admin/tournaments', { method: 'POST', form: { _csrf: c2, name: 'Турнир с кривым сроком', end_date: '2026-09-30', category: 'B', kind: 'other', entry_deadline: '28.09.2026, 20:00', action: 'publish' }, jar });
+  assert(bad.status === 302 && !db.prepare("SELECT id FROM tournaments WHERE name = 'Турнир с кривым сроком'").get(), 'текстовый дедлайн должен отбиваться');
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(t.id); db.prepare('DELETE FROM write_attempts').run();
   return 'подводки четырёх справочников из «Текстов» (правятся и сбрасываются); взнос и срок заявки сохраняются и видны на карточке';
+});
+
+await check('приём заявок: открыт до дедлайна включительно, поздняя — до дня старта, закрыт со старта; без дедлайна — накануне старта; метка на карточке и в календаре, фильтр ?entry=', async () => {
+  const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  const ins = db.prepare('INSERT INTO tournaments (name, start_date, end_date, category, city, kind, is_published, entry_deadline) VALUES (?, ?, ?, ?, ?, ?, 1, ?)');
+  const mk = (name, start, end, dl) => Number(ins.run(name, start, end, 'C', 'Рославль', 'other', dl).lastInsertRowid);
+  const ids = {
+    open: mk('Приём-открыт', day(10), day(11), day(3)),           // сегодня < дедлайн < старт
+    edge: mk('Приём-край', day(10), day(11), day(0)),             // дедлайн = сегодня → ещё открыт
+    late: mk('Приём-поздно', day(2), day(3), day(-1)),            // дедлайн прошёл, старт впереди
+    noDl: mk('Приём-без-срока', day(5), day(6), null),            // без дедлайна → накануне старта = day(4) → открыт
+    eve: mk('Приём-канун', day(1), day(1), null),                 // старт завтра, дедлайн = сегодня → открыт
+    closed: mk('Приём-закрыт', day(0), day(2), null),             // старт сегодня → закрыт
+    done: mk('Приём-прошёл', day(-9), day(-8), null),             // завершён → закрыт
+  };
+  // Метка — внутри ящика своего турнира (до </li>), иначе регэксп утёк бы в соседний ящик.
+  const tag = (html, id) => { const i = html.indexOf(`href="/tournaments/${id}"`); if (i < 0) return null; const box = html.slice(i, html.indexOf('</li>', i)); const m = /tag--entry-(open|late|closed)/.exec(box); return m ? m[1] : null; };
+  const all = (await http('/tournaments')).text;
+  eq([tag(all, ids.open), tag(all, ids.edge), tag(all, ids.late), tag(all, ids.noDl), tag(all, ids.eve)].join(','), 'open,open,late,open,open', 'метки приёма на предстоящих в календаре');
+  assert(!tag(all, ids.done) && !tag(all, ids.closed), 'у идущих/завершённых метка приёма без фильтра не показывается');
+  const openList = (await http('/tournaments?entry=open')).text;
+  assert([ids.open, ids.edge, ids.noDl, ids.eve].every((id) => openList.includes(`href="/tournaments/${id}"`)) && ![ids.late, ids.closed, ids.done].some((id) => openList.includes(`href="/tournaments/${id}"`)), 'фильтр entry=open');
+  const lateList = (await http('/tournaments?entry=late')).text;
+  assert(lateList.includes(`href="/tournaments/${ids.late}"`) && !lateList.includes(`href="/tournaments/${ids.open}"`), 'фильтр entry=late');
+  const closedList = (await http('/tournaments?entry=closed')).text;
+  assert([ids.closed, ids.done].every((id) => closedList.includes(`href="/tournaments/${id}"`)) && tag(closedList, ids.closed) === 'closed', 'фильтр entry=closed и метка при фильтре');
+  assert(/<option value="late"/.test(all) && /name="entry"/.test(all), 'в форме фильтров нет «Приём заявок»');
+  const cardNoDl = (await http(`/tournaments/${ids.noDl}`)).text;
+  const dd = day(4).split('-').reverse().join('.');
+  assert(cardNoDl.includes(`Заявки до: ${dd} (накануне старта)`) && /tag--entry-open">Приём открыт/.test(cardNoDl), 'карточка без дедлайна: накануне старта + приём открыт');
+  const cardLate = (await http(`/tournaments/${ids.late}`)).text;
+  assert(/tag--entry-late">Поздняя заявка/.test(cardLate), 'карточка: поздняя заявка');
+  const cardDone = (await http(`/tournaments/${ids.done}`)).text;
+  assert(/tag--entry-closed">Приём закрыт/.test(cardDone), 'карточка завершённого: приём закрыт');
+  db.prepare('DELETE FROM tournaments WHERE id IN (' + Object.values(ids).map(() => '?').join(',') + ')').run(...Object.values(ids));
+  return 'open/edge/late/без-срока/канун/закрыт/завершён — метки и фильтр сошлись; карточка пишет дату и статус';
 });
 
 await check('тренер = игрок: связь записей (не слияние) — поле в карточке, ссылка на профиль, метка «Тренер», обезличивание снимает связь', async () => {
