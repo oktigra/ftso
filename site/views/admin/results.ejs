@@ -188,11 +188,11 @@
           <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/seed-by-rating" class="stacked-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
             <div class="field">
-              <label for="br-<%= b.id %>">Посеять по рейтингу — участники, по одному в строке (фамилия и имя, «#номер» при тёзках)</label>
-              <textarea id="br-<%= b.id %>" name="players" rows="5" maxlength="4000" placeholder="Иванов Иван&#10;Петров Пётр (Вязьма)&#10;#12"></textarea>
+              <label for="br-<%= b.id %>"><%= b.kind === 'double' ? 'Посеять по рейтингу — пары, по одной в строке: «Фамилия Имя / Фамилия Имя» («#номер» при тёзках)' : 'Посеять по рейтингу — участники, по одному в строке (фамилия и имя, «#номер» при тёзках)' %></label>
+              <textarea id="br-<%= b.id %>" name="players" rows="5" maxlength="4000" placeholder="<%= b.kind === 'double' ? 'Иванов Иван / Петров Пётр&#10;Сидоров Сидор / #12' : 'Иванов Иван&#10;Петров Пётр (Вязьма)&#10;#12' %>"></textarea>
             </div>
             <div class="inline-form"><button class="btn btn--primary btn--small" type="submit">Посеять по рейтингу</button>
-              <span class="muted">сеяные — по текущему рейтингу (<%= b.kind === 'double' ? 'парный' : 'одиночный' %> разряд), без рейтинга — в конец; потом можно править</span></div>
+              <span class="muted"><%= b.kind === 'double' ? 'сеяные пары — по сумме парных очков обоих игроков (как у РТТ), без рейтинга — в конец; потом можно править' : 'сеяные — по текущему рейтингу (одиночный разряд), без рейтинга — в конец; потом можно править' %></span></div>
           </form>
         <% } else if (!b.rounds.some(function (r) { return r.pairs.some(function (p) { return p.winner; }); })) { %>
           <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/swap" class="inline-form">
@@ -218,8 +218,8 @@
         <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/seed" class="inline-form">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
           <div class="field"><label for="bp-<%= b.id %>">Позиция</label><input id="bp-<%= b.id %>" name="position" inputmode="numeric" maxlength="2" placeholder="1–<%= b.size %>" required></div>
-          <div class="field field--wide"><label for="bs-<%= b.id %>">Игрок</label>
-            <input id="bs-<%= b.id %>" name="player" list="players-list" autocomplete="off" maxlength="140" placeholder="первые буквы фамилии" required></div>
+          <div class="field field--wide"><label for="bs-<%= b.id %>"><%= b.kind === 'double' ? 'Пара' : 'Игрок' %></label>
+            <input id="bs-<%= b.id %>" name="player"<%- b.kind === 'double' ? '' : ' list="players-list"' %> autocomplete="off" maxlength="<%= b.kind === 'double' ? 280 : 140 %>" placeholder="<%= b.kind === 'double' ? 'Иванов Иван / Петров Пётр' : 'первые буквы фамилии' %>" required></div>
           <button class="btn btn--secondary btn--small" type="submit">Посеять</button>
         </form>
         <div class="bracket">

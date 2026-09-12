@@ -2297,6 +2297,83 @@ await check('сетка по рейтингу: посев из списка по
   return 'посев по рейтингу расставил №1 и №2 по половинам, новичка — последним; обмен работает до итогов; PDF (шрифт встроен) и Word (сетка в document.xml) скачиваются';
 });
 
+await check('парная сетка: слот — пара «А / Б», посев по сумме парных очков (как у РТТ), матч с партнёрами, места обоим в парный разряд, одиночный результат не трогается', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, is_published) VALUES ('Парная сетка', date('now','+12 days'), 'B', 1)").run().lastInsertRowid);
+  // Парный рейтинг строим сами: прошлый турнир категории A с парными местами 1,1,2,2 → 200,200,140,140.
+  const ins = db.prepare("INSERT INTO players (full_name, city, sex) VALUES (?, 'Смоленск', 'M')");
+  const d1 = Number(ins.run('Парный Рейтинговый Один').lastInsertRowid);
+  const d2 = Number(ins.run('Парный Рейтинговый Два').lastInsertRowid);
+  const d3 = Number(ins.run('Парный Рейтинговый Три').lastInsertRowid);
+  const d4 = Number(ins.run('Парный Рейтинговый Четыре').lastInsertRowid);
+  const past = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, is_published) VALUES ('Парный зачёт прошлый', date('now','-30 days'), 'A', 1)").run().lastInsertRowid);
+  const pr = db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, 'double')");
+  pr.run(past, d1, 1); pr.run(past, d2, 1); pr.run(past, d3, 2); pr.run(past, d4, 2);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  const st = currentStandings(db);
+  const d = st.doubles.filter((p) => [d1, d2, d3, d4].includes(p.playerId));
+  eq(d.length, 4, 'четверо должны быть в парном рейтинге');
+  const n1 = Number(ins.run('Парный Новичок Один').lastInsertRowid);
+  const n2 = Number(ins.run('Парный Новичок Два').lastInsertRowid);
+  const n3 = Number(ins.run('Парный Новичок Три').lastInsertRowid);
+  const n4 = Number(ins.run('Парный Новичок Четыре').lastInsertRowid);
+  // У d1 — свой одиночный результат в этом турнире: «Записать места» парной сетки не должен его снести.
+  db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, 7, 'single')").run(t, d1);
+  const _csrf = tokenFrom((await http(`/admin/tournaments/${t}/results`, { jar })).text);
+  const post = (path, form) => http(`/admin/tournaments/${t}/brackets${path}`, { method: 'POST', form: { _csrf, ...form }, jar });
+  eq((await post('', { name: 'Пары', size: '4', kind: 'double' })).status, 302, 'парная сетка');
+  const bid = db.prepare('SELECT id FROM tournament_brackets WHERE tournament_id = ?').get(t).id;
+  // Ручной посев одиночкой в парную сетку — отказ; парой — слот с partner_id.
+  await post(`/${bid}/seed`, { position: '1', player: `#${n1}` });
+  eq(db.prepare('SELECT COUNT(*) AS n FROM bracket_slots WHERE bracket_id = ?').get(bid).n, 0, 'одиночка в парную сетку не должна сеяться');
+  eq((await post(`/${bid}/seed`, { position: '1', player: `#${n1} / #${n2}` })).status, 302, 'ручной посев пары');
+  const s1 = db.prepare('SELECT player_id, partner_id FROM bracket_slots WHERE bracket_id = ? AND round = 0 AND position = 0').get(bid);
+  eq([s1.player_id, s1.partner_id].join('|'), `${n1}|${n2}`, 'слот пары');
+  await post(`/${bid}/seed`, { position: '2', player: `#${n2} / #${n3}` });
+  eq(db.prepare('SELECT COUNT(*) AS n FROM bracket_slots WHERE bracket_id = ?').get(bid).n, 1, 'игрок из другой пары не должен сеяться второй раз');
+  eq((await post(`/${bid}/unseed`, { position: '1' })).status, 302, 'снять пару');
+  // Посев по рейтингу: пары в перемешанном порядке; сила пары = сумма парных очков.
+  const pts = new Map(d.map((p) => [p.playerId, p.ratingPoints]));
+  const list = [`#${n1} / #${n2}`, `#${d3} / #${d4}`, `#${d1} / #${d2}`, `#${n3} / #${n4}`].join('\n');
+  eq((await post(`/${bid}/seed-by-rating`, { players: list })).status, 302, 'посев пар по рейтингу');
+  const slot = (pos) => db.prepare('SELECT player_id, partner_id FROM bracket_slots WHERE bracket_id = ? AND round = 0 AND position = ?').get(bid, pos);
+  const strongest = (pts.get(d1) + pts.get(d2)) >= (pts.get(d3) + pts.get(d4)) ? [d1, d2] : [d3, d4];
+  const second = strongest[0] === d1 ? [d3, d4] : [d1, d2];
+  eq([slot(0).player_id, slot(0).partner_id].join('|'), strongest.join('|'), 'сеяная пара №1 — сильнейшая по сумме очков, позиция 1');
+  eq([slot(2).player_id, slot(2).partner_id].join('|'), second.join('|'), 'сеяная пара №2 — на позиции 3 (другая половина)');
+  assert([slot(1), slot(3)].every((x) => [n1, n3].includes(x.player_id)), 'пары без рейтинга — последние');
+  // Витрина и админка показывают пару как «А / Б».
+  const adm = (await http(`/admin/tournaments/${t}/results`, { jar })).text;
+  const names = db.prepare('SELECT full_name FROM players WHERE id IN (?, ?)').all(strongest[0], strongest[1]).map((p) => p.full_name);
+  assert(adm.includes(`${names[0]} / ${names[1]}`), 'в админке пара не подписана «А / Б»');
+  assert(/Пара<\/label>/.test(adm) && /Иванов Иван \/ Петров Пётр/.test(adm), 'форма посева не переключилась на пары');
+  // Итог пары: матч с партнёрами, пара проходит дальше целиком.
+  eq((await post(`/${bid}/decide`, { r: '0', k: '0', score: '6:2 6:3' })).status, 302, 'итог первой пары');
+  const m = db.prepare("SELECT winner_player_id, loser_player_id, winner_partner_id, loser_partner_id, kind FROM matches WHERE tournament_id = ? AND stage = ?").get(t, `b:${bid}`);
+  eq([m.winner_player_id, m.winner_partner_id, m.kind].join('|'), `${strongest[0]}|${strongest[1]}|double`, 'матч без партнёров победителя или не парный');
+  eq(m.loser_partner_id, slot(1).partner_id, 'партнёр проигравшей пары не записан');
+  const next = db.prepare('SELECT player_id, partner_id FROM bracket_slots WHERE bracket_id = ? AND round = 1 AND position = 0').get(bid);
+  eq([next.player_id, next.partner_id].join('|'), strongest.join('|'), 'пара должна пройти дальше целиком');
+  eq((await post(`/${bid}/decide`, { r: '0', k: '1', score: '6:0 6:0' })).status, 302, 'итог второй пары');
+  eq((await post(`/${bid}/decide`, { r: '1', k: '0', score: '7:5 7:5' })).status, 302, 'финал');
+  eq((await post(`/${bid}/places`, {})).status, 302, 'записать места');
+  const res = (pid, disc) => db.prepare('SELECT place FROM results WHERE tournament_id = ? AND player_id = ? AND discipline = ?').get(t, pid, disc)?.place;
+  eq([res(strongest[0], 'double'), res(strongest[1], 'double')].join('|'), '1|1', 'обоим игрокам пары-чемпиона — 1-е место в парном разряде');
+  eq([res(second[0], 'double'), res(second[1], 'double')].join('|'), '2|2', 'финалистам — 2-е обоим');
+  eq(res(n1, 'double'), 3, 'проигравшим в 1/2 — 3-е');
+  eq(res(d1, 'single'), 7, 'одиночный результат игрока не должен затираться местами парной сетки');
+  assert(!db.prepare("SELECT 1 FROM results WHERE tournament_id = ? AND discipline = 'single' AND player_id <> ?").get(t, d1), 'парная сетка не должна писать одиночные результаты');
+  const card = (await http(`/tournaments/${t}`)).text;
+  assert(card.includes(`${names[0]} / ${names[1]}`) && /парный/.test(card), 'витрина: пара не подписана / разряд не показан');
+  // Посев из групп для парной сетки — отказ с понятным текстом.
+  await post(`/${bid}/seed-from-groups`, { per_group: '2' });
+  db.prepare('DELETE FROM tournaments WHERE id IN (?, ?)').run(t, past);
+  db.prepare('DELETE FROM players WHERE id IN (?, ?, ?, ?, ?, ?, ?, ?)').run(n1, n2, n3, n4, d1, d2, d3, d4);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'пара в слоте, сильнейшая по сумме очков сеяная №1, матчи с партнёрами, места обоим в парный, одиночный результат цел';
+});
+
 await check('протокол секретаря: пустая сетка в PDF/Word с местом для счёта, Excel-протокол с парами, обратная заливка разносит счёт по группе и сетке', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Протокол тест', date('now','+3 days'), 'B')").run().lastInsertRowid);

@@ -346,6 +346,8 @@ export function migrate() {
   for (const c of ['venue', 'organizer', 'organizer_contact', 'fee', 'entry_deadline']) addColumnIfMissing(db, 'tournaments', c, 'TEXT'); // ТЗ 4.3 место/организатор; взнос/дедлайн
   entryDeadlineToDate(db);
   addColumnIfMissing(db, 'tournaments', 'format', 'TEXT'); // система проведения (задача 2, 12.09.2026)
+  // ПАРНЫЕ СЕТКИ (задача 5, 12.09.2026): слот парной сетки — ПАРА; второй игрок пары в partner_id.
+  addColumnIfMissing(db, 'bracket_slots', 'partner_id', 'INTEGER REFERENCES players(id) ON DELETE CASCADE');
   // ТЗ 4.5/4.6 — поля справочников и фильтры (05.09.2026).
   for (const c of ['city', 'specialization', 'qualification', 'groups']) addColumnIfMissing(db, 'coaches', c, 'TEXT');
   for (const c of ['city', 'courts_count', 'season', 'club', 'contact']) addColumnIfMissing(db, 'courts', c, 'TEXT');
