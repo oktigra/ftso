@@ -433,6 +433,25 @@ tbody tr:hover{background:var(--surface-2);}
 .rating-meta{display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-top:.5rem;}
 .tag--upcoming{color:var(--primary); border-color:var(--primary);}
 .tag--ongoing{color:#b45309; border-color:#b45309;}
+/* Переключатель вида календаря — в шапке рядом с h1, чтобы не сдвигать ящики вниз
+   (при 1440×900 первый ящик иначе уезжал под полосу cookie — замер 12.09.2026). */
+.page-head__row{display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; flex-wrap:wrap;}
+.page-head__row h1{margin:0;}
+.tabs--head{margin:0 0 .4rem;}
+/* СЕТКА МЕСЯЦА КАЛЕНДАРЯ (задача 4, 12.09.2026) */
+.cal{margin-top:1rem;}
+.cal__nav{display:flex; align-items:center; justify-content:space-between; gap:.6rem; margin-bottom:.6rem; flex-wrap:wrap;}
+.cal__title{margin:0; font-size:1.25rem; text-transform:capitalize;}
+.cal__table{width:100%; table-layout:fixed; border-collapse:separate; border-spacing:4px;}
+.cal__table th{font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); padding:.2rem 0;}
+.cal__cell{vertical-align:top; min-height:5.5rem; height:5.5rem; padding:.35rem; border-radius:.6rem; background:var(--surface-2); border:1px solid transparent;}
+.cal__cell--empty{background:transparent;}
+.cal__cell.has-items{border-color:var(--primary);}
+.cal__day{display:block; font-family:'Manrope',sans-serif; font-weight:700; font-size:.85rem; color:var(--muted); margin-bottom:.2rem;}
+.cal__item{display:block; font-size:.74rem; line-height:1.2; padding:.15rem .35rem; margin-top:.15rem; border-radius:.35rem; background:var(--primary); color:#fff; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.cal__item--finished{background:var(--muted);}
+.cal__item--ongoing{background:#b45309;}
+@media (max-width:720px){ .cal__table{border-spacing:2px;} .cal__cell{height:4.2rem; min-height:4.2rem; padding:.2rem;} .cal__item{font-size:.62rem;} }
 .tag--entry-open{color:#15803d; border-color:#15803d;}
 .tag--entry-late{color:#b45309; border-color:#b45309;}
 .tag--entry-closed{color:var(--muted); border-color:var(--muted);}
