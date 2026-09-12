@@ -32,6 +32,12 @@
           <% Object.keys(kindRu).forEach(function (k) { %><option value="<%= k %>"<%= k === 'other' ? ' selected' : '' %>><%= kindRu[k] %></option><% }); %>
         </select>
       </div>
+      <div class="field"><label for="t-format">Система проведения</label>
+        <select id="t-format" name="format">
+          <option value="">не указана</option>
+          <% Object.keys(formatRu).forEach(function (k) { %><option value="<%= k %>"><%= formatRu[k] %></option><% }); %>
+        </select>
+      </div>
       <div class="field"><label for="t-sex">Пол</label>
         <select id="t-sex" name="sex">
           <option value="">—</option>
@@ -86,9 +92,13 @@
                 </select>
               </td>
               <td><span class="ro"><%= t.city || '—' %><%= t.venue ? ', ' + t.venue : '' %></span><input class="ed" form="edit-tournament-<%= t.id %>" name="city" value="<%= t.city || '' %>" maxlength="80" placeholder="город"><input class="ed" form="edit-tournament-<%= t.id %>" name="venue" value="<%= t.venue || '' %>" maxlength="160" list="venues-list" placeholder="место"><input class="ed" form="edit-tournament-<%= t.id %>" name="organizer" value="<%= t.organizer || '' %>" maxlength="160" placeholder="организатор"><input class="ed" form="edit-tournament-<%= t.id %>" name="organizer_contact" value="<%= t.organizer_contact || '' %>" maxlength="160" placeholder="контакт"><input class="ed" form="edit-tournament-<%= t.id %>" name="fee" value="<%= t.fee || '' %>" maxlength="80" placeholder="взнос"><input class="ed" form="edit-tournament-<%= t.id %>" name="entry_deadline" type="date" value="<%= t.entry_deadline || '' %>" title="заявки до (пусто — накануне старта)"></td>
-              <td><span class="ro"><%= kindRu[t.kind] || '—' %></span>
+              <td><span class="ro"><%= kindRu[t.kind] || '—' %><%= t.format ? ' · ' + formatRu[t.format] : '' %></span>
                 <select class="ed" form="edit-tournament-<%= t.id %>" name="kind">
                   <% Object.keys(kindRu).forEach(function (k) { %><option value="<%= k %>"<%= t.kind === k ? ' selected' : '' %>><%= kindRu[k] %></option><% }); %>
+                </select>
+                <select class="ed" form="edit-tournament-<%= t.id %>" name="format" title="система проведения">
+                  <option value="">система не указана</option>
+                  <% Object.keys(formatRu).forEach(function (k) { %><option value="<%= k %>"<%= t.format === k ? ' selected' : '' %>><%= formatRu[k] %></option><% }); %>
                 </select>
               </td>
               <td><span class="ro"><%= t.sex ? sexRu[t.sex] : '—' %></span>

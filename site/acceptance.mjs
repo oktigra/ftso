@@ -3140,6 +3140,29 @@ await check('приём заявок: открыт до дедлайна вкл�
   return 'open/edge/late/без-срока/канун/закрыт/завершён — метки и фильтр сошлись; карточка пишет дату и статус';
 });
 
+await check('система проведения турнира: сохраняется из админки, чужое значение отбивается, видна на карточке и в календаре, фильтр ?format=', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const c = tokenFrom((await http('/admin/tournaments', { jar })).text);
+  const post = (form) => http('/admin/tournaments', { method: 'POST', form: { _csrf: c, category: 'C', kind: 'other', action: 'publish', ...form }, jar });
+  eq((await post({ name: 'Круговой кубок', end_date: '2027-03-10', format: 'round_robin' })).status, 302, 'создание с системой');
+  eq((await post({ name: 'Олимпийка все места', end_date: '2027-03-12', format: 'knockout_all' })).status, 302, 'создание с другой системой');
+  await post({ name: 'Кривая система', end_date: '2027-03-13', format: 'swiss' });
+  assert(!db.prepare("SELECT id FROM tournaments WHERE name = 'Кривая система'").get(), 'чужое значение системы должно отбиваться');
+  const rr = db.prepare("SELECT id, format FROM tournaments WHERE name = 'Круговой кубок'").get();
+  const ko = db.prepare("SELECT id, format FROM tournaments WHERE name = 'Олимпийка все места'").get();
+  eq([rr.format, ko.format].join('|'), 'round_robin|knockout_all', 'система не сохранилась');
+  const card = (await http(`/tournaments/${rr.id}`)).text;
+  assert(card.includes('Система проведения: Круговая'), 'карточка без системы');
+  const list = (await http('/tournaments')).text;
+  assert(/name="format"/.test(list) && list.includes('Турнир · Круговая'), 'в календаре нет фильтра/подписи системы');
+  const only = (await http('/tournaments?format=round_robin')).text;
+  assert(only.includes(`href="/tournaments/${rr.id}"`) && !only.includes(`href="/tournaments/${ko.id}"`), 'фильтр format не сужает');
+  const admin = (await http('/admin/tournaments', { jar })).text;
+  assert(/name="format"[^>]*title="система проведения"/.test(admin) && admin.includes('Турнир · Круговая'), 'в админке нет селекта/подписи системы');
+  db.prepare('DELETE FROM tournaments WHERE id IN (?, ?)').run(rr.id, ko.id);
+  return 'round_robin и knockout_all сохранены, swiss отбит; карточка, календарь, фильтр и админка показывают систему';
+});
+
 await check('тренер = игрок: связь записей (не слияние) — поле в карточке, ссылка на профиль, метка «Тренер», обезличивание снимает связь', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Тренеров Игрок Иванович', 'Смоленск', 'M')").run().lastInsertRowid);

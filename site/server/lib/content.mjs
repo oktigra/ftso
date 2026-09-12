@@ -118,10 +118,11 @@ export function tournamentList(db, filters = {}) {
   }
   if (filters.age) { where.push('t.age_group = ?'); args.push(filters.age); }
   if (filters.kind) { where.push('t.kind = ?'); args.push(filters.kind); }
+  if (filters.format) { where.push('t.format = ?'); args.push(filters.format); }
   if (filters.sex) { where.push('t.sex = ?'); args.push(filters.sex); }
   const rows = db
     .prepare(
-      `SELECT t.id, t.name, t.end_date, t.start_date, t.category, t.city, t.kind, t.age_group, t.sex, t.entry_deadline,
+      `SELECT t.id, t.name, t.end_date, t.start_date, t.category, t.city, t.kind, t.format, t.age_group, t.sex, t.entry_deadline,
               (SELECT COUNT(*) FROM results r WHERE r.tournament_id = t.id) AS participants
          FROM tournaments t ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
         ORDER BY t.end_date DESC, t.id DESC`,
