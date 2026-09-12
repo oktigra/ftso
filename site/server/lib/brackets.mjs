@@ -21,10 +21,17 @@ export function listBrackets(db, tournamentId) {
 }
 
 export function bracketView(db, tournamentId, b) {
-  const slots = db.prepare('SELECT round, position, player_id FROM bracket_slots WHERE bracket_id = ?').all(b.id);
+  const slots = db.prepare('SELECT round, position, player_id, partner_id FROM bracket_slots WHERE bracket_id = ?').all(b.id);
   const at = new Map(slots.map((s) => [`${s.round}:${s.position}`, s.player_id]));
-  const ids = [...new Set(slots.map((s) => s.player_id))];
-  const names = new Map(ids.length ? db.prepare(`SELECT id, full_name, city FROM players WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map((p) => [p.id, p]) : []);
+  // ПАРНАЯ СЕТКА (12.09.2026): слот — пара; в player_id первый игрок (по нему ищутся матчи и
+  // продвижение), в partner_id второй. Имя слота на витрине — «Иванов / Петров».
+  const partnerOf = new Map(slots.filter((s) => s.partner_id).map((s) => [s.player_id, s.partner_id]));
+  const ids = [...new Set(slots.flatMap((s) => [s.player_id, s.partner_id]).filter(Boolean))];
+  const people = new Map(ids.length ? db.prepare(`SELECT id, full_name, city FROM players WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map((p) => [p.id, p]) : []);
+  const names = new Map(ids.map((id) => {
+    const me = people.get(id); const pr = partnerOf.get(id) ? people.get(partnerOf.get(id)) : null;
+    return [id, pr ? { ...me, partnerId: pr.id, partner: pr, full_name: `${me.full_name} / ${pr.full_name}` } : me];
+  }));
   const scoreOf = (w, l) => db.prepare('SELECT score FROM matches WHERE tournament_id = ? AND stage = ? AND winner_player_id = ? AND loser_player_id = ?').get(tournamentId, `b:${b.id}`, w, l)?.score ?? null;
   const voids = new Map(db.prepare("SELECT stage, reason FROM tournament_voids WHERE tournament_id = ? AND stage LIKE ?").all(tournamentId, `b:${b.id}:%`).map((v) => [v.stage, v.reason]));
   const rounds = [];
@@ -54,13 +61,33 @@ const bracketOf = (db, tournamentId, bid) => {
 };
 
 /** Посев: игрок в слот раунда 0 (позиция 1..size). Занятый слот — ошибка; тот же игрок дважды — ошибка. */
-export function seed(db, tournamentId, bid, position, playerId) {
+export function seed(db, tournamentId, bid, position, playerId, partnerId = null) {
   const b = bracketOf(db, tournamentId, bid);
   if (!(position >= 1 && position <= b.size)) throw new ValidationError(`Позиция должна быть от 1 до ${b.size}`);
-  if (db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND player_id = ?').get(b.id, playerId)) throw new ValidationError('Этот игрок уже в сетке');
+  if (b.kind === 'double' && !partnerId) throw new ValidationError('Парная сетка: укажите обоих игроков пары — «Иванов / Петров»');
+  if (b.kind !== 'double' && partnerId) throw new ValidationError('Одиночная сетка: один игрок в слот');
+  if (partnerId === playerId) throw new ValidationError('В паре два разных игрока');
+  const busy = db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND (player_id = ? OR partner_id = ?)');
+  if (busy.get(b.id, playerId, playerId) || (partnerId && busy.get(b.id, partnerId, partnerId))) throw new ValidationError('Этот игрок уже в сетке');
   if (db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND round = 0 AND position = ?').get(b.id, position - 1)) throw new ValidationError(`Позиция ${position} уже занята`);
-  db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, 0, ?, ?)').run(b.id, position - 1, playerId);
+  db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id, partner_id) VALUES (?, 0, ?, ?, ?)').run(b.id, position - 1, playerId, partnerId);
   return b;
+}
+
+/** Строка «Иванов / Петров» (или «Иванов, Петров» / «Иванов и Петров») → два id; одиночный разряд — один id. */
+export function resolveEntrant(db, raw, kind) {
+  const parts = String(raw || '').split(/\s*(?:\/|\s+и\s+|,)\s*/).map((x) => x.trim()).filter(Boolean);
+  if (kind === 'double') {
+    if (parts.length !== 2) throw new ValidationError(`Пара записывается как «Фамилия Имя / Фамилия Имя», получено «${String(raw || '').trim()}»`);
+    const ids = parts.map((x) => resolvePlayer(db, x, { ValidationError }));
+    const missing = parts.filter((_, i) => !ids[i]);
+    if (missing.length) throw new ValidationError(`Не найдены в базе: ${missing.join('; ')} — заведите их или уточните «#номер»`);
+    if (ids[0] === ids[1]) throw new ValidationError('В паре два разных игрока');
+    return { playerId: ids[0], partnerId: ids[1] };
+  }
+  const id = resolvePlayer(db, raw, { ValidationError });
+  if (!id) throw new ValidationError(`Игрок «${String(raw || '').trim()}» не найден`);
+  return { playerId: id, partnerId: null };
 }
 
 export function unseed(db, tournamentId, bid, position) {
@@ -77,8 +104,11 @@ export function decide(db, tournamentId, bid, r, k, rawScore) {
   const b = bracketOf(db, tournamentId, bid);
   const R = roundsOf(b.size);
   if (!(r >= 0 && r < R)) throw new ValidationError('Неверный раунд');
-  const a = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(b.id, r, 2 * k)?.player_id || null;
-  const c = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(b.id, r, 2 * k + 1)?.player_id || null;
+  const slotA = db.prepare('SELECT player_id, partner_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(b.id, r, 2 * k);
+  const slotC = db.prepare('SELECT player_id, partner_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(b.id, r, 2 * k + 1);
+  const a = slotA?.player_id || null; const c = slotC?.player_id || null;
+  const partnerOf = (pid) => (pid === a ? slotA?.partner_id : pid === c ? slotC?.partner_id : null) || null;
+  const advance = db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id, partner_id) VALUES (?, ?, ?, ?, ?)');
   if (db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(b.id, r + 1, k)) throw new ValidationError('Итог этой пары уже записан — сначала отмените его');
   if (db.prepare('SELECT 1 FROM tournament_voids WHERE tournament_id = ? AND stage = ?').get(tournamentId, `b:${b.id}:${r}:${k}`)) throw new ValidationError('Пара закрыта как несостоявшаяся — сначала отмените её');
   const s = String(rawScore || '').trim();
@@ -87,7 +117,7 @@ export function decide(db, tournamentId, bid, r, k, rawScore) {
       if (a && c) throw new ValidationError('В паре двое — нужен счёт');
       const who = a || c;
       if (!who) throw new ValidationError('Пара пуста');
-      db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, ?, ?, ?)').run(b.id, r + 1, k, who);
+      advance.run(b.id, r + 1, k, who, partnerOf(who));
       return { winner: who, bye: true };
     }
     if (!a || !c) throw new ValidationError('В паре не хватает игрока: посейте второго или отметьте «bye»');
@@ -102,8 +132,8 @@ export function decide(db, tournamentId, bid, r, k, rawScore) {
     const w = parsed.rowWon ? a : c; const l = parsed.rowWon ? c : a;
     const score = parsed.score; // уже от победителя: «6:4 6:4», «неявка», «6:3 2:1 отк.»
     db.prepare('DELETE FROM matches WHERE tournament_id = ? AND stage = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))').run(tournamentId, `b:${b.id}`, a, c, c, a);
-    db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage) VALUES (?, ?, ?, ?, ?, ?)').run(tournamentId, w, l, score, b.kind, `b:${b.id}`);
-    db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, ?, ?, ?)').run(b.id, r + 1, k, w);
+    db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage, winner_partner_id, loser_partner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(tournamentId, w, l, score, b.kind, `b:${b.id}`, partnerOf(w), partnerOf(l));
+    advance.run(b.id, r + 1, k, w, partnerOf(w));
     return { winner: w, loser: l, score };
   })();
 }
@@ -138,9 +168,13 @@ export function bracketPlaces(db, tournamentId, bid) {
   const R = roundsOf(b.size);
   const champion = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = 0').get(b.id, R)?.player_id;
   if (!champion) throw new ValidationError('Финал ещё не сыгран');
-  const rows = db.prepare('SELECT round, player_id FROM bracket_slots WHERE bracket_id = ?').all(b.id);
+  const rows = db.prepare('SELECT round, player_id, partner_id FROM bracket_slots WHERE bracket_id = ?').all(b.id);
   const maxRound = new Map();
-  for (const s of rows) maxRound.set(s.player_id, Math.max(maxRound.get(s.player_id) ?? -1, s.round));
+  const partnerOf = new Map();
+  for (const s of rows) {
+    maxRound.set(s.player_id, Math.max(maxRound.get(s.player_id) ?? -1, s.round));
+    if (s.partner_id) partnerOf.set(s.player_id, s.partner_id);
+  }
   const places = [];
   for (const [pid, mr] of maxRound) {
     if (pid === champion) { places.push([pid, 1]); continue; }
@@ -148,10 +182,14 @@ export function bracketPlaces(db, tournamentId, bid) {
     const lost = R - 1 - mr; // 0 — финал
     places.push([pid, lost === 0 ? 2 : 2 ** lost + 1]);
   }
+  // Место пишется в разряд сетки (парная сетка → парный разряд, обоим игрокам пары);
+  // чужие разряды того же игрока не трогаются — раньше DELETE сносил и его одиночный результат.
   db.transaction(() => {
-    const del = db.prepare('DELETE FROM results WHERE tournament_id = ? AND player_id = ?');
-    const ins = db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)');
-    for (const [pid, place] of places) { del.run(tournamentId, pid); ins.run(tournamentId, pid, place); }
+    const del = db.prepare('DELETE FROM results WHERE tournament_id = ? AND player_id = ? AND discipline = ?');
+    const ins = db.prepare('INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
+    for (const [pid, place] of places) {
+      for (const who of [pid, partnerOf.get(pid)].filter(Boolean)) { del.run(tournamentId, who, b.kind); ins.run(tournamentId, who, place, b.kind); }
+    }
   })();
   return places.length;
 }
@@ -182,6 +220,7 @@ export function seedOrder(size) {
  */
 export function seedFromGroups(db, tournamentId, bid, perGroup) {
   const b = bracketOf(db, tournamentId, bid);
+  if (b.kind === 'double') throw new ValidationError('Парную сетку сеют по рейтингу или вручную парами — группы у нас одиночные');
   if (db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ?').get(b.id)) throw new ValidationError('Сетка уже посеяна — сначала удалите её слоты (или создайте новую сетку)');
   const groups = listGroups(db, tournamentId).filter((g) => g.kind === b.kind);
   if (!groups.length) throw new ValidationError('Нет круговых групп этого разряда');
@@ -232,31 +271,38 @@ import { resolvePlayer } from './registrations.mjs';
 export function seedByRating(db, tournamentId, bid, rawList) {
   const b = bracketOf(db, tournamentId, bid);
   if (db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ?').get(b.id)) throw new ValidationError('Сетка уже посеяна — очистите слоты или создайте новую сетку');
-  const items = String(rawList || '').split(/[\n;,]+/).map((s) => s.trim()).filter(Boolean);
+  // Парная сетка: строка = пара «Иванов / Петров»; запятая в парном разряде делит пару, а не список.
+  const items = String(rawList || '').split(b.kind === 'double' ? /[\n;]+/ : /[\n;,]+/).map((s) => s.trim()).filter(Boolean);
   if (items.length < 2) throw new ValidationError('Нужно минимум два участника (по одному в строке)');
   if (items.length > b.size) throw new ValidationError(`Участников ${items.length}, а сетка на ${b.size}`);
-  const ids = []; const missing = [];
+  const entrants = []; const seen = new Set();
   for (const it of items) {
-    const id = resolvePlayer(db, it, { ValidationError });
-    if (!id) missing.push(it); else if (!ids.includes(id)) ids.push(id);
+    const en = resolveEntrant(db, it, b.kind);
+    for (const id of [en.playerId, en.partnerId].filter(Boolean)) {
+      if (seen.has(id)) throw new ValidationError(`Игрок «${it}» указан дважды`);
+      seen.add(id);
+    }
+    entrants.push(en);
   }
-  if (missing.length) throw new ValidationError(`Не найдены в базе: ${missing.join('; ')} — заведите их или уточните «#номер»`);
   const standings = currentStandings(db);
   const table = standings ? (b.kind === 'double' ? standings.doubles : standings.players) : [];
   const rank = new Map(table.map((p) => [p.playerId, p.rank]));
-  const names = new Map(db.prepare(`SELECT id, full_name FROM players WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map((p) => [p.id, p.full_name]));
-  const ordered = [...ids].sort((x, y) => {
-    const rx = rank.get(x); const ry = rank.get(y);
-    if (rx && ry) return rx - ry;
-    if (rx) return -1;
-    if (ry) return 1;
-    return String(names.get(x)).localeCompare(String(names.get(y)), 'ru');
-  });
+  const points = new Map(table.map((p) => [p.playerId, p.ratingPoints]));
+  const allIds = [...seen];
+  const names = new Map(db.prepare(`SELECT id, full_name FROM players WHERE id IN (${allIds.map(() => '?').join(',')})`).all(...allIds).map((p) => [p.id, p.full_name]));
+  // Сила участника: одиночка — место в рейтинге; пара — СУММА парных очков обоих (как у РТТ:
+  // сеяные пары определяются по сумме очков партнёров), без рейтинга — 0. Равные — по фамилии.
+  const strength = (en) => (b.kind === 'double'
+    ? (points.get(en.playerId) || 0) + (points.get(en.partnerId) || 0)
+    : (rank.has(en.playerId) ? 1e9 - rank.get(en.playerId) : 0));
+  const label = (en) => [en.playerId, en.partnerId].filter(Boolean).map((id) => names.get(id)).join(' / ');
+  const ordered = [...entrants].sort((x, y) => (strength(y) - strength(x)) || label(x).localeCompare(label(y), 'ru'));
   const pos = seedOrder(b.size);
   db.transaction(() => {
-    ordered.forEach((pid, i) => db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, 0, ?, ?)').run(b.id, pos[i], pid));
+    ordered.forEach((en, i) => db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id, partner_id) VALUES (?, 0, ?, ?, ?)').run(b.id, pos[i], en.playerId, en.partnerId));
   })();
-  return { seeded: ordered.length, rated: ordered.filter((id) => rank.has(id)).length, unrated: ordered.filter((id) => !rank.has(id)).length };
+  const rated = ordered.filter((en) => strength(en) > 0).length;
+  return { seeded: ordered.length, rated, unrated: ordered.length - rated };
 }
 
 /** Поменять местами две позиции посева (1..size); только пока ни один итог пары не записан. */
@@ -264,12 +310,13 @@ export function swapSeeds(db, tournamentId, bid, p1, p2) {
   const b = bracketOf(db, tournamentId, bid);
   if (!(p1 >= 1 && p1 <= b.size && p2 >= 1 && p2 <= b.size) || p1 === p2) throw new ValidationError('Укажите две разные позиции от 1 до ' + b.size);
   if (db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND round > 0').get(b.id)) throw new ValidationError('Итоги пар уже записаны — сначала отмените их');
-  const get = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = 0 AND position = ?');
-  const a = get.get(b.id, p1 - 1)?.player_id || null; const c = get.get(b.id, p2 - 1)?.player_id || null;
+  const get = db.prepare('SELECT player_id, partner_id FROM bracket_slots WHERE bracket_id = ? AND round = 0 AND position = ?');
+  const a = get.get(b.id, p1 - 1) || null; const c = get.get(b.id, p2 - 1) || null;
   if (!a && !c) throw new ValidationError('Обе позиции пусты');
   db.transaction(() => {
     db.prepare('DELETE FROM bracket_slots WHERE bracket_id = ? AND round = 0 AND position IN (?, ?)').run(b.id, p1 - 1, p2 - 1);
-    if (c) db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, 0, ?, ?)').run(b.id, p1 - 1, c);
-    if (a) db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, 0, ?, ?)').run(b.id, p2 - 1, a);
+    const put = db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id, partner_id) VALUES (?, 0, ?, ?, ?)');
+    if (c) put.run(b.id, p1 - 1, c.player_id, c.partner_id);
+    if (a) put.run(b.id, p2 - 1, a.player_id, a.partner_id);
   })();
 }

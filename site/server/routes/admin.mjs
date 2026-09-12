@@ -3,7 +3,7 @@ import { requireRole, ROLES, ACTIVE_ROLES, rolesFor } from '../middleware/auth.m
 import { parseMultipart } from '../lib/multipart.mjs';
 import { rowsFromXlsx, rowsFromCsv, protocolTextFromRows } from '../lib/xlsx.mjs';
 import { listGroups, setCell, writeGroupPlaces } from '../lib/groups.mjs';
-import { listBrackets, seed, unseed, decide, undo, bracketPlaces, BRACKET_SIZES, seedFromGroups, placesWithGroups, seedByRating, swapSeeds } from '../lib/brackets.mjs';
+import { listBrackets, seed, unseed, decide, undo, bracketPlaces, BRACKET_SIZES, seedFromGroups, placesWithGroups, seedByRating, swapSeeds, resolveEntrant } from '../lib/brackets.mjs';
 import { rowsFromXlsx as protoRowsFromXlsx } from '../lib/xlsx.mjs';
 import { mountTournamentSheets } from '../lib/tournament-sheet-routes.mjs';
 import { protocolKeyFromLabel } from '../lib/tournament-export.mjs';
@@ -973,11 +973,12 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     return `Сетка «${name}» на ${size} создана — посейте участников.`;
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/seed', (req, tid) => {
-    const playerId = resolvePlayer(db, req.body.player, { ValidationError });
-    if (!playerId) throw new ValidationError(`Игрок «${String(req.body.player || '').trim()}» не найден`);
-    const b = seed(db, tid, intAtLeast(req.params.bid, 'Сетка'), intAtLeast(req.body.position, 'Позиция'), playerId);
-    logAction(db, actorId(req), 'bracket.seed', tid, { bracket: b.id, playerId, position: Number(req.body.position) });
-    return 'Посеян.';
+    const bid = intAtLeast(req.params.bid, 'Сетка');
+    const kind = db.prepare('SELECT kind FROM tournament_brackets WHERE id = ? AND tournament_id = ?').get(bid, tid)?.kind || 'single';
+    const { playerId, partnerId } = resolveEntrant(db, req.body.player, kind);
+    const b = seed(db, tid, bid, intAtLeast(req.body.position, 'Позиция'), playerId, partnerId);
+    logAction(db, actorId(req), 'bracket.seed', tid, { bracket: b.id, playerId, partnerId, position: Number(req.body.position) });
+    return partnerId ? 'Пара посеяна.' : 'Посеян.';
   });
   bracketRoute('/admin/tournaments/:id/brackets/:bid/unseed', (req, tid) => {
     const b = unseed(db, tid, intAtLeast(req.params.bid, 'Сетка'), intAtLeast(req.body.position, 'Позиция'));
