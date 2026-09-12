@@ -93,7 +93,7 @@ else miss('/register приём', 'ни баннера «закрыт», ни ф
 
 const rating = await page('/rating');
 if (rating.status !== 200) miss('/rating', rating.err || `HTTP ${rating.status}`);
-else say('/rating строк таблицы', String((rating.text.match(/<tr\b/g) || []).length));
+else say('/rating пластин', String((rating.text.match(/class="rplate"/g) || []).length)); // витрина — пластины (с 10.09), не таблица
 
 console.log('— приёмка —');
 if (!WITH_ACCEPT) say('acceptance.mjs', 'не запускалась (добавь --accept, ~2 мин)');
