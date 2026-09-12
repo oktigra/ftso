@@ -72,6 +72,33 @@ export function tournamentStatus(t, today = new Date().toISOString().slice(0, 10
 }
 
 /**
+ * ПРИЁМ ЗАЯВОК (задача 3 сессии 11.09.2026, правило владельца): «open» — приём
+ * открыт, сегодня не позже дедлайна включительно; «late» — поздняя заявка, после
+ * дедлайна, но до дня старта; «closed» — приём закрыт, со дня старта и дальше.
+ * Дедлайн — дата в tournaments.entry_deadline (ГГГГ-ММ-ДД); не задан → накануне
+ * старта (старт = start_date, без него — end_date).
+ */
+export const ENTRY_STATUSES = ['open', 'late', 'closed'];
+export const ENTRY_STATUS_RU = { open: 'Приём открыт', late: 'Поздняя заявка', closed: 'Приём закрыт' };
+
+export function entryDeadline(t) {
+  if (t.entry_deadline) return t.entry_deadline;
+  const start = t.start_date || t.end_date;
+  if (!start) return null;
+  const [y, m, d] = start.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+}
+
+export function entryStatus(t, today = new Date().toISOString().slice(0, 10)) {
+  const start = t.start_date || t.end_date;
+  const deadline = entryDeadline(t);
+  if (!start || !deadline) return 'closed';
+  if (today <= deadline && today < start) return 'open';
+  if (today < start) return 'late';
+  return 'closed';
+}
+
+/**
  * Календарь турниров с фильтрами ТЗ п. 4.3: дата (год-месяц), город, категория,
  * возраст, статус (вычисляется от дат), тип. Фильтры — в SQL, где это дёшево,
  * статус — в JS (зависит от «сегодня»). Значения для селектов берутся из базы:
@@ -94,14 +121,16 @@ export function tournamentList(db, filters = {}) {
   if (filters.sex) { where.push('t.sex = ?'); args.push(filters.sex); }
   const rows = db
     .prepare(
-      `SELECT t.id, t.name, t.end_date, t.start_date, t.category, t.city, t.kind, t.age_group, t.sex,
+      `SELECT t.id, t.name, t.end_date, t.start_date, t.category, t.city, t.kind, t.age_group, t.sex, t.entry_deadline,
               (SELECT COUNT(*) FROM results r WHERE r.tournament_id = t.id) AS participants
          FROM tournaments t ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
         ORDER BY t.end_date DESC, t.id DESC`,
     )
     .all(...args)
-    .map((t) => ({ ...t, status: tournamentStatus(t) }));
-  return filters.status ? rows.filter((t) => t.status === filters.status) : rows;
+    .map((t) => ({ ...t, status: tournamentStatus(t), entry: entryStatus(t), entryDeadline: entryDeadline(t) }));
+  let out = filters.status ? rows.filter((t) => t.status === filters.status) : rows;
+  if (filters.entry) out = out.filter((t) => t.entry === filters.entry);
+  return out;
 }
 
 /** Картинка сайта по ключу (например, 'home-hero') → id загрузки либо null. */

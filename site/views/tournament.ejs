@@ -20,8 +20,13 @@
     <% if (tournament.organizer || tournament.organizer_contact) { %>
       <p class="muted">Организатор: <%= tournament.organizer || '' %><%= tournament.organizer && tournament.organizer_contact ? ' · ' : '' %><%= tournament.organizer_contact || '' %></p>
     <% } %>
-    <% if (tournament.fee || tournament.entry_deadline) { %>
-      <p class="muted"><%= tournament.fee ? 'Взнос: ' + tournament.fee : '' %><%= tournament.fee && tournament.entry_deadline ? ' · ' : '' %><%= tournament.entry_deadline ? 'Заявки до: ' + tournament.entry_deadline : '' %></p>
+    <% if (tournament.fee) { %>
+      <p class="muted">Взнос: <%= tournament.fee %></p>
+    <% } %>
+    <% if (entryDeadline && entry !== 'closed') { %>
+      <p class="muted">Заявки до: <%= entryDeadline.split('-').reverse().join('.') %><%= tournament.entry_deadline ? '' : ' (накануне старта)' %> · <span class="tag tag--entry-<%= entry %>"><%= entryRu[entry] %></span></p>
+    <% } else if (entryDeadline) { %>
+      <p class="muted">Заявки до: <%= entryDeadline.split('-').reverse().join('.') %> · <span class="tag tag--entry-closed"><%= entryRu.closed %></span></p>
     <% } %>
   </div>
 </section>

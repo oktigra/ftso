@@ -37,6 +37,10 @@ import {
   federationDocuments,
   galleryItems,
   isPubliclyVisibleUpload,
+  ENTRY_STATUSES,
+  ENTRY_STATUS_RU,
+  entryStatus,
+  entryDeadline,
 } from '../lib/content.mjs';
 import { uploadById, sendUpload, sendUploadInline } from '../lib/uploads.mjs';
 
@@ -167,6 +171,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
         .includes(c)),
       age: q('age'),
       status: TOURNAMENT_STATUSES.includes(q('status')) ? q('status') : '',
+      entry: ENTRY_STATUSES.includes(q('entry')) ? q('entry') : '',
       kind: TOURNAMENT_KINDS.includes(q('kind')) ? q('kind') : '',
       sex: ['M', 'F', 'X'].includes(q('sex')) ? q('sex') : '',
     };
@@ -177,6 +182,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       options: tournamentFilterOptions(db),
       kindRu: TOURNAMENT_KIND_RU,
       statusRu: TOURNAMENT_STATUS_RU,
+      entryRu: ENTRY_STATUS_RU,
       sexRu: TOURNAMENT_SEX_RU,
       categories: CATEGORIES,
       section: sectionFor('/tournaments'),
@@ -193,6 +199,9 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       .get(Number(req.params.id));
     if (!tournament) return next(); // -> общий 404-обработчик
     res.status(200).render('tournament', {
+      entry: entryStatus(tournament),
+      entryDeadline: entryDeadline(tournament),
+      entryRu: ENTRY_STATUS_RU,
       title: `${tournament.name} — ФТСО`,
       metaDescription: descriptionFrom(
         `${({ team: 'Командная встреча', championship: 'Чемпионат / первенство', other: 'Турнир' })[tournament.kind] || 'Турнир'} «${tournament.name}»` +
