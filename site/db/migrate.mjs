@@ -345,6 +345,7 @@ export function migrate() {
   addColumnIfMissing(db, 'tournaments', 'sex', 'TEXT'); // пол участников M/F/X (06.09.2026)
   for (const c of ['venue', 'organizer', 'organizer_contact', 'fee', 'entry_deadline']) addColumnIfMissing(db, 'tournaments', c, 'TEXT'); // ТЗ 4.3 место/организатор; взнос/дедлайн
   entryDeadlineToDate(db);
+  addColumnIfMissing(db, 'tournaments', 'format', 'TEXT'); // система проведения (задача 2, 12.09.2026)
   // ТЗ 4.5/4.6 — поля справочников и фильтры (05.09.2026).
   for (const c of ['city', 'specialization', 'qualification', 'groups']) addColumnIfMissing(db, 'coaches', c, 'TEXT');
   for (const c of ['city', 'courts_count', 'season', 'club', 'contact']) addColumnIfMissing(db, 'courts', c, 'TEXT');

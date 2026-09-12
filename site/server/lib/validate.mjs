@@ -18,6 +18,17 @@ export const SEXES = ['M', 'F'];
 export const CATEGORIES = ['A', 'B', 'C']; // C — прочие/любительские турниры (06.09.2026), коэффициент в rating/rating.mjs
 // Типы турниров по ТЗ п. 4.3: командные встречи, первенства, иные турниры.
 export const TOURNAMENT_KINDS = ['team', 'championship', 'other'];
+// СИСТЕМА ПРОВЕДЕНИЯ («формат», задача 2 START15; значения — из Приложения №1 к правилам
+// вида спорта «теннис» и регламента РТТ: олимпийская О, олимпийская с ДТ, усовершенствованная
+// олимпийская УО (все места), круговая К, смешанная С — группы + плей-офф).
+export const TOURNAMENT_FORMATS = ['knockout', 'knockout_consolation', 'knockout_all', 'round_robin', 'groups_playoff'];
+export const TOURNAMENT_FORMAT_RU = {
+  knockout: 'Олимпийская',
+  knockout_consolation: 'Олимпийская с дополнительным турниром',
+  knockout_all: 'Олимпийская с розыгрышем всех мест',
+  round_robin: 'Круговая',
+  groups_playoff: 'Смешанная (группы + плей-офф)',
+};
 // «championship» покрывает и чемпионаты, и первенства: в календаре Федерации это
 // одна категория А, а подпись «Первенство» на чемпионате области выглядела ошибкой.
 export const TOURNAMENT_KIND_RU = { team: 'Командная встреча', championship: 'Чемпионат / первенство', other: 'Турнир' };
@@ -286,6 +297,7 @@ export function tournamentInput(body) {
     city: str(body.city, 'Город', { max: 80, required: false }) || null,
     start_date,
     kind: body.kind ? oneOf(body.kind, 'Тип турнира', TOURNAMENT_KINDS) : 'other',
+    format: body.format ? oneOf(body.format, 'Система проведения', TOURNAMENT_FORMATS) : null,
     sex: body.sex ? oneOf(body.sex, 'Пол', ['M', 'F', 'X']) : null,
     venue: str(body.venue, 'Место проведения', { max: 160, required: false }) || null,
     organizer: str(body.organizer, 'Организатор', { max: 160, required: false }) || null,

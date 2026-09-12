@@ -79,6 +79,13 @@
           </select>
         </div>
         <div class="field">
+          <label for="tf-format">Система</label>
+          <select id="tf-format" name="format">
+            <option value="">любая</option>
+            <% Object.keys(formatRu).forEach(function (k) { %><option value="<%= k %>"<%= filters.format === k ? ' selected' : '' %>><%= formatRu[k] %></option><% }); %>
+          </select>
+        </div>
+        <div class="field">
           <button class="btn btn--secondary" type="submit">Показать</button>
         </div>
         <% if (anyFilter) { %><div class="field"><a class="btn btn--secondary" href="/tournaments">Сбросить</a></div><% } %>
@@ -118,7 +125,7 @@
                   <span class="badge badge--<%= t.category.toLowerCase() %>">Кат. <%= t.category %></span>
                 </div>
                 <div class="tdrawer__name"><%= t.name %></div>
-                <div class="tdrawer__meta"><%= t.city || 'Смоленская область' %> · <%= kindRu[t.kind] || 'турнир' %><%= t.participants ? ' · участников: ' + t.participants : '' %></div>
+                <div class="tdrawer__meta"><%= t.city || 'Смоленская область' %> · <%= kindRu[t.kind] || 'турнир' %><%= t.format ? ' · ' + formatRu[t.format] : '' %><%= t.participants ? ' · участников: ' + t.participants : '' %></div>
                 <div class="tdrawer__tags">
                   <span class="tag tag--<%= t.status %>"><%= statusRu[t.status] %></span>
                   <% if (t.status === 'upcoming' || filters.entry) { %><span class="tag tag--entry-<%= t.entry %>" title="Заявки до <%= t.entryDeadline ? t.entryDeadline.split('-').reverse().join('.') : '' %>"><%= entryRu[t.entry] %></span><% } %>
