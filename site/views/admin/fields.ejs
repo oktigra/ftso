@@ -1,0 +1,91 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Вид полей ввода</h1>
+  <%- include('_shell') %>
+
+  <div class="panel">
+    <p>Отметьте эффекты — образцы ниже меняются сразу, ничего не сохраняя. Понравилось — «Применить ко всему сайту»,
+      и так будут выглядеть все формы: и публичные, и админка. Тему переключайте кнопкой в шапке: значения подобраны
+      отдельно для тёмной, светлой и тёплой.</p>
+    <p class="muted">Сейчас на сайте: <code><%= saved || '(без эффектов)' %></code></p>
+    <div class="inline-form" id="fx-presets">
+      <span class="muted">Заготовки:</span>
+      <% for (const [name, value] of Object.entries(presets)) { %>
+        <button class="btn btn--secondary btn--small" type="button" data-preset="<%= value %>"><%= name %></button>
+      <% } %>
+      <button class="btn btn--secondary btn--small" type="button" data-preset="">снять всё</button>
+    </div>
+  </div>
+
+  <form method="post" action="/admin/fields" id="fx-form" class="stack">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="fx" id="fx-value" value="<%= shown %>">
+
+    <% const groups = [...new Set(effects.map((e) => e.group))]; %>
+    <% for (const g of groups) { %>
+      <div class="panel">
+        <h2><%= g %></h2>
+        <% for (const e of effects.filter((x) => x.group === g)) { %>
+          <label class="check">
+            <input type="checkbox" class="fx-toggle" value="<%= e.id %>"
+                   <%= shown.split(' ').includes(e.id) ? 'checked' : '' %>>
+            <span><strong><%= e.title %></strong> — <span class="muted"><%= e.hint %></span></span>
+          </label>
+        <% } %>
+      </div>
+    <% } %>
+
+    <div class="panel">
+      <p>Набор: <code id="fx-current"><%= shown || '(без эффектов)' %></code></p>
+      <div class="inline-form">
+        <button class="btn btn--primary" type="submit">Применить ко всему сайту</button>
+        <button class="btn btn--secondary" type="submit" name="action" value="reset">Сбросить к настройке сервера</button>
+        <a class="btn btn--secondary" id="fx-open" href="/contacts" target="_blank" rel="noopener">Открыть контакты с этим набором</a>
+      </div>
+    </div>
+  </form>
+
+  <div class="panel">
+    <h2>Образец: публичная форма</h2>
+    <div class="stacked-form">
+      <div class="field"><label for="s-name">Как к вам обращаться</label><input id="s-name" value="Иванов Иван"></div>
+      <div class="field"><label for="s-mail">E-mail для ответа</label><input id="s-mail" type="email" placeholder="ivanov@example.ru"></div>
+      <div class="field"><label for="s-sex">Пол</label><select id="s-sex"><option>муж.</option><option>жен.</option></select></div>
+      <div class="field"><label for="s-birth">Дата рождения</label><input id="s-birth" type="date"></div>
+      <div class="field"><label for="s-msg">Сообщение</label><textarea id="s-msg" rows="3" placeholder="Текст обращения"></textarea></div>
+      <label class="check"><input type="checkbox"> Согласие на обработку персональных данных</label>
+      <div><button class="btn btn--primary" type="button">Отправить</button></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Образец: строка редактора игрока</h2>
+    <div class="table-wrap">
+      <table class="admin-table admin-table--edit">
+        <thead><tr><th>ID</th><th>ФИО</th><th>Город</th><th>РНИ</th><th>Пол</th><th>Дата рождения</th><th>Действия</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>103</td>
+            <td>
+              <input value="Адаева" aria-label="Фамилия">
+              <input placeholder="Имя" aria-label="Имя">
+              <input placeholder="Отчество" aria-label="Отчество">
+            </td>
+            <td><input value="Смоленск" aria-label="Город"></td>
+            <td><input aria-label="РНИ"></td>
+            <td><select aria-label="Пол"><option>жен.</option><option>муж.</option></select></td>
+            <td><input type="date" aria-label="Дата рождения"></td>
+            <td><button class="btn btn--primary btn--small" type="button">Сохранить</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</main>
+
+<script src="/static/js/fields-lab.js?v=<%= assetVersion %>" defer></script>
+<%- include('../partials/footer') %>

@@ -6,6 +6,9 @@
 // Все загрузки идут через ОБЩИЙ слой (lib/uploads.mjs). Своих проверок файлов
 // здесь нет и быть не должно — за этим следит проверка приёмки.
 import { requireRole, rolesFor } from '../middleware/auth.mjs';
+import {
+  EFFECTS, PRESETS, parseFx, savedFx, saveFx, resetFx,
+} from '../lib/field-style.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { logAction } from '../lib/action-log.mjs';
 import { intAtLeast, str, ValidationError } from '../lib/validate.mjs';
@@ -628,6 +631,41 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
       flash(req, res, 'ok', 'Обращение удалено.', '/admin/feedback');
     }),
   );
+
+  // --- ВИД ПОЛЕЙ ВВОДА: конструктор эффектов, только super-admin -----------------
+  // Страница показывает НАСТОЯЩИЕ элементы форм (те же классы, тот же site.css),
+  // а тумблеры меняют атрибут data-fx на лету — предпросмотр без перезагрузки.
+  // «Применить ко всему сайту» сохраняет набор в site_settings.
+  const FIELDS_ROLE = rolesFor('vault');
+
+  const renderFields = (req, res, flash = null) => {
+    const saved = savedFx(db, config);
+    // Предпросмотр берём из адреса, если он там есть: так набор можно передать
+    // ссылкой себе же в другую вкладку.
+    const shown = typeof req.query.fx === 'string' ? parseFx(req.query.fx) : saved;
+    res.render('admin/fields', {
+      title: 'Вид полей — админка ФТСО',
+      effects: EFFECTS,
+      presets: PRESETS,
+      saved,
+      shown,
+      flash,
+    });
+  };
+
+  app.get('/admin/fields', requireRole(...FIELDS_ROLE), (req, res) => renderFields(req, res));
+
+  app.post('/admin/fields', requireRole(...FIELDS_ROLE), limitWrites, (req, res) => {
+    if (req.body.action === 'reset') {
+      resetFx(db);
+      return renderFields(req, res, { kind: 'ok', text: 'Набор сброшен: сайт снова берёт вид из настройки сервера.' });
+    }
+    const fx = saveFx(db, req.body.fx);
+    return renderFields(req, res, {
+      kind: 'ok',
+      text: fx ? `Применено ко всему сайту: ${fx}` : 'Все эффекты сняты — поля вернулись к простому виду.',
+    });
+  });
 
   // --- ЗАКРЫТЫЕ ДОКУМЕНТЫ ФЕДЕРАЦИИ: только super-admin; наружу не отдаются ---------
   const VAULT_ROLE = rolesFor('vault');
