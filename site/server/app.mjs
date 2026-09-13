@@ -196,6 +196,10 @@ export function createApp(config) {
     const m = /(?:^|;\s*)ftso\.analytics=([01])/.exec(req.headers.cookie || '');
     res.locals.analyticsChoice = m ? m[1] : '';
     res.locals.currentPath = req.path;
+    // Вид полей ввода: настройка сервера, но параметр ?fields= позволяет
+    // посмотреть остальные два, ничего не переключая (см. lib/config.mjs).
+    res.locals.fieldStyle = ['inset', 'flat', 'outline'].includes(req.query.fields)
+      ? req.query.fields : config.fieldStyle;
     // Канонический адрес: боевой домен из конфига + путь без query и без «/» в конце.
     res.locals.siteUrl = config.siteUrl.replace(/\/$/, '');
     res.locals.canonicalUrl = res.locals.siteUrl + (req.path === '/' ? '/' : req.path.replace(/\/+$/, ''));
