@@ -11,8 +11,7 @@
   color-scheme:light;
   /* ПОЛЯ ВВОДА, вариант «утопленное» (07/13.09.2026): фон вдавлен внутренней тенью,
      рамка на тон темнее общей — поле читается как место для ввода. */
-  --field-bg:#ffffff; --field-border:#c3d0dc; --field-shadow-in:inset 0 1px 3px rgba(18,61,104,.10); --field-shadow-out:0 0 0 0 transparent;
-  --field-radius:.7rem; --field-bw:1.5px; --field-ring:3px;
+  --field-bg:#ffffff; --field-border:#c3d0dc; --field-shadow-in:inset 0 1px 3px rgba(18,61,104,.10);
   --shadow-sm:0 1px 2px rgba(18,61,104,.06), 0 2px 8px rgba(18,61,104,.05);
   --shadow-md:0 6px 24px rgba(18,61,104,.08), 0 2px 6px rgba(18,61,104,.05);
   --shadow-lg:0 18px 48px rgba(18,61,104,.12), 0 6px 16px rgba(18,61,104,.07);
@@ -31,7 +30,7 @@ html[data-theme="dark"]{
   color-scheme:dark;
   /* В тёмной теме поле ТЕМНЕЕ карточки: белый прямоугольник в тёмной теме бьёт по
      глазам, а углубление — нет. */
-  --field-bg:#0a1118; --field-border:#2c3f50; --field-shadow-in:inset 0 1px 3px rgba(0,0,0,.55); --field-shadow-out:0 0 0 0 transparent;
+  --field-bg:#0a1118; --field-border:#2c3f50; --field-shadow-in:inset 0 1px 3px rgba(0,0,0,.55);
   --shadow-sm:0 1px 2px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.3);
   --shadow-md:0 6px 24px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
   --shadow-lg:0 20px 52px rgba(0,0,0,.55), 0 8px 18px rgba(0,0,0,.4);
@@ -53,7 +52,7 @@ html[data-theme="warm"]{
   color-scheme:light;
   /* В тёплой теме карточка и поле были одного цвета — поля сливались; рамку
      делаем заметно теплее и темнее фона. */
-  --field-bg:#fffdf7; --field-border:#cdbb98; --field-shadow-in:inset 0 1px 3px rgba(96,74,26,.13); --field-shadow-out:0 0 0 0 transparent;
+  --field-bg:#fffdf7; --field-border:#cdbb98; --field-shadow-in:inset 0 1px 3px rgba(96,74,26,.13);
   --shadow-sm:0 1px 2px rgba(96,74,26,.07), 0 2px 8px rgba(96,74,26,.06);
   --shadow-md:0 6px 24px rgba(96,74,26,.1), 0 2px 6px rgba(96,74,26,.06);
   --shadow-lg:0 18px 48px rgba(96,74,26,.14), 0 6px 16px rgba(96,74,26,.08);
@@ -63,42 +62,6 @@ html[data-theme="warm"]{
   --page-bg:#e8dfcd;
   --partner-inset:rgba(255,255,255,.75);
 }
-/* СЛОВАРЬ ЭФФЕКТОВ ПОЛЯ (13.09.2026). Каждое слово в data-fx — отдельный
-   переключатель, слова комбинируются как угодно: селектор ~= читает атрибут как
-   список. Набор собирается в админке на /admin/fields и хранится в site_settings;
-   параметр ?fx= в адресе показывает любой набор, ничего не сохраняя.
-   Значения подобраны отдельно по темам: в тёмной поле не должно светить, в
-   светлой и тёплой — наоборот, должно быть заметнее карточки. */
-
-/* — фон — */
-html[data-fx~="fill-deep"]{--field-bg:#ffffff;}
-html[data-fx~="fill-deep"][data-theme="dark"]{--field-bg:#0a1118;}
-html[data-fx~="fill-deep"][data-theme="warm"]{--field-bg:#fffdf7;}
-html[data-fx~="fill-soft"]{--field-bg:#eef3f7;}
-html[data-fx~="fill-soft"][data-theme="dark"]{--field-bg:#16232e;}
-html[data-fx~="fill-soft"][data-theme="warm"]{--field-bg:#fdf7e9;}
-html[data-fx~="ghost"]{--field-bg:transparent;}
-
-/* — рамка — */
-html[data-fx~="border-soft"]{--field-bw:1px; --field-border:#dbe3ea;}
-html[data-fx~="border-soft"][data-theme="dark"]{--field-border:#22303d;}
-html[data-fx~="border-soft"][data-theme="warm"]{--field-border:#e3d9c5;}
-html[data-fx~="border-strong"]{--field-bw:2px; --field-border:#9fb2c4;}
-html[data-fx~="border-strong"][data-theme="dark"]{--field-border:#3a5169;}
-html[data-fx~="border-strong"][data-theme="warm"]{--field-border:#b9a375;}
-
-/* — тени — */
-html[data-fx~="inset"]{--field-shadow-in:inset 0 1px 3px rgba(18,61,104,.10);}
-html[data-fx~="inset"][data-theme="dark"]{--field-shadow-in:inset 0 1px 3px rgba(0,0,0,.55);}
-html[data-fx~="inset"][data-theme="warm"]{--field-shadow-in:inset 0 1px 3px rgba(96,74,26,.13);}
-html[data-fx~="flat-shadow"]{--field-shadow-in:0 0 0 0 transparent;}
-html[data-fx~="lift"]{--field-shadow-out:var(--shadow-sm);}
-
-/* — форма и фокус — */
-html[data-fx~="round"]{--field-radius:1.1rem;}
-html[data-fx~="square"]{--field-radius:.3rem;}
-html[data-fx~="ring-wide"]{--field-ring:5px;}
-
 *{box-sizing:border-box;}
 html{scroll-behavior:smooth;}
 body{
@@ -699,25 +662,19 @@ input[type="text"], input[type="email"], input[type="tel"], input[type="url"],
 input[type="date"], input[type="number"], input[type="password"], input[type="search"],
 input:not([type]), select, textarea{
   font-family:'Inter',sans-serif; font-size:1rem; color:var(--text);
-  background:var(--field-bg); border:var(--field-bw) solid var(--field-border);
-  border-radius:var(--field-radius); padding:.55rem .8rem;
-  /* Две тени врозь: внутренняя (утопленность) и внешняя (приподнятость) —
-     иначе эффекты «утопить» и «приподнять» затирали бы друг друга.
-     Пустое значение здесь 0 0 0 0 transparent, а не none: none в списке теней
-     недопустим и погасил бы всю строку. */
-  box-shadow:var(--field-shadow-in), var(--field-shadow-out);
+  background:var(--field-bg); border:1.5px solid var(--field-border);
+  border-radius:.7rem; padding:.55rem .8rem; box-shadow:var(--field-shadow-in);
   transition:border-color .15s ease, box-shadow .18s ease, background .15s ease;
 }
 input:hover, select:hover, textarea:hover{border-color:color-mix(in srgb, var(--primary) 45%, var(--field-border));}
 input:focus-visible, select:focus-visible, textarea:focus-visible{
   outline:none; border-color:var(--primary);
-  box-shadow:var(--field-shadow-in), var(--field-shadow-out),
-             0 0 0 var(--field-ring) color-mix(in srgb, var(--primary) 22%, transparent);
+  box-shadow:var(--field-shadow-in), 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
 }
 input::placeholder, textarea::placeholder{color:var(--muted); opacity:.75;}
 input[type="checkbox"], input[type="radio"]{accent-color:var(--primary);}
 input[type="checkbox"]{border-radius:.3rem;}
-textarea{border-radius:calc(var(--field-radius) + .1rem);}
+textarea{border-radius:.8rem;}
 .field input, .field select, .field textarea{min-width:11rem;}
 .field input:focus, .field select:focus{border-color:var(--primary); outline:none;}
 .field--wide input{min-width:18rem;}

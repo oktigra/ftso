@@ -180,10 +180,6 @@ export function loadConfig({ requireSecrets = true } = {}) {
       // Обработанные обращения живут ещё год (срок исковой давности по спорам об ответе).
       retentionDays: Number(process.env.FEEDBACK_RETENTION_DAYS || 365),
     },
-    // ВИД ПОЛЕЙ ВВОДА: inset — утопленное (по умолчанию), flat — матовая
-    // заливка, outline — контурное. Меняется строкой FIELD_STYLE в .env;
-    // посмотреть, не меняя настройку, можно параметром ?fields= в адресе.
-    fieldStyle: ['inset', 'flat', 'outline'].includes(process.env.FIELD_STYLE) ? process.env.FIELD_STYLE : 'inset',
     // ЗАЩИТА ПУБЛИЧНЫХ ФОРМ (lib/form-guard.mjs). Билет живёт в сессии:
     // minSeconds — раньше этого срока отправку принимает только робот;
     // maxMinutes — после этого срока билет протух и страницу надо обновить;

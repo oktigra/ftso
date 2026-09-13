@@ -14,7 +14,6 @@ import { getDb } from '../db/connect.mjs';
 import { SqliteStore } from './lib/session-store.mjs';
 import { csrfMiddleware } from './lib/csrf.mjs';
 import { issueTicket } from './lib/form-guard.mjs';
-import { savedFx, fxFromQuery } from './lib/field-style.mjs';
 import { LoginAttempts } from './lib/login-attempts.mjs';
 import { writeLimiter, publicFormLimiter } from './middleware/write-limit.mjs';
 import { currentUser, ROLE_SECTIONS } from './middleware/auth.mjs';
@@ -197,9 +196,6 @@ export function createApp(config) {
     const m = /(?:^|;\s*)ftso\.analytics=([01])/.exec(req.headers.cookie || '');
     res.locals.analyticsChoice = m ? m[1] : '';
     res.locals.currentPath = req.path;
-    // Вид полей: набор эффектов из админки (или FIELD_STYLE в .env), а параметры
-    // ?fx= и ?fields= показывают любой набор, ничего не сохраняя.
-    res.locals.fieldFx = fxFromQuery(req.query) ?? savedFx(db, config);
     // Канонический адрес: боевой домен из конфига + путь без query и без «/» в конце.
     res.locals.siteUrl = config.siteUrl.replace(/\/$/, '');
     res.locals.canonicalUrl = res.locals.siteUrl + (req.path === '/' ? '/' : req.path.replace(/\/+$/, ''));
