@@ -148,6 +148,7 @@ const { getDb, closeDb } = await import('./db/connect.mjs');
 const { computeStandings } = await import('../rating/rating.mjs');
 const { collectEngineInput, recompute, currentStandings } = await import('./server/lib/rating-service.mjs');
 const { verifyPassword, parseHash } = await import('./server/lib/password.mjs');
+const { EFFECTS, PRESETS } = await import('./server/lib/field-style.mjs');
 
 const config = loadConfig();
 let db = getDb();
@@ -7658,36 +7659,59 @@ await check('с выключенным вопросом поля проверк�
   return 'FORM_QUESTION=0 — поля нет, старые формы работают как раньше';
 });
 
-await check('вид полей: по умолчанию утопленный, параметром ?fields= смотрятся остальные', async () => {
-  const attr = (html) => (/<html[^>]*data-fields="([a-z]+)"/.exec(html) || [])[1];
-  eq(attr((await http('/contacts')).text), 'inset', 'по умолчанию должен стоять inset');
-  eq(attr((await http('/contacts?fields=flat')).text), 'flat', 'параметр flat не применился');
-  eq(attr((await http('/contacts?fields=outline')).text), 'outline', 'параметр outline не применился');
-  // Мусор в параметре не должен ронять страницу и не должен попадать в разметку.
-  const junk = await http('/contacts?fields=<script>alert(1)</script>');
+await check('вид полей: набор эффектов в разметке, ?fx= показывает любой, мусор отсеян', async () => {
+  const attr = (html) => (/<html[^>]*data-fx="([^"]*)"/.exec(html) || [])[1];
+  eq(attr((await http('/contacts')).text), 'inset', 'по умолчанию должен стоять набор inset');
+  eq(attr((await http('/contacts?fx=ghost+border-strong')).text), 'ghost border-strong', 'набор из адреса не применился');
+  eq(attr((await http('/contacts?fields=flat')).text), PRESETS.flat, 'заготовка flat не раскрылась в набор');
+  // Мусор не должен ни ронять страницу, ни попадать в атрибут.
+  const junk = await http('/contacts?fx=%3Cscript%3Ealert(1)%3C/script%3E+round');
   eq(junk.status, 200, 'мусор в параметре уронил страницу');
-  eq(attr(junk.text), 'inset', 'мусор в параметре пролез в разметку');
-  return 'inset по умолчанию, flat и outline по параметру, мусор → inset';
+  eq(attr(junk.text), 'round', 'мусор в параметре пролез в разметку');
+  return 'inset по умолчанию, произвольный набор и заготовка из адреса, мусор отброшен';
 });
 
-await check('вид полей: FIELD_STYLE меняет значение по умолчанию, все три описаны в CSS', async () => {
+await check('конструктор /admin/fields: только super-admin, сохранение меняет весь сайт, сброс возвращает', async () => {
+  const { jar: adminJar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/fields', { jar: adminJar });
+  eq(page.status, 200, 'страница конструктора недоступна супер-админу');
+  eq((page.text.match(/class="fx-toggle"/g) || []).length, EFFECTS.length, 'число тумблеров не совпало со словарём эффектов');
+
+  const saved = await http('/admin/fields', {
+    method: 'POST', jar: adminJar,
+    form: { _csrf: tokenFrom(page.text), fx: 'ghost border-strong мусор round lift' },
+  });
+  eq(saved.status, 200, 'сохранение набора не прошло');
+  // Порядок нормализуется по словарю, неизвестное слово выброшено.
+  const applied = (/<html[^>]*data-fx="([^"]*)"/.exec((await http('/contacts')).text) || [])[1];
+  eq(applied, 'ghost border-strong lift round', 'сохранённый набор не доехал до публичной страницы');
+  eq(db.prepare("SELECT value FROM site_settings WHERE key = 'field_fx'").get().value, applied, 'в настройках лежит другой набор');
+
+  const page2 = await http('/admin/fields', { jar: adminJar });
+  await http('/admin/fields', { method: 'POST', jar: adminJar, form: { _csrf: tokenFrom(page2.text), action: 'reset' } });
+  eq((/<html[^>]*data-fx="([^"]*)"/.exec((await http('/contacts')).text) || [])[1], 'inset', 'сброс не вернул набор из настройки сервера');
+
+  // Чужие роли внутрь не заходят: вид сайта правит только владелец.
+  const alien = await http('/admin/fields');
+  assert(alien.status === 302 || alien.status === 403, `гостю ждали 302/403, получили ${alien.status}`);
+  return `${EFFECTS.length} тумблеров; набор сохранён и применился ко всему сайту; сброс вернул inset; гостю ${alien.status}`;
+});
+
+await check('FIELD_STYLE задаёт вид, пока в админке ничего не выбрано; все эффекты описаны в CSS', async () => {
   const flatApp = createApp({ ...config, fieldStyle: 'flat' });
   const server = await new Promise((r) => { const s = flatApp.listen(0, '127.0.0.1', () => r(s)); });
   try {
     const flatHttp = makeClient(`http://127.0.0.1:${server.address().port}`);
     const html = (await flatHttp('/contacts')).text;
-    assert(/<html[^>]*data-fields="flat"/.test(html), 'FIELD_STYLE=flat не стал значением по умолчанию');
+    assert(html.includes(`data-fx="${PRESETS.flat}"`), 'FIELD_STYLE=flat не стал значением по умолчанию');
   } finally {
     await new Promise((r) => server.close(r));
   }
   const css = readFileSync(resolve(HERE, 'public/css/site.css'), 'utf8');
-  for (const v of ['flat', 'outline']) {
-    for (const theme of ['dark', 'warm']) {
-      assert(css.includes(`html[data-fields="${v}"][data-theme="${theme}"]`), `в CSS нет набора ${v} для темы ${theme}`);
-    }
+  for (const e of EFFECTS) {
+    assert(css.includes(`html[data-fx~="${e.id}"]`), `в CSS нет правил для эффекта ${e.id}`);
   }
-  assert(/--field-bg:#0a1118/.test(css), 'утопленный вид тёмной темы пропал из CSS');
-  return 'FIELD_STYLE=flat применился; в CSS шесть наборов flat/outline плюс базовый inset в темах';
+  return `FIELD_STYLE=flat применился; в CSS есть правила для всех ${EFFECTS.length} эффектов`;
 });
 
 await new Promise((r) => guardInst.server.close(r));
