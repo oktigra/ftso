@@ -148,7 +148,6 @@ const { getDb, closeDb } = await import('./db/connect.mjs');
 const { computeStandings } = await import('../rating/rating.mjs');
 const { collectEngineInput, recompute, currentStandings } = await import('./server/lib/rating-service.mjs');
 const { verifyPassword, parseHash } = await import('./server/lib/password.mjs');
-const { EFFECTS, PRESETS } = await import('./server/lib/field-style.mjs');
 
 const config = loadConfig();
 let db = getDb();
@@ -7659,36 +7658,22 @@ await check('с выключенным вопросом поля проверк�
   return 'FORM_QUESTION=0 — поля нет, старые формы работают как раньше';
 });
 
-await check('вид полей: набор эффектов в разметке, ?fx= показывает любой, мусор отсеян', async () => {
-  const attr = (html) => (/<html[^>]*data-fx="([^"]*)"/.exec(html) || [])[1];
-  eq(attr((await http('/contacts')).text), 'inset', 'по умолчанию должен стоять набор inset');
-  eq(attr((await http('/contacts?fx=ghost+border-strong')).text), 'ghost border-strong', 'набор из адреса не применился');
-  eq(attr((await http('/contacts?fields=flat')).text), PRESETS.flat, 'заготовка flat не раскрылась в набор');
-  // Мусор не должен ни ронять страницу, ни попадать в атрибут.
-  const junk = await http('/contacts?fx=%3Cscript%3Ealert(1)%3C/script%3E+round');
-  eq(junk.status, 200, 'мусор в параметре уронил страницу');
-  eq(attr(junk.text), 'round', 'мусор в параметре пролез в разметку');
-  return 'inset по умолчанию, произвольный набор и заготовка из адреса, мусор отброшен';
-});
+await check('вид полей один и не переключается: ни адресом, ни админкой', async () => {
+  const html = (await http('/contacts')).text;
+  assert(!/data-fx=/.test(html), 'в разметке остался атрибут набора эффектов');
+  // Прежние ручки не должны ничего менять: страница обязана быть той же.
+  const byQuery = (await http('/contacts?fx=ghost+square&fields=outline')).text;
+  eq(byQuery.length, html.length, 'параметры в адресе всё ещё меняют страницу');
+  eq((await http('/admin/fields')).status, 404, 'страница выбора вида в админке всё ещё жива');
 
-await check('FIELD_STYLE задаёт вид, пока в админке ничего не выбрано; все эффекты описаны в CSS', async () => {
-  const flatApp = createApp({ ...config, fieldStyle: 'flat' });
-  const server = await new Promise((r) => { const s = flatApp.listen(0, '127.0.0.1', () => r(s)); });
-  try {
-    const flatHttp = makeClient(`http://127.0.0.1:${server.address().port}`);
-    const html = (await flatHttp('/contacts')).text;
-    assert(html.includes(`data-fx="${PRESETS.flat}"`), 'FIELD_STYLE=flat не стал значением по умолчанию');
-  } finally {
-    await new Promise((r) => server.close(r));
-  }
   const css = readFileSync(resolve(HERE, 'public/css/site.css'), 'utf8');
-  for (const e of EFFECTS) {
-    assert(css.includes(`html[data-fx~="${e.id}"]`), `в CSS нет правил для эффекта ${e.id}`);
+  assert(!/data-fx~=/.test(css), 'в CSS остался словарь переключаемых эффектов');
+  // Утверждённый вид: цвет поля своим токеном на каждую тему, скругление и тень внутрь.
+  for (const token of ['--field-bg:#0a1118', '--field-bg:#ffffff', '--field-bg:#fffdf7']) {
+    assert(css.includes(token), `в CSS нет токена поля ${token}`);
   }
-  // Страницы-конструктора в админке НЕТ: вид выбирается стендом и ставится настройкой.
-  const gone = await http('/admin/fields');
-  eq(gone.status, 404, `/admin/fields должен быть 404, а отдал ${gone.status}`);
-  return `FIELD_STYLE=flat применился; правила для всех ${EFFECTS.length} эффектов на месте; /admin/fields — 404`;
+  assert(css.includes('border-radius:.7rem; padding:.55rem .8rem; box-shadow:var(--field-shadow-in);'), 'правило поля изменилось');
+  return 'атрибута нет, адрес ничего не меняет, /admin/fields 404, в CSS один вид';
 });
 
 await new Promise((r) => guardInst.server.close(r));
