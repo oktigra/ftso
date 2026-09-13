@@ -68,6 +68,7 @@
             <input type="checkbox" name="consent_processing" value="1" required>
             <span>Даю согласие на обработку указанных данных (имя, e-mail, текст) для ответа на обращение и ознакомлен с <a href="/privacy">Политикой обработки персональных данных</a>.</span>
           </label>
+          <%- include('form-check', { pref: 'ff' }) %>
           <button class="btn btn--primary" type="submit">Отправить</button>
         </form>
       </div>

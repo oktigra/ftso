@@ -8,6 +8,7 @@
 // намеренно — иначе правила разойдутся с галереей и /documents.
 import { tournamentRequestInput, ValidationError } from '../lib/validate.mjs';
 import { parseMultipart } from '../lib/multipart.mjs';
+import { checkTicket, consumeTicket } from '../lib/form-guard.mjs';
 import { storeUpload, deleteUpload, UPLOAD_PROFILES } from '../lib/uploads.mjs';
 import { createRequest, byToken } from '../lib/tournament-requests.mjs';
 import { queueMail, flushOutbox, mailTournamentSubmitted } from '../lib/mailer.mjs';
@@ -59,6 +60,8 @@ export default function mountTournamentRequest(app, { db, config, limitTournamen
 
       // АНТИСПАМ: приманка. Заполнена — отвечаем как при успехе и ничего не пишем.
       if (String(fields.website || '').trim() !== '') return res.redirect('/tournament-request/sent');
+      // Билет формы: поля пришли из multipart, поэтому передаём их явно.
+      checkTicket(req, config, fields);
 
       // ЧЕРНОВИК кладём ДО валидации: упавшая проверка не должна стирать ввод.
       req.session.tournamentDraft = {
@@ -94,6 +97,7 @@ export default function mountTournamentRequest(app, { db, config, limitTournamen
       }
 
       const { token } = createRequest(db, { fields: data, uploads: stored, ip: req.ip });
+      consumeTicket(req);
 
       const statusUrl = `${req.protocol}://${req.get('host')}/tournament-request/status/${token}`;
       const letter = mailTournamentSubmitted({ organizer: data.organizer, name: data.name, statusUrl });

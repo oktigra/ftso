@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { getDb } from '../db/connect.mjs';
 import { SqliteStore } from './lib/session-store.mjs';
 import { csrfMiddleware } from './lib/csrf.mjs';
+import { issueTicket } from './lib/form-guard.mjs';
 import { LoginAttempts } from './lib/login-attempts.mjs';
 import { writeLimiter, publicFormLimiter } from './middleware/write-limit.mjs';
 import { currentUser, ROLE_SECTIONS } from './middleware/auth.mjs';
@@ -238,6 +239,17 @@ export function createApp(config) {
   );
 
   app.use(csrfMiddleware());
+
+  // БИЛЕТ ПУБЛИЧНЫХ ФОРМ: выдаётся при показе любой публичной страницы (формы
+  // обратной связи живут в подвале всех из них), проверяется при отправке —
+  // см. lib/form-guard.mjs. В админке не нужен: туда без входа не попасть.
+  app.use((req, res, next) => {
+    res.locals.formCheck = { question: '', on: false };
+    if (req.method === 'GET' && !req.path.startsWith('/admin')) {
+      res.locals.formCheck = issueTicket(req, config);
+    }
+    next();
+  });
 
   const attempts = new LoginAttempts(db, config.login);
   const limitWrites = writeLimiter(db, config.write);

@@ -1,0 +1,13 @@
+<%
+/* Проверка «вы человек» без картинок и внешних сервисов: слагаемые живут в
+   билете сессии (server/lib/form-guard.mjs). pref — префикс id: на странице
+   контактов две формы обратной связи (своя и подвальная), id должны различаться. */
+%>
+<% if (formCheck && formCheck.on) { %>
+  <div class="field field--check">
+    <label for="<%= pref %>-answer">Проверка: сколько будет <%= formCheck.question %>?</label>
+    <input id="<%= pref %>-answer" name="form_answer" inputmode="numeric" autocomplete="off"
+           maxlength="3" size="4" required aria-describedby="<%= pref %>-answer-hint">
+    <p class="field-hint" id="<%= pref %>-answer-hint">Ответьте цифрой — так мы отсеиваем рассылки роботов.</p>
+  </div>
+<% } %>

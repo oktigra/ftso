@@ -5,6 +5,7 @@
 // в открытый рейтинг, и решение об этом принимает человек, а не отправитель формы.
 import { registrationInput, ValidationError, splitName } from '../lib/validate.mjs';
 import { createRegistration, byToken, findDuplicate } from '../lib/registrations.mjs';
+import { checkTicket, consumeTicket } from '../lib/form-guard.mjs';
 import { queueMail, flushOutbox, mailSubmitted } from '../lib/mailer.mjs';
 import { LEGAL_VERSION_LABEL, OPERATOR } from '../lib/legal.mjs';
 
@@ -42,6 +43,8 @@ export default function mountRegister(app, { db, config, limitRegister }) {
       if (String(req.body.website || '').trim() !== '') {
         return res.redirect('/register/sent');
       }
+      // Билет формы: страницу открывали, писали не мгновенно, на вопрос ответили.
+      checkTicket(req, config);
 
       const data = registrationInput(req.body);
       // Одна отметка — на ОБРАБОТКУ (ст. 9). Согласия на распространение в
@@ -100,6 +103,7 @@ export default function mountRegister(app, { db, config, limitRegister }) {
         ...data,
         ip: req.ip,
       });
+      consumeTicket(req);
 
       const statusUrl = `${req.protocol}://${req.get('host')}/register/status/${token}`;
       const letter = mailSubmitted({ fullName: data.full_name, statusUrl });

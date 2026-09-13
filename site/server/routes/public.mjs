@@ -7,6 +7,7 @@ import {
 } from '../lib/rating-service.mjs';
 import { OPERATOR, LEGAL_VERSION, LEGAL_VERSION_LABEL, PUBLIC_DOCUMENTS } from '../lib/legal.mjs';
 import { feedbackInput, createFeedback } from '../lib/feedback.mjs';
+import { checkTicket, consumeTicket } from '../lib/form-guard.mjs';
 import { queueMail } from '../lib/mailer.mjs';
 import {
   ValidationError, CATEGORIES, TOURNAMENT_KINDS, TOURNAMENT_FORMATS, TOURNAMENT_FORMAT_RU, TOURNAMENT_KIND_RU, TOURNAMENT_STATUSES, TOURNAMENT_STATUS_RU, TOURNAMENT_SEX_RU,
@@ -334,8 +335,11 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
     // Honeypot: бот заполнил скрытое поле — отвечаем как при успехе, ничего не пишем.
     if (String(req.body.website || '').trim() !== '') return res.redirect('/contacts?sent=1');
     try {
+      // Билет формы: страницу открывали, писали не мгновенно, на вопрос ответили.
+      checkTicket(req, config);
       const data = feedbackInput(req.body);
       const id = createFeedback(db, { ...data, legalVersion: LEGAL_VERSION });
+      consumeTicket(req);
       queueMail(db, {
         to: OPERATOR.email,
         kind: 'feedback.new',

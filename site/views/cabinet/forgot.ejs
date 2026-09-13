@@ -33,12 +33,16 @@
         <p class="lead">Если такой адрес есть в системе, письмо со ссылкой уже отправлено.</p>
         <p class="muted">Ссылка действует 24 часа и срабатывает один раз.</p>
       <% } else { %>
+        <% if (typeof formError !== 'undefined' && formError) { %>
+          <div class="form-errors"><strong><%= formError %></strong></div>
+        <% } %>
         <form method="post" action="/cabinet/forgot" class="stacked-form">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
           <div class="field">
             <label for="f-email">Электронная почта</label>
             <input id="f-email" name="email" type="email" maxlength="160" required autocomplete="email">
           </div>
+          <%- include('../partials/form-check', { pref: 'fg' }) %>
           <button class="btn btn--primary" type="submit">Прислать ссылку</button>
         </form>
       <% } %>
