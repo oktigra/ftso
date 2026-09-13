@@ -1030,8 +1030,17 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .guide-actions{display:flex; align-items:center; gap:.75rem; flex-wrap:wrap; margin-bottom:.75rem;}
 /* Отметка «публиковать» под полем анкеты тренера: она относится к полю выше,
    поэтому идёт в одну строку и мельче обычного чекбокса. */
-.check--inline{margin-top:.35rem; font-size:.85rem; color:var(--muted); align-items:center;}
-.check--inline input{margin:0;}
+/* ПОЛЕ + ОТМЕТКА «ПУБЛИКОВАТЬ» В ОДНУ СТРОКУ. Отметка стояла под полем и
+   читалась как отдельный вопрос; на узком экране строка переносится сама. */
+.field-allow{display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;}
+.field-allow input:not([type="checkbox"]){flex:1 1 14rem; min-width:0;}
+.check--inline{margin:0; font-size:.85rem; color:var(--muted); align-items:center; flex:0 0 auto; white-space:nowrap;}
+/* Сам квадратик — по своему размеру: общее .field input{min-width:11rem} растягивало
+   его на 176px, и подпись улетала от галочки на полстроки. */
+.check--inline input[type="checkbox"]{margin:0; min-width:0; width:1.05rem; height:1.05rem; flex:none;}
+/* Подпись отметки — обычным текстом: правило .field label выше делает из любой
+   метки внутри поля прописной заголовок, а здесь нужна простая строка. */
+.field .check--inline{text-transform:none; letter-spacing:normal; font-weight:500;}
 .row-actions{display:flex; gap:.75rem; flex-wrap:wrap; align-items:center;}
 .dir-actions{display:flex; gap:.75rem; align-items:center; flex-wrap:wrap; margin-top:.9rem;}
 /* Свёрнутая инструкция по заполнению анкеты тренера. */
