@@ -57,12 +57,16 @@ export function checkTicket(req, config, body = req.body) {
     throw new ValidationError('Форма устарела. Обновите страницу и отправьте ещё раз.');
   }
   if (age < config.form.minSeconds * 1000) {
-    throw new ValidationError('Форма отправлена слишком быстро. Проверьте поля и отправьте ещё раз.');
+    throw new ValidationError(
+      'Форма отправлена слишком быстро — так заполняют роботы. Проверьте поля и отправьте ещё раз.',
+    );
   }
   if (config.form.question) {
     const sent = String((body && body.form_answer) || '').trim();
     if (!/^-?\d{1,3}$/.test(sent) || Number(sent) !== t.a + t.b) {
-      throw new ValidationError(`Проверка не пройдена: под формой нужно ответить, сколько будет ${t.a} + ${t.b}.`);
+      throw new ValidationError(
+        `Не подтверждено, что вы не робот: ответьте на вопрос под формой — сколько будет ${t.a} + ${t.b}.`,
+      );
     }
   }
 }
