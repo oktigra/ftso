@@ -109,11 +109,17 @@
       <% fields.forEach(function (f) { %>
         <div class="field">
           <label for="f-<%= f.key %>"><%= f.label %></label>
-          <input id="f-<%= f.key %>" name="<%= f.key %>" maxlength="200" value="<%= values[f.key] || '' %>">
-          <label class="check check--inline" for="a-<%= f.allow %>">
-            <input type="checkbox" id="a-<%= f.allow %>" name="<%= f.allow %>" <%= values[f.allow] ? 'checked' : '' %>>
-            <span>публиковать на сайте</span>
-          </label>
+          <%
+          /* Отметка «публиковать» стоит В ОДНОЙ СТРОКЕ с полем (13.09.2026, снимок
+             владельца): под полем она читалась как отдельный вопрос и терялась. */
+          %>
+          <div class="field-allow">
+            <input id="f-<%= f.key %>" name="<%= f.key %>" maxlength="200" value="<%= values[f.key] || '' %>">
+            <label class="check check--inline" for="a-<%= f.allow %>">
+              <input type="checkbox" id="a-<%= f.allow %>" name="<%= f.allow %>" <%= values[f.allow] ? 'checked' : '' %>>
+              <span>публиковать на сайте</span>
+            </label>
+          </div>
         </div>
       <% }); %>
 
