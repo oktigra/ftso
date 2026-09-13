@@ -62,6 +62,20 @@ html[data-theme="warm"]{
   --page-bg:#e8dfcd;
   --partner-inset:rgba(255,255,255,.75);
 }
+/* ТРИ ВИДА ПОЛЕЙ ВВОДА (13.09.2026). Выбор — FIELD_STYLE в .env, предпросмотр —
+   параметр ?fields= в адресе; по умолчанию inset, его токены заданы прямо в темах
+   выше. Здесь два остальных вида: они перекрывают те же три токена.
+     flat    — матовая заливка без теней: поле отличается только цветом;
+     outline — поле держит рамка, в тёмной теме фон вовсе прозрачный.
+   Значения подобраны по темам: в тёмной поле не должно светить, в светлой и
+   тёплой, наоборот, должно быть заметнее фона карточки. */
+html[data-fields="flat"]{--field-bg:#ffffff; --field-border:#b9c7d5; --field-inset:none;}
+html[data-fields="flat"][data-theme="dark"]{--field-bg:#16232e; --field-border:#2a3b4b; --field-inset:none;}
+html[data-fields="flat"][data-theme="warm"]{--field-bg:#fdf7e9; --field-border:#cbb894; --field-inset:none;}
+html[data-fields="outline"]{--field-bg:#ffffff; --field-border:#9fb2c4; --field-inset:var(--shadow-sm);}
+html[data-fields="outline"][data-theme="dark"]{--field-bg:transparent; --field-border:#33475a; --field-inset:none;}
+html[data-fields="outline"][data-theme="warm"]{--field-bg:#fffdf7; --field-border:#b9a375; --field-inset:var(--shadow-sm);}
+
 *{box-sizing:border-box;}
 html{scroll-behavior:smooth;}
 body{

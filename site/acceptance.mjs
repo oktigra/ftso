@@ -7658,6 +7658,38 @@ await check('с выключенным вопросом поля проверк�
   return 'FORM_QUESTION=0 — поля нет, старые формы работают как раньше';
 });
 
+await check('вид полей: по умолчанию утопленный, параметром ?fields= смотрятся остальные', async () => {
+  const attr = (html) => (/<html[^>]*data-fields="([a-z]+)"/.exec(html) || [])[1];
+  eq(attr((await http('/contacts')).text), 'inset', 'по умолчанию должен стоять inset');
+  eq(attr((await http('/contacts?fields=flat')).text), 'flat', 'параметр flat не применился');
+  eq(attr((await http('/contacts?fields=outline')).text), 'outline', 'параметр outline не применился');
+  // Мусор в параметре не должен ронять страницу и не должен попадать в разметку.
+  const junk = await http('/contacts?fields=<script>alert(1)</script>');
+  eq(junk.status, 200, 'мусор в параметре уронил страницу');
+  eq(attr(junk.text), 'inset', 'мусор в параметре пролез в разметку');
+  return 'inset по умолчанию, flat и outline по параметру, мусор → inset';
+});
+
+await check('вид полей: FIELD_STYLE меняет значение по умолчанию, все три описаны в CSS', async () => {
+  const flatApp = createApp({ ...config, fieldStyle: 'flat' });
+  const server = await new Promise((r) => { const s = flatApp.listen(0, '127.0.0.1', () => r(s)); });
+  try {
+    const flatHttp = makeClient(`http://127.0.0.1:${server.address().port}`);
+    const html = (await flatHttp('/contacts')).text;
+    assert(/<html[^>]*data-fields="flat"/.test(html), 'FIELD_STYLE=flat не стал значением по умолчанию');
+  } finally {
+    await new Promise((r) => server.close(r));
+  }
+  const css = readFileSync(resolve(HERE, 'public/css/site.css'), 'utf8');
+  for (const v of ['flat', 'outline']) {
+    for (const theme of ['dark', 'warm']) {
+      assert(css.includes(`html[data-fields="${v}"][data-theme="${theme}"]`), `в CSS нет набора ${v} для темы ${theme}`);
+    }
+  }
+  assert(/--field-bg:#0a1118/.test(css), 'утопленный вид тёмной темы пропал из CSS');
+  return 'FIELD_STYLE=flat применился; в CSS шесть наборов flat/outline плюс базовый inset в темах';
+});
+
 await new Promise((r) => guardInst.server.close(r));
 
 // ===========================================================================
