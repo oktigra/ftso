@@ -32,6 +32,11 @@ process.env.UPLOAD_DIR = resolve(WORK, 'uploads');
 process.env.INTAKE_ENABLED = '1';
 // Почта в приёмке ВКЛЮЧЕНА: проверяем очередь и письма; поведение «без почты» — отдельным инстансом.
 process.env.SITE_MAIL = 'on';
+// ЗАЩИТА ФОРМ (lib/form-guard.mjs) в основной части ОСЛАБЛЕНА: тесты отправляют
+// формы мгновенно после показа страницы и не читают вопрос. Боевые значения
+// (порог времени и вопрос) проверяются в отдельном разделе на своём экземпляре.
+process.env.FORM_MIN_SECONDS = '0';
+process.env.FORM_QUESTION = '0';
 
 const CHROMIUM = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
@@ -7500,6 +7505,160 @@ await check('deploy/health.sh: /, /rating и первый профиль → 0; 
   eq(dead.status, 1, `мёртвый порт должен дать код 1, а дал ${dead.status}`);
   return `/ и /rating 200; ${profile}; мёртвый порт → код 1`;
 });
+
+section('22. Защита публичных форм: билет, порог времени, вопрос');
+
+// Боевая конфигурация защиты: вопрос включён, минимум 2 секунды на заполнение.
+// Основная приёмка гоняет с ослабленными значениями (см. шапку файла), поэтому
+// боевое поведение проверяем на ОТДЕЛЬНОМ экземпляре, как рубильник в разделе 18.
+const guardCfg = { ...config, form: { minSeconds: 2, maxMinutes: 120, question: true } };
+const guardInst = await (async () => {
+  const app = createApp(guardCfg);
+  return new Promise((res) => {
+    const server = app.listen(0, '127.0.0.1', () => {
+      res({ app, server, base: `http://127.0.0.1:${server.address().port}` });
+    });
+  });
+})();
+const guardHttp = makeClient(guardInst.base);
+const askFrom = (html) => {
+  const m = /сколько будет (\d+) \+ (\d+)/.exec(html);
+  return m ? Number(m[1]) + Number(m[2]) : null;
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const feedbackCount = () => db.prepare('select count(*) c from feedback_messages').get().c;
+// Лимит на запись общий с разделами выше (ключи f: обращения, c: анкеты) — к этому
+// моменту он выбран их отправками, и все POST ловили бы 429 вместо проверки билета.
+const resetFormLimits = () => db.prepare("DELETE FROM write_attempts WHERE key LIKE 'f:%' OR key LIKE 'c:%'").run();
+
+await check('вопрос показан во всех публичных формах, когда включён', async () => {
+  const paths = ['/contacts', '/register', '/tournament-request', '/coaches/apply', '/referees/apply', '/cabinet/forgot'];
+  for (const path of paths) {
+    const r = await guardHttp(path);
+    eq(r.status, 200, `${path}: страница должна открываться`);
+    assert(/name="form_answer"/.test(r.text), `${path}: поля проверки нет в разметке`);
+    assert(askFrom(r.text) !== null, `${path}: вопрос не читается`);
+  }
+  // Подвальная форма обращений живёт на каждой странице — её поле тоже на месте.
+  assert(/id="ff-answer"/.test((await guardHttp('/news')).text), 'в подвальной форме поля проверки нет');
+  return `поле проверки есть на ${paths.length} формах и в подвале`;
+});
+
+await check('форма без ответа на вопрос и с неверным ответом не принимается', async () => {
+  const before = feedbackCount();
+  resetFormLimits();
+  const jar = new Jar();
+  const page = await guardHttp('/contacts', { jar });
+  const _csrf = tokenFrom(page.text);
+  const base = { _csrf, name: 'Робот', email: 'robot@example.com', message: 'Продвижение сайта недорого', consent_processing: '1' };
+  await sleep(2100);
+
+  const noAnswer = await guardHttp('/contacts/feedback', { method: 'POST', form: base, jar });
+  assert(/error=/.test(noAnswer.location || ''), `без ответа ждали редирект с ошибкой, получили ${noAnswer.status} ${noAnswer.location}`);
+  const wrong = await guardHttp('/contacts/feedback', { method: 'POST', form: { ...base, form_answer: '99' }, jar });
+  assert(/error=/.test(wrong.location || ''), `неверный ответ приняли: ${wrong.status} ${wrong.location}`);
+  eq(feedbackCount(), before, 'в базу что-то записалось при непройденной проверке');
+  return 'без ответа и с ответом 99 — редирект с ошибкой, в базе ноль новых строк';
+});
+
+await check('форма, отправленная быстрее порога, не принимается', async () => {
+  const before = feedbackCount();
+  resetFormLimits();
+  const jar = new Jar();
+  const page = await guardHttp('/contacts', { jar });
+  const res = await guardHttp('/contacts/feedback', {
+    method: 'POST',
+    jar,
+    form: {
+      _csrf: tokenFrom(page.text), name: 'Скорострел', email: 'fast@example.com',
+      message: 'Мгновенная отправка формы', consent_processing: '1', form_answer: String(askFrom(page.text)),
+    },
+  });
+  assert(/error=/.test(res.location || ''), `мгновенную отправку приняли: ${res.status} ${res.location}`);
+  eq(feedbackCount(), before, 'мгновенная отправка что-то записала в базу');
+  return 'ответ верный, но 0 секунд на заполнение — отбой, в базе ноль новых строк';
+});
+
+await check('человек проходит: верный ответ и пауза — обращение записано', async () => {
+  const before = feedbackCount();
+  resetFormLimits();
+  const jar = new Jar();
+  const page = await guardHttp('/contacts', { jar });
+  await sleep(2100);
+  const res = await guardHttp('/contacts/feedback', {
+    method: 'POST',
+    jar,
+    form: {
+      _csrf: tokenFrom(page.text), name: 'Мария', email: 'maria@example.com',
+      message: 'Здравствуйте, подскажите расписание тренировок.', consent_processing: '1',
+      form_answer: String(askFrom(page.text)),
+    },
+  });
+  eq(res.location, '/contacts?sent=1', `человека не пустили (статус ${res.status})`);
+  eq(feedbackCount(), before + 1, 'обращение не записалось');
+  return 'обращение записано, редирект на /contacts?sent=1';
+});
+
+await check('билет одноразовый: второй раз тем же билетом не отправить', async () => {
+  resetFormLimits();
+  const jar = new Jar();
+  const page = await guardHttp('/contacts', { jar });
+  const _csrf = tokenFrom(page.text);
+  const answer = String(askFrom(page.text));
+  await sleep(2100);
+  const form = { _csrf, name: 'Мария', email: 'maria@example.com', message: 'Первое сообщение, оно пройдёт.', consent_processing: '1', form_answer: answer };
+  const first = await guardHttp('/contacts/feedback', { method: 'POST', form, jar });
+  eq(first.location, '/contacts?sent=1', `первая отправка не прошла (статус ${first.status})`);
+  const before = feedbackCount();
+  const second = await guardHttp('/contacts/feedback', {
+    method: 'POST', jar,
+    form: { ...form, message: 'Второе сообщение тем же билетом, без нового показа страницы.' },
+  });
+  assert(/error=/.test(second.location || ''), 'повтор тем же билетом приняли');
+  eq(feedbackCount(), before, 'повтор записался в базу');
+  return 'вторая отправка без нового показа страницы — отбой';
+});
+
+await check('заявка на турнир и анкета тренера тоже под проверкой', async () => {
+  resetFormLimits();
+  const jar = new Jar();
+  const page = await guardHttp('/coaches/apply', { jar });
+  const _csrf = tokenFrom(page.text);
+  await sleep(2100);
+  const res = await guardHttp('/coaches/apply', {
+    method: 'POST', jar,
+    form: { _csrf, full_name: 'Петров Пётр', city: 'Смоленск', email: 'p@example.com', consent_processing: '1', form_answer: '0' },
+  });
+  eq(res.status, 400, `ждали 400 с ошибкой формы, получили ${res.status}`);
+  assert(/Проверка не пройдена/.test(res.text), 'в ответе нет текста о непройденной проверке');
+  return 'анкета тренера с ответом 0 — 400 и текст «Проверка не пройдена»';
+});
+
+await check('приманка website по-прежнему молча отбивает бота', async () => {
+  const before = feedbackCount();
+  resetFormLimits();
+  const jar = new Jar();
+  const page = await guardHttp('/contacts', { jar });
+  await sleep(2100);
+  const res = await guardHttp('/contacts/feedback', {
+    method: 'POST', jar,
+    form: {
+      _csrf: tokenFrom(page.text), name: 'Бот', email: 'bot@example.com', message: 'Реклама',
+      consent_processing: '1', form_answer: String(askFrom(page.text)), website: 'https://spam.example',
+    },
+  });
+  eq(res.location, '/contacts?sent=1', `приманка должна отвечать как при успехе (статус ${res.status})`);
+  eq(feedbackCount(), before, 'заполненная приманка что-то записала');
+  return 'ответ как при успехе, в базе ноль новых строк';
+});
+
+await check('с выключенным вопросом поля проверки в форме нет', async () => {
+  const r = await http('/contacts');
+  assert(!/name="form_answer"/.test(r.text), 'вопрос показан, хотя FORM_QUESTION=0');
+  return 'FORM_QUESTION=0 — поля нет, старые формы работают как раньше';
+});
+
+await new Promise((r) => guardInst.server.close(r));
 
 // ===========================================================================
 await stopApp(inst);

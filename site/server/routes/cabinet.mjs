@@ -58,6 +58,7 @@ import { setDistributionConsent, consentState } from '../lib/consent-journal.mjs
 import { queueMail, flushOutbox, mailPasswordReset, mailErased } from '../lib/mailer.mjs';
 import { logAction } from '../lib/action-log.mjs';
 import { OPERATOR } from '../lib/legal.mjs';
+import { checkTicket, consumeTicket } from '../lib/form-guard.mjs';
 import { burnDummyHash } from '../lib/password.mjs';
 
 const PHOTO_PROFILE = 'gallery';
@@ -512,6 +513,17 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
       // Письма выключены: адрес не принимаем и не запоминаем — показываем путь через секретаря.
       return res.render('cabinet/forgot', { title: 'Восстановление доступа — ФТСО', done: false, mailOn: false, op: OPERATOR });
     }
+    // Билет формы: страницу открывали, писали не мгновенно, на вопрос ответили.
+    // При провале — тот же нейтральный экран, что и всегда: подсказывать роботу,
+    // на чём он споткнулся, незачем, а человек просто обновит страницу.
+    try {
+      checkTicket(req, config);
+    } catch {
+      return res.render('cabinet/forgot', {
+        title: 'Восстановление доступа — ФТСО', done: false, mailOn: true, op: OPERATOR,
+        formError: 'Проверка не пройдена. Обновите страницу и отправьте ещё раз.',
+      });
+    }
     const login = String(req.body.email || '').trim().toLowerCase().slice(0, 160);
     const person = personByEmail(db, login);
     // ОДНО ПИСЬМО НА ЧЕЛОВЕКА, даже если ролей у него две: пароль общий, и
@@ -541,6 +553,7 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
       queueMail(db, { to: person.email, kind: 'cabinet.reset', ...letter });
       flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
     }
+    consumeTicket(req);
     // Ответ ОДИНАКОВЫЙ независимо от того, есть такой адрес или нет: иначе
     // форма превращается в проверку «зарегистрирован ли этот человек».
     res.render('cabinet/forgot', { title: 'Восстановление доступа — ФТСО', done: true, mailOn: true, op: OPERATOR });

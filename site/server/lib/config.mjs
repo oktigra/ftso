@@ -180,6 +180,15 @@ export function loadConfig({ requireSecrets = true } = {}) {
       // Обработанные обращения живут ещё год (срок исковой давности по спорам об ответе).
       retentionDays: Number(process.env.FEEDBACK_RETENTION_DAYS || 365),
     },
+    // ЗАЩИТА ПУБЛИЧНЫХ ФОРМ (lib/form-guard.mjs). Билет живёт в сессии:
+    // minSeconds — раньше этого срока отправку принимает только робот;
+    // maxMinutes — после этого срока билет протух и страницу надо обновить;
+    // question — простой вопрос под формой (FORM_QUESTION=0 выключает).
+    form: {
+      minSeconds: Number(process.env.FORM_MIN_SECONDS ?? 3),
+      maxMinutes: Number(process.env.FORM_MAX_MINUTES || 120),
+      question: process.env.FORM_QUESTION !== '0',
+    },
     consent: {
       // RETENTION журнала согласий. Считается ОТ ОТЗЫВА: действующее согласие
       // не чистится никогда — оно и есть основание обработки. 1095 дней = 3 года,

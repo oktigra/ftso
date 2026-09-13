@@ -69,6 +69,7 @@
             <span>Даю согласие на обработку указанных данных (имя, e-mail, текст) для ответа на обращение и ознакомлен с
               <a href="/privacy" target="_blank" rel="noopener">Политикой обработки персональных данных</a>.</span>
           </label>
+          <%- include('partials/form-check', { pref: 'fb' }) %>
           <button class="btn btn--primary" type="submit">Отправить</button>
         </form>
       <% } %>

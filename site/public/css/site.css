@@ -8,6 +8,10 @@
   --bg:#f5f7f9; --surface:#eaeff4; --surface-2:#eef3f7;
   --border:#d8e0e8; --text:#14212b; --muted:#5f6e7b;
   --input-bg:#ffffff; --danger:#b23b3b;
+  color-scheme:light;
+  /* ПОЛЯ ВВОДА, вариант «утопленное» (07/13.09.2026): фон вдавлен внутренней тенью,
+     рамка на тон темнее общей — поле читается как место для ввода. */
+  --field-bg:#ffffff; --field-border:#c3d0dc; --field-inset:inset 0 1px 3px rgba(18,61,104,.10);
   --shadow-sm:0 1px 2px rgba(18,61,104,.06), 0 2px 8px rgba(18,61,104,.05);
   --shadow-md:0 6px 24px rgba(18,61,104,.08), 0 2px 6px rgba(18,61,104,.05);
   --shadow-lg:0 18px 48px rgba(18,61,104,.12), 0 6px 16px rgba(18,61,104,.07);
@@ -23,6 +27,10 @@ html[data-theme="dark"]{
   --bg:#0d141a; --surface:#111c25; --surface-2:#15222d;
   --border:#263644; --text:#edf3f7; --muted:#9eb0bf;
   --input-bg:#111c25; --danger:#ff7b7b;
+  color-scheme:dark;
+  /* В тёмной теме поле ТЕМНЕЕ карточки: белый прямоугольник в тёмной теме бьёт по
+     глазам, а углубление — нет. */
+  --field-bg:#0a1118; --field-border:#2c3f50; --field-inset:inset 0 1px 3px rgba(0,0,0,.55);
   --shadow-sm:0 1px 2px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.3);
   --shadow-md:0 6px 24px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
   --shadow-lg:0 20px 52px rgba(0,0,0,.55), 0 8px 18px rgba(0,0,0,.4);
@@ -41,6 +49,10 @@ html[data-theme="warm"]{
   --bg:#f7f2e8; --surface:#fffdf7; --surface-2:#f7f0e2;
   --border:#e0d5bf; --text:#1d2a22; --muted:#6b6455;
   --input-bg:#fffdf7; --danger:#b23b3b;
+  color-scheme:light;
+  /* В тёплой теме карточка и поле были одного цвета — поля сливались; рамку
+     делаем заметно теплее и темнее фона. */
+  --field-bg:#fffdf7; --field-border:#cdbb98; --field-inset:inset 0 1px 3px rgba(96,74,26,.13);
   --shadow-sm:0 1px 2px rgba(96,74,26,.07), 0 2px 8px rgba(96,74,26,.06);
   --shadow-md:0 6px 24px rgba(96,74,26,.1), 0 2px 6px rgba(96,74,26,.06);
   --shadow-lg:0 18px 48px rgba(96,74,26,.14), 0 6px 16px rgba(96,74,26,.08);
@@ -641,7 +653,29 @@ tbody tr:hover{background:var(--surface-2);}
 .filters{display:flex; flex-wrap:wrap; gap:.75rem; align-items:flex-end; margin-bottom:1.25rem;}
 .field{display:flex; flex-direction:column; gap:.35rem; min-width:0;}
 .field label{font-family:'Manrope',sans-serif; font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);}
-.field input, .field select, .field textarea{font-family:'Inter',sans-serif; font-size:1rem; color:var(--text); background:var(--input-bg); border:1.5px solid var(--border); border-radius:.8rem; padding:.6rem .85rem; min-width:11rem;}
+/* ПОЛЯ ВВОДА — ОДНО ПРАВИЛО НА ВЕСЬ САЙТ (13.09.2026). Раньше вид задавался в
+   трёх местах (.field, .stacked-form, .admin-table--edit), и строки-редакторы
+   админки не попадали ни в одно: браузер рисовал им свои белые прямоугольники с
+   прямыми углами — в тёмной теме они светили. Теперь вид один, а частные правила
+   ниже меняют только размер. */
+input[type="text"], input[type="email"], input[type="tel"], input[type="url"],
+input[type="date"], input[type="number"], input[type="password"], input[type="search"],
+input:not([type]), select, textarea{
+  font-family:'Inter',sans-serif; font-size:1rem; color:var(--text);
+  background:var(--field-bg); border:1.5px solid var(--field-border);
+  border-radius:.7rem; padding:.55rem .8rem; box-shadow:var(--field-inset);
+  transition:border-color .15s ease, box-shadow .18s ease;
+}
+input:hover, select:hover, textarea:hover{border-color:color-mix(in srgb, var(--primary) 45%, var(--field-border));}
+input:focus-visible, select:focus-visible, textarea:focus-visible{
+  outline:none; border-color:var(--primary);
+  box-shadow:var(--field-inset), 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
+}
+input::placeholder, textarea::placeholder{color:var(--muted); opacity:.75;}
+input[type="checkbox"], input[type="radio"]{accent-color:var(--primary);}
+input[type="checkbox"]{border-radius:.3rem;}
+textarea{border-radius:.8rem;}
+.field input, .field select, .field textarea{min-width:11rem;}
 .field input:focus, .field select:focus{border-color:var(--primary); outline:none;}
 .field--wide input{min-width:18rem;}
 .filters .btn{padding:.65rem 1.25rem;}
@@ -684,7 +718,7 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 /* строки-редакторы: поля компактнее обычных, чтобы таблица не расползалась */
 .admin-table--edit{min-width:860px;}
 .admin-table--edit td{padding:.6rem .75rem;}
-.admin-table--edit input, .admin-table--edit select{min-width:0; width:100%; padding:.45rem .6rem; font-size:.92rem;}
+.admin-table--edit input, .admin-table--edit select{min-width:0; width:100%; padding:.42rem .6rem; font-size:.92rem; border-radius:.55rem;}
 .admin-table--edit .inline-form{gap:.4rem; flex-wrap:wrap; max-width:14rem;}
 /* Колонка «Действия» ПРИКЛЕЕНА к правому краю прокрутки: таблица игроков шире
    контейнера, и кнопки «Сохранить / Удалить / Ссылка в кабинет» уезжали за
@@ -706,10 +740,8 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 .form-panel{max-width:44rem;}
 .stacked-form{display:flex; flex-direction:column; gap:1.1rem;}
 .stacked-form .field{display:flex; flex-direction:column; gap:.35rem;}
-.stacked-form input[type=text], .stacked-form input[type=email], .stacked-form select{
-  width:100%; padding:.6rem .75rem; border:1px solid var(--border); border-radius:.6rem;
-  background:var(--input-bg); color:var(--text); font:inherit;}
-.stacked-form input:focus-visible, .stacked-form select:focus-visible{outline:2px solid var(--primary); outline-offset:1px;}
+.stacked-form input[type=text], .stacked-form input[type=email], .stacked-form input[type=date],
+.stacked-form input[type=tel], .stacked-form select{width:100%;}
 .field-hint{font-size:.85rem; color:var(--muted); margin:0;}
 .req{color:var(--primary);}
 .form-errors{border:1.5px solid var(--danger); background:color-mix(in srgb,var(--danger) 8%, transparent); color:var(--danger); border-radius:.75rem; padding:.9rem 1rem; margin-bottom:1.2rem;}
@@ -788,10 +820,7 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 .news-card-title{font-size:1.15rem;}
 .news-card-title a{color:var(--text);}
 .news-card-title a:hover{color:var(--primary);}
-.stacked-form textarea{
-  width:100%; padding:.6rem .75rem; border:1px solid var(--border); border-radius:.6rem;
-  background:var(--input-bg); color:var(--text); font:inherit; resize:vertical; min-height:6rem;}
-.stacked-form textarea:focus-visible{outline:2px solid var(--primary); outline-offset:1px;}
+.stacked-form textarea{width:100%; resize:vertical; min-height:6rem;}
 
 /* Длинные значения (адреса, ссылки, имена файлов) на узком экране переносятся,
    а не растягивают страницу горизонтально. */

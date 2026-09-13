@@ -7,6 +7,7 @@
 // Файлов форма не принимает намеренно: фото тренера — отдельный шаг, его загружает
 // секретарь после проверки согласия.
 import { ValidationError } from '../lib/validate.mjs';
+import { checkTicket, consumeTicket } from '../lib/form-guard.mjs';
 import {
   applicationInput, createApplication, getByToken, REGISTRIES,
 } from '../lib/coach-applications.mjs';
@@ -26,7 +27,7 @@ const KINDS = {
   },
 };
 
-export default function mountCoachApplication(app, { db, limitCoachApplication }) {
+export default function mountCoachApplication(app, { db, config, limitCoachApplication }) {
   for (const kind of Object.values(KINDS)) {
     const renderForm = (req, res, { errors = [], values = {}, status = 200 } = {}) => {
       res.status(status).render(kind.view, {
@@ -45,9 +46,12 @@ export default function mountCoachApplication(app, { db, limitCoachApplication }
       try {
         // АНТИСПАМ: приманка. Заполнена — отвечаем как при успехе, ничего не пишем.
         if (req.body.website) return res.redirect(303, `${kind.path}/apply/sent`);
+        // Билет формы: страницу открывали, писали не мгновенно, на вопрос ответили.
+        checkTicket(req, config);
 
         const data = applicationInput(req.body, OPERATOR, kind.registry.fields, kind.purpose);
         const { token } = createApplication(db, data, req.ip, kind.registry);
+        consumeTicket(req);
         req.session[kind.session] = token;
         return res.redirect(303, `${kind.path}/apply/sent`);
       } catch (err) {
