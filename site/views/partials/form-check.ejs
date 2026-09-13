@@ -5,7 +5,7 @@
 %>
 <% if (formCheck && formCheck.on) { %>
   <div class="field field--check">
-    <label for="<%= pref %>-answer">Подтвердите, что вы не робот: сколько будет <%= formCheck.question %>?</label>
+    <label for="<%= pref %>-answer">Подтвердите, что вы не робот: <%= formCheck.question %></label>
     <input id="<%= pref %>-answer" name="form_answer" inputmode="numeric" autocomplete="off"
            maxlength="3" size="4" required aria-describedby="<%= pref %>-answer-hint">
     <p class="field-hint" id="<%= pref %>-answer-hint">Это вместо капчи с картинками: живому человеку — одна секунда, автоматическим рассылкам — преграда.</p>

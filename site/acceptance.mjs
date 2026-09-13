@@ -160,6 +160,7 @@ const { getDb, closeDb } = await import('./db/connect.mjs');
 const { computeStandings } = await import('../rating/rating.mjs');
 const { collectEngineInput, recompute, currentStandings } = await import('./server/lib/rating-service.mjs');
 const { verifyPassword, parseHash } = await import('./server/lib/password.mjs');
+const { solveQuestion } = await import('./server/lib/form-guard.mjs');
 
 const config = loadConfig();
 let db = getDb();
@@ -7534,8 +7535,9 @@ const guardInst = await (async () => {
 })();
 const guardHttp = makeClient(guardInst.base);
 const askFrom = (html) => {
-  const m = /сколько будет (\d+) \+ (\d+)/.exec(html);
-  return m ? Number(m[1]) + Number(m[2]) : null;
+  const m = /вы не робот: ([^<]+)<\/label>/.exec(html);
+  const answer = m ? solveQuestion(m[1].trim()) : NaN;
+  return Number.isNaN(answer) ? null : answer;
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const feedbackCount = () => db.prepare('select count(*) c from feedback_messages').get().c;
@@ -7554,6 +7556,19 @@ await check('вопрос показан во всех публичных фор
   // Подвальная форма обращений живёт на каждой странице — её поле тоже на месте.
   assert(/id="ff-answer"/.test((await guardHttp('/news')).text), 'в подвальной форме поля проверки нет');
   return `поле проверки есть на ${paths.length} формах и в подвале`;
+});
+
+await check('вопросы разных видов, каждый решается и ответ принимается', async () => {
+  const seen = new Set();
+  for (let i = 0; i < 40 && seen.size < 5; i += 1) {
+    const html = (await guardHttp('/contacts', { jar: new Jar() })).text;
+    const m = /вы не робот: ([^<]+)<\/label>/.exec(html);
+    assert(m, 'вопрос не найден в разметке');
+    assert(askFrom(html) !== null, `вопрос не решается: ${m[1]}`);
+    seen.add(m[1].replace(/[\d🎾]+|«[^»]+»|ноль|один|два|три|четыре|пять|шесть|семь|восемь|девять/g, '#'));
+  }
+  assert(seen.size >= 5, `за 40 показов видов вопроса всего ${seen.size}: ${[...seen].join(' | ')}`);
+  return `за ≤40 показов встретилось ${seen.size} разных видов вопроса, все решаемы`;
 });
 
 await check('форма без ответа на вопрос и с неверным ответом не принимается', async () => {
