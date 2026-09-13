@@ -45,17 +45,29 @@ const CHROMIUM = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 // ---------------------------------------------------------------------------
 const results = [];
 let group = '';
+// ВЫБОР РАЗДЕЛА: `node acceptance.mjs --only 22` (или подстрока названия раздела,
+// хоть «анкет»). Проверки других разделов пропускаются и в счёт не идут; всё
+// общее (миграция, сид, приложение, вход) поднимается как обычно. Для итераций
+// над одним куском — секунды вместо двух минут; полный прогон перед мёржем
+// остаётся обязательным.
+const ONLY = (() => {
+  const i = process.argv.indexOf('--only');
+  return i !== -1 && process.argv[i + 1] ? process.argv[i + 1].toLowerCase() : '';
+})();
+const sectionOn = () => !ONLY || group.toLowerCase().includes(ONLY);
 const section = (t) => {
   group = t;
-  results.push({ section: t });
+  results.push({ section: t, at: Date.now() });
 };
 
 async function check(name, fn) {
+  if (!sectionOn()) return;
+  const started = Date.now();
   try {
     const detail = await fn();
-    results.push({ group, name, ok: true, detail: detail || '' });
+    results.push({ group, name, ok: true, detail: detail || '', ms: Date.now() - started });
   } catch (err) {
-    results.push({ group, name, ok: false, detail: err.message });
+    results.push({ group, name, ok: false, detail: err.message, ms: Date.now() - started });
   }
 }
 
@@ -7508,10 +7520,10 @@ await check('deploy/health.sh: /, /rating и первый профиль → 0; 
 
 section('22. Защита публичных форм: билет, порог времени, вопрос');
 
-// Боевая конфигурация защиты: вопрос включён, минимум 2 секунды на заполнение.
+// Боевая механика защиты: вопрос включён, порог времени 1 с (на бою 3 с — тестам достаточно, что порог есть).
 // Основная приёмка гоняет с ослабленными значениями (см. шапку файла), поэтому
 // боевое поведение проверяем на ОТДЕЛЬНОМ экземпляре, как рубильник в разделе 18.
-const guardCfg = { ...config, form: { minSeconds: 2, maxMinutes: 120, question: true } };
+const guardCfg = { ...config, form: { minSeconds: 1, maxMinutes: 120, question: true } };
 const guardInst = await (async () => {
   const app = createApp(guardCfg);
   return new Promise((res) => {
@@ -7551,7 +7563,7 @@ await check('форма без ответа на вопрос и с неверн
   const page = await guardHttp('/contacts', { jar });
   const _csrf = tokenFrom(page.text);
   const base = { _csrf, name: 'Робот', email: 'robot@example.com', message: 'Продвижение сайта недорого', consent_processing: '1' };
-  await sleep(2100);
+  await sleep(1100);
 
   const noAnswer = await guardHttp('/contacts/feedback', { method: 'POST', form: base, jar });
   assert(/error=/.test(noAnswer.location || ''), `без ответа ждали редирект с ошибкой, получили ${noAnswer.status} ${noAnswer.location}`);
@@ -7584,7 +7596,7 @@ await check('человек проходит: верный ответ и пау�
   resetFormLimits();
   const jar = new Jar();
   const page = await guardHttp('/contacts', { jar });
-  await sleep(2100);
+  await sleep(1100);
   const res = await guardHttp('/contacts/feedback', {
     method: 'POST',
     jar,
@@ -7605,7 +7617,7 @@ await check('билет одноразовый: второй раз тем же 
   const page = await guardHttp('/contacts', { jar });
   const _csrf = tokenFrom(page.text);
   const answer = String(askFrom(page.text));
-  await sleep(2100);
+  await sleep(1100);
   const form = { _csrf, name: 'Мария', email: 'maria@example.com', message: 'Первое сообщение, оно пройдёт.', consent_processing: '1', form_answer: answer };
   const first = await guardHttp('/contacts/feedback', { method: 'POST', form, jar });
   eq(first.location, '/contacts?sent=1', `первая отправка не прошла (статус ${first.status})`);
@@ -7624,7 +7636,7 @@ await check('заявка на турнир и анкета тренера то�
   const jar = new Jar();
   const page = await guardHttp('/coaches/apply', { jar });
   const _csrf = tokenFrom(page.text);
-  await sleep(2100);
+  await sleep(1100);
   const res = await guardHttp('/coaches/apply', {
     method: 'POST', jar,
     form: { _csrf, full_name: 'Петров Пётр', city: 'Смоленск', email: 'p@example.com', consent_processing: '1', form_answer: '0' },
@@ -7639,7 +7651,7 @@ await check('приманка website по-прежнему молча отби�
   resetFormLimits();
   const jar = new Jar();
   const page = await guardHttp('/contacts', { jar });
-  await sleep(2100);
+  await sleep(1100);
   const res = await guardHttp('/contacts/feedback', {
     method: 'POST', jar,
     form: {
@@ -7957,15 +7969,21 @@ const failed = checks.length - passed;
 console.log('\n' + '='.repeat(78));
 console.log('ПРИЁМКА КАРКАСА САЙТА ФТСО');
 console.log('='.repeat(78));
+// Время раздела — сумма его проверок: видно, куда уходят минуты.
+const secMs = new Map();
+for (const row of results) if (row.name) secMs.set(row.group, (secMs.get(row.group) || 0) + row.ms);
 for (const row of results) {
   if (row.section) {
-    console.log(`\n${row.section}`);
+    const ms = secMs.get(row.section) || 0;
+    if (!ms && ONLY) continue; // раздел пропущен фильтром — не шумим
+    console.log(`\n${row.section}  · ${(ms / 1000).toFixed(1)} с`);
     console.log('-'.repeat(78));
     continue;
   }
   console.log(`${row.ok ? '  ✔' : '  ✘'} ${row.name}`);
   if (row.detail) console.log(`      ${row.detail}`);
 }
+if (ONLY) console.log(`\n(фильтр --only «${ONLY}»: остальные разделы пропущены)`);
 console.log('\n' + '='.repeat(78));
 console.log(`ИТОГО: ${passed} из ${checks.length} проверок пройдено${failed ? `, ПРОВАЛЕНО ${failed}` : ' — всё зелёное'}`);
 console.log('='.repeat(78));
