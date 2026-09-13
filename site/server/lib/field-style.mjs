@@ -5,8 +5,8 @@
 // round»), она уезжает в атрибут data-fx на <html>, а в site.css каждое слово
 // правит свои переменные (селектор ~= читает атрибут как список).
 //
-// Где живёт: site_settings, ключ field_fx. Меняется в админке на /admin/fields.
-// Параметр ?fx= в адресе показывает любой набор, ничего не сохраняя.
+// Где живёт: FIELD_STYLE в .env (заготовка) или строка набора там же. Параметр
+// ?fx= в адресе показывает любой набор, ничего не сохраняя, — им и выбираем вид.
 
 /** Что вообще разрешено — всё остальное молча отбрасывается. */
 export const EFFECTS = [
@@ -55,21 +55,5 @@ export function fxFromQuery(query) {
 
 /** Сохранённый набор: сначала админка (БД), потом FIELD_STYLE из .env, потом умолчание. */
 export function savedFx(db, config) {
-  const row = db.prepare("SELECT value FROM site_settings WHERE key = 'field_fx'").get();
-  if (row) return parseFx(row.value);
-  return PRESETS[config.fieldStyle] || DEFAULT_FX;
-}
-
-export function saveFx(db, value) {
-  const fx = parseFx(value);
-  db.prepare(
-    `INSERT INTO site_settings (key, value, updated_at) VALUES ('field_fx', ?, datetime('now'))
-     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-  ).run(fx);
-  return fx;
-}
-
-/** Сброс к тому, что задано в .env: строка из БД убирается совсем. */
-export function resetFx(db) {
-  db.prepare("DELETE FROM site_settings WHERE key = 'field_fx'").run();
+  return PRESETS[config.fieldStyle] || parseFx(config.fieldStyle) || DEFAULT_FX;
 }
