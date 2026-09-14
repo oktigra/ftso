@@ -6033,7 +6033,7 @@ try {
     return `корпус наклонился (${before.transform.slice(0, 12)}… → ${after.transform.slice(0, 12)}…), третья папка поднялась на ${lift} px`;
   });
 
-  await check('рейтинг: пластина поднимается и раскрывает справку НАВЕДЕНИЕМ', async () => {
+  await check('рейтинг: пластина при наведении НЕ сдвигается, справка раскрывается', async () => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     await page.goto(inst.base + '/rating', { waitUntil: 'networkidle' });
     const read = () => page.evaluate(() => {
@@ -6043,13 +6043,15 @@ try {
     });
     const before = await read();
     await page.locator('.rplates--full .rplate').first().hover();
-    await page.waitForTimeout(700); // подъём .32s + раскрытие справки .34s
+    await page.waitForTimeout(700); // раскрытие справки .34s + запас
     const after = await read();
     await page.close();
+    // Сдвига быть НЕ должно (14.09.2026): подъём уводил пластину из-под курсора,
+    // и на границе двух пластин наведение прыгало — «дрожание».
     const lift = before.top - after.top;
-    assert(lift >= 8, `пластина не поднялась при наведении: ${lift} px`);
+    eq(lift, 0, `пластина сдвинулась при наведении на ${lift} px`);
     assert(after.infoH > before.infoH + 20, `справка не раскрылась: ${before.infoH} → ${after.infoH} px`);
-    return `подъём ${lift} px, справка раскрылась с ${before.infoH} до ${after.infoH} px`;
+    return `сдвиг 0 px, справка раскрылась с ${before.infoH} до ${after.infoH} px`;
   });
 
   await check('справочник: карточка отзывается на наведение (поведение, а не объявление)', async () => {
