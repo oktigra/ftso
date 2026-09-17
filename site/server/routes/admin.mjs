@@ -9,6 +9,7 @@ import { mountTournamentSheets } from '../lib/tournament-sheet-routes.mjs';
 import { protocolKeyFromLabel } from '../lib/tournament-export.mjs';
 import { postInBackground } from '../lib/max-post.mjs';
 import { importTournament } from '../lib/tournament-import.mjs';
+import { assertAgeAllowed, AGE_LIMIT_PRESETS } from '../lib/age.mjs';
 import { devNoticeMode, devNoticeOn } from '../app.mjs';
 import { ERASED_LABEL } from '../lib/rating-service.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
@@ -705,6 +706,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       kindRu: TOURNAMENT_KIND_RU,
       formatRu: TOURNAMENT_FORMAT_RU,
       ages: TOURNAMENT_AGES,
+      agePresets: AGE_LIMIT_PRESETS,
       sexRu: TOURNAMENT_SEX_RU,
       venues: db.prepare("SELECT name, city FROM courts ORDER BY name").all(),
     });
@@ -774,8 +776,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // без action (старые формы, тесты) — опубликован, как было до 06.09.2026.
       const published = req.body.action === 'draft' ? 0 : 1;
       const info = db
-        .prepare('INSERT INTO tournaments (name, end_date, category, city, start_date, kind, format, age_group, sex, venue, organizer, organizer_contact, fee, entry_deadline, is_published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.format, data.age_group, data.sex, data.venue, data.organizer, data.organizer_contact, data.fee, data.entry_deadline, published);
+        .prepare('INSERT INTO tournaments (name, end_date, category, city, start_date, kind, format, age_group, age_min, age_max, sex, venue, organizer, organizer_contact, fee, entry_deadline, is_published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.format, data.age_group, data.age_min, data.age_max, data.sex, data.venue, data.organizer, data.organizer_contact, data.fee, data.entry_deadline, published);
       logAction(db, actorId(req), 'tournament.create', info.lastInsertRowid, data);
       if (published) postInBackground(db, config, actorId(req), 'tournament.publish', tournamentPost(db, req, Number(info.lastInsertRowid), '🎾 Турнир в календаре:'));
       flash(req, res, 'ok', published ? `Турнир «${data.name}» опубликован.` : `Черновик «${data.name}» сохранён — виден только в админке.`, '/admin/tournaments');
@@ -792,8 +794,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // action: draft — сохранить черновиком, publish — сохранить и опубликовать, иначе — не менять статус.
       const pub = req.body.action === 'publish' ? 1 : req.body.action === 'draft' ? 0 : null;
       const info = db
-        .prepare('UPDATE tournaments SET name = ?, end_date = ?, category = ?, city = ?, start_date = ?, kind = ?, format = ?, age_group = ?, sex = ?, venue = ?, organizer = ?, organizer_contact = ?, fee = ?, entry_deadline = ?, is_published = COALESCE(?, is_published) WHERE id = ?')
-        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.format, data.age_group, data.sex, data.venue, data.organizer, data.organizer_contact, data.fee, data.entry_deadline, pub, id);
+        .prepare('UPDATE tournaments SET name = ?, end_date = ?, category = ?, city = ?, start_date = ?, kind = ?, format = ?, age_group = ?, age_min = ?, age_max = ?, sex = ?, venue = ?, organizer = ?, organizer_contact = ?, fee = ?, entry_deadline = ?, is_published = COALESCE(?, is_published) WHERE id = ?')
+        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.format, data.age_group, data.age_min, data.age_max, data.sex, data.venue, data.organizer, data.organizer_contact, data.fee, data.entry_deadline, pub, id);
       if (!info.changes) throw new ValidationError('Турнир не найден');
       logAction(db, actorId(req), 'tournament.update', id, data);
       flash(req, res, 'ok', 'Турнир обновлён.', '/admin/tournaments');
@@ -892,6 +894,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       if (!playerId) throw new ValidationError(`Игрок «${String(req.body.player || '').trim()}» не найден — заведите его в «Игроках» или через форму результата`);
       const n = db.prepare('SELECT COUNT(*) AS n FROM tournament_group_members WHERE group_id = ?').get(g.id).n;
       if (n >= 16) throw new ValidationError('В группе не больше 16 участников');
+      assertAgeAllowed(db, tournamentId, [playerId], { ValidationError });
       const dup = db.prepare('INSERT OR IGNORE INTO tournament_group_members (group_id, player_id, seed) VALUES (?, ?, ?)').run(g.id, playerId, n + 1);
       if (!dup.changes) throw new ValidationError('Этот игрок уже в группе');
       logAction(db, actorId(req), 'group.member.add', tournamentId, { group: g.id, playerId });
@@ -1204,6 +1207,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         }
         const have = db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(tournamentId).n;
         if (have + rows.length > config.rating.maxParticipants) throw new ValidationError(`Превышен потолок участников турнира (${config.rating.maxParticipants})`);
+        assertAgeAllowed(db, tournamentId, rows.map((r) => r.playerId), { ValidationError });
         const ins = db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)');
         db.transaction(() => { for (const r of rows) ins.run(tournamentId, r.playerId, r.place); })();
         logAction(db, actorId(req), 'result.bulk', tournamentId, { count: rows.length });
@@ -1262,6 +1266,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         );
       }
       try {
+        assertAgeAllowed(db, tournamentId, [playerId], { ValidationError });
         db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)').run(
           tournamentId,
           playerId,

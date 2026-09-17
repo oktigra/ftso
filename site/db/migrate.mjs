@@ -343,6 +343,8 @@ export function migrate() {
   addColumnIfMissing(db, 'tournaments', 'age_group', 'TEXT');
   addColumnIfMissing(db, 'tournaments', 'is_published', 'INTEGER NOT NULL DEFAULT 1'); // черновик/опубликован (06.09.2026)
   addColumnIfMissing(db, 'tournaments', 'sex', 'TEXT'); // пол участников M/F/X (06.09.2026)
+  // ВОЗРАСТНОЕ ОГРАНИЧЕНИЕ турнира (17.09.2026): до этого возраст был только подписью.
+  for (const c of ['age_min', 'age_max']) addColumnIfMissing(db, 'tournaments', c, 'INTEGER');
   for (const c of ['venue', 'organizer', 'organizer_contact', 'fee', 'entry_deadline']) addColumnIfMissing(db, 'tournaments', c, 'TEXT'); // ТЗ 4.3 место/организатор; взнос/дедлайн
   entryDeadlineToDate(db);
   addColumnIfMissing(db, 'tournaments', 'format', 'TEXT'); // система проведения (задача 2, 12.09.2026)

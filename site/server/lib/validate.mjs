@@ -13,6 +13,8 @@ export class ValidationError extends Error {
 
 // Контролируемый список возрастных групп. Набор задаёт Федерация — правится
 // здесь, жёсткого CHECK в схеме нет.
+import { AGE_LIMIT_PRESETS, ageRangeLabel } from './age.mjs';
+
 export const AGE_GROUPS = ['до 19', '19-34', '35-44', '45-54', '55+'];
 export const SEXES = ['M', 'F'];
 export const CATEGORIES = ['A', 'B', 'C']; // C — прочие/любительские турниры (06.09.2026), коэффициент в rating/rating.mjs
@@ -290,6 +292,7 @@ export function tournamentInput(body) {
   const end_date = isoDate(body.end_date, 'Дата завершения');
   const start_date = body.start_date ? isoDate(body.start_date, 'Дата начала') : null;
   if (start_date && start_date > end_date) throw new ValidationError('Дата начала позже даты завершения');
+  const ageLimit = parseAgeLimit(body);
   return {
     name: str(body.name, 'Название', { max: 160 }),
     end_date,
@@ -306,8 +309,40 @@ export function tournamentInput(body) {
     // Дедлайн заявок — ДАТА (11.09.2026, задача 3): по ней сайт считает статус приёма.
     entry_deadline: body.entry_deadline ? isoDate(body.entry_deadline, 'Заявки до') : null,
     // Возраст: из списка либо «custom» + своё значение в age_group_custom.
-    age_group: body.age_group === 'custom'
-      ? (str(body.age_group_custom, 'Возраст (вручную)', { max: 40, required: false }) || null)
-      : (str(body.age_group, 'Возраст', { max: 40, required: false }) || null),
+    age_group: ageLimit.label
+      || (body.age_group === 'custom'
+        ? (str(body.age_group_custom, 'Возраст (вручную)', { max: 40, required: false }) || null)
+        : (str(body.age_group, 'Возраст', { max: 40, required: false }) || null)),
+    // ВОЗРАСТНОЕ ОГРАНИЧЕНИЕ (17.09.2026): границы в годах; подпись age_group
+    // строится из них, чтобы календарь и карточка не расходились с проверкой.
+    age_min: ageLimit.min,
+    age_max: ageLimit.max,
   };
+}
+
+/**
+ * Границы возраста турнира: готовый вариант из списка (`age_limit` = id пресета)
+ * либо «свои» — два числа. «Без ограничения» — пустые обе. Верх не может быть
+ * ниже низа: иначе турнир, куда нельзя заявить никого.
+ */
+function parseAgeLimit(body) {
+  const id = String(body.age_limit || '').trim();
+  if (id && id !== 'custom' && id !== 'none') {
+    const p = AGE_LIMIT_PRESETS.find((x) => x.id === id);
+    if (!p) throw new ValidationError('Возрастное ограничение: неизвестный вариант');
+    return { min: p.min, max: p.max, label: p.label };
+  }
+  if (id === 'none') return { min: null, max: null, label: null };
+  const num = (v, field) => {
+    const raw = String(v ?? '').trim();
+    if (!raw) return null;
+    if (!/^\d{1,3}$/.test(raw)) throw new ValidationError(`${field}: целое число лет или пусто`);
+    const n = Number(raw);
+    if (n > 120) throw new ValidationError(`${field}: не больше 120`);
+    return n;
+  };
+  const min = num(body.age_min, 'Возраст от');
+  const max = num(body.age_max, 'Возраст до');
+  if (min !== null && max !== null && max < min) throw new ValidationError('Возраст: верхняя граница ниже нижней');
+  return { min, max, label: ageRangeLabel(min, max) };
 }
