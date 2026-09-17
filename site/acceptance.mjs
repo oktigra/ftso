@@ -2893,6 +2893,43 @@ await check('возрастное ограничение турнира: зад�
   return 'ограничение «до 13 лет» → границы (null,12) и подпись; посев, места и импорт отбивают 16-летнего, ребёнка и игрока без даты пропускают; снятие ограничения открывает турнир';
 });
 
+await check('импорт «протокол главнее»: расхождение видно всегда, правится только по отметке, места и продвижение не ломаются', async () => {
+  // 17.09.2026 боем: на сайте полуфинал стоял «неявка», в протоколе — счёт. Доливка
+  // чужие итоги не трогает, поэтому расхождение должно быть ВИДНО, а правка — по команде.
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/tournaments/import', { jar });
+  assert(/name="overwrite"/.test(page.text) && /Протокол главнее/.test(page.text), 'нет отметки «протокол главнее»');
+  const _csrf = tokenFrom(page.text);
+  const base = ['Турнир: Правочный кубок', 'Даты: 2026-07-10 — 2026-07-12', 'Город: Смоленск | Категория: B',
+    'Сетка: Мужчины | пол: M', '1/2: Правов Иван — Правцев Пётр неявка → Правов Иван', '1/2: Правский Сидор — Правкин Козьма 6:3/6:4 → Правский Сидор',
+    'Финал: Правов Иван — Правский Сидор 7:5/6:4 → Правов Иван', '3 место: Правцев Пётр — Правкин Козьма 6:0/6:0 → Правцев Пётр'].join('\n');
+  eq((await http('/admin/tournaments/import', { method: 'POST', form: { _csrf, text: base }, jar })).status, 200, 'первый импорт');
+  const t = db.prepare("SELECT id FROM tournaments WHERE name = 'Правочный кубок'").get();
+  const semi = () => db.prepare("SELECT m.score, w.full_name AS w FROM matches m JOIN players w ON w.id = m.winner_player_id JOIN players l ON l.id = m.loser_player_id WHERE m.tournament_id = ? AND ((w.full_name = 'Правов Иван' AND l.full_name = 'Правцев Пётр') OR (w.full_name = 'Правцев Пётр' AND l.full_name = 'Правов Иван'))").get(t.id);
+  eq(semi().score, 'неявка', 'исходный счёт полуфинала');
+  // Тот же протокол, но полуфинал со счётом. Без отметки — только предупреждение.
+  const fixed = base.replace('1/2: Правов Иван — Правцев Пётр неявка → Правов Иван', '1/2: Правов Иван — Правцев Пётр 6:2/6:1 → Правов Иван');
+  const soft = await http('/admin/tournaments/import', { method: 'POST', form: { _csrf, text: fixed, into: String(t.id) }, jar });
+  eq(soft.status, 200, 'доливка без отметки');
+  eq(semi().score, 'неявка', 'без отметки записанный итог трогать нельзя');
+  assert(/оставлено как есть/.test(soft.text), 'расхождение с протоколом должно быть показано');
+  // С отметкой — исправляется, и остальное не рассыпается.
+  const hard = await http('/admin/tournaments/import', { method: 'POST', form: { _csrf, text: fixed, into: String(t.id), overwrite: '1' }, jar });
+  eq(hard.status, 200, 'доливка с отметкой');
+  eq(semi().score, '6:2 6:1', 'с отметкой счёт должен встать по протоколу');
+  assert(/записано по протоколу/.test(hard.text) && /исправлено 1/.test(hard.text), 'в отчёте не видно исправления');
+  const res = db.prepare("SELECT p.full_name AS n, r.place FROM results r JOIN players p ON p.id = r.player_id WHERE r.tournament_id = ? ORDER BY r.place, p.full_name").all(t.id);
+  eq(res.map((r) => `${r.place}:${r.n}`).join(','), '1:Правов Иван,2:Правский Сидор,3:Правцев Пётр,4:Правкин Козьма', 'после правки места должны остаться на месте');
+  const was = db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t.id).n;
+  eq(was, 4, 'матчей: 2 полуфинала + финал + за 3 место');
+  const again = await http('/admin/tournaments/import', { method: 'POST', form: { _csrf, text: fixed, into: String(t.id), overwrite: '1' }, jar });
+  eq(again.status, 200, 'повтор с отметкой');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t.id).n, was, 'повтор не должен двоить матчи');
+  assert(!/исправлено/.test(again.text), 'повтор не должен «исправлять» то, что уже совпало');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t.id); db.prepare("DELETE FROM players WHERE full_name LIKE 'Прав%'").run(); db.prepare('DELETE FROM write_attempts').run();
+  return 'расхождение показано без отметки и не записано; с отметкой «протокол главнее» счёт исправлен, места 1–4 целы, матчей 4, повтор ничего не трогает';
+});
+
 await check('импорт: парная и микстовая СЕТКА парами, матч без счёта, доливка в существующий турнир; микст в свой зачёт', async () => {
   // 17.09.2026: протокол доигранного турнира приходит позже — он должен ложиться в тот же
   // турнир, а не в дубль; парные и микстовые сетки заводятся текстом; строка без счёта

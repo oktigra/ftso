@@ -34,7 +34,7 @@
 import { ValidationError } from './validate.mjs';
 import { normalizeName } from './registrations.mjs';
 import { parseScore } from './groups.mjs';
-import { bracketPlaces } from './brackets.mjs';
+import { bracketPlaces, undo } from './brackets.mjs';
 import { assertAgeAllowed } from './age.mjs';
 
 const DASH = /\s+[—–-]\s+/;
@@ -125,7 +125,7 @@ function flipSets(s) {
  * записанные пары не трогаются, дописываются недостающие. Так протокол, пришедший
  * позже (финалы, парные сетки, микст), ложится в тот же турнир, а не в дубль.
  */
-export function importTournament(db, text, { userId = null, tournamentId = null } = {}) {
+export function importTournament(db, text, { userId = null, tournamentId = null, overwrite = false } = {}) {
   const t = parseTournamentText(text);
   let target = null;
   if (tournamentId) {
@@ -138,7 +138,7 @@ export function importTournament(db, text, { userId = null, tournamentId = null 
   }
   const city = (target ? target.city : t.city) || t.city || 'Смоленская область';
   const playedOn = t.end_date || (target ? target.end_date : null);
-  const report = { players_created: [], warnings: [], sections: [], appended: Boolean(tournamentId) };
+  const report = { players_created: [], warnings: [], sections: [], appended: Boolean(tournamentId), overwrite: Boolean(overwrite) };
   // Имена, уже встреченные в ЭТОМ импорте: «Захарян К.» и «Захарян» в поздних кругах — тот же
   // человек, что «Захарян Кристина» в первом. Сначала ищем среди них, потом в базе.
   const seen = new Map(); // normalizeName(полное) → id
@@ -220,6 +220,23 @@ export function importTournament(db, text, { userId = null, tournamentId = null 
     return e;
   };
 
+  /** Что говорит протокол про пару слотов A/C: победитель и счёт от победителя. */
+  const protocolPair = (sec, roundMatches, A, C, kind, sex) => {
+    const m = roundMatches.find((x) => {
+      const ids = [x.a, x.b].filter((n) => !isBye(n)).map((n) => entrantOf(n, kind, sex).playerId);
+      return ids.includes(A.player_id) && ids.includes(C.player_id);
+    });
+    if (!m || m.skipped) return null;
+    const aId = isBye(m.a) ? null : entrantOf(m.a, kind, sex).playerId;
+    const sc = normScore(m.score);
+    const parsed = sc ? parseScore(sc) : null;
+    const winnerId = m.winner ? entrantOf(m.winner, kind, sex).playerId : (parsed ? (parsed.rowWon ? aId : (aId === A.player_id ? C.player_id : A.player_id)) : null);
+    if (!winnerId) return null;
+    const winnerIsA = winnerId === aId;
+    const score = parsed ? ((winnerIsA === parsed.rowWon) ? parsed.score : parseScore(flipSets(sc)).score) : null;
+    return { winnerId, score, label: `${m.a} — ${m.b}` };
+  };
+
   const runAll = db.transaction(() => {
     const tid = target ? target.id : Number(db.prepare('INSERT INTO tournaments (name, start_date, end_date, category, city, kind, venue, organizer, organizer_contact, is_published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)')
       .run(t.name, t.start_date, t.end_date, t.category, t.city || null, /первенств|чемпионат/i.test(t.name) ? 'championship' : 'other', t.venue || null, t.organizer || null, t.judge ? `Главный судья: ${t.judge}` : (t.organizer_contact || null)).lastInsertRowid);
@@ -228,7 +245,7 @@ export function importTournament(db, text, { userId = null, tournamentId = null 
     const slotLabel = (sl) => (sl ? nameOf(sl.player_id) + (sl.partner_id ? ` / ${nameOf(sl.partner_id)}` : '') : '—');
 
     for (const s of t.sections) {
-      const sec = { title: s.title, type: s.type, matches: 0, places: 0, reused: false };
+      const sec = { title: s.title, type: s.type, matches: 0, places: 0, fixed: 0, reused: false };
       // Пол раздела: «X» (микст) НЕ схлопываем в мужской — findOrCreate определит его
       // по фамилии каждого игрока отдельно.
       const sex = s.sex === 'F' ? 'F' : s.sex === 'X' ? 'X' : 'M';
@@ -263,7 +280,14 @@ export function importTournament(db, text, { userId = null, tournamentId = null 
           const rowWon = m.winner ? normalizeName(m.winner) === normalizeName(m.a) || (!/\s/.test(normalizeName(m.winner)) && normalizeName(m.a).split(' ')[0] === normalizeName(m.winner)) : parsed.rowWon;
           const w = rowWon ? a : b; const l = rowWon ? b : a;
           const score = rowWon === parsed.rowWon ? parsed.score : parseScore(flipSets(sc)).score;
-          if (db.prepare('SELECT 1 FROM matches WHERE tournament_id = ? AND stage = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))').get(tid, `g:${g.id}`, w.playerId, l.playerId, l.playerId, w.playerId)) continue;
+          const had = db.prepare('SELECT id, winner_player_id, score FROM matches WHERE tournament_id = ? AND stage = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))').get(tid, `g:${g.id}`, w.playerId, l.playerId, l.playerId, w.playerId);
+          if (had) {
+            // Совпало — пропускаем; разошлось — правим только по явной команде «протокол главнее».
+            if (had.winner_player_id === w.playerId && had.score === score) continue;
+            if (!overwrite) { report.warnings.push(`${s.title}: ${m.a} — ${m.b}: на сайте «${had.score || 'без счёта'}», в протоколе «${score}» — оставлено как есть (нужна отметка «протокол главнее»)`); continue; }
+            db.prepare('DELETE FROM matches WHERE id = ?').run(had.id);
+            sec.fixed++;
+          }
           db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage, winner_partner_id, loser_partner_id, played_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
             .run(tid, w.playerId, l.playerId, score, kind, `g:${g.id}`, w.partnerId, l.partnerId, playedOn);
           sec.matches++;
@@ -314,7 +338,25 @@ export function importTournament(db, text, { userId = null, tournamentId = null 
             const A = slotAt(b.id, r, 2 * k); const C = slotAt(b.id, r, 2 * k + 1);
             if (!A && !C) continue;
             if (!A || !C) { if (r > 0) report.warnings.push(`${s.title}: круг ${r + 1}, пара ${k + 1} — соперник не определён (предыдущая пара не сыграна)`); continue; }
-            if (slotAt(b.id, r + 1, k)) continue; // итог уже записан — доливка его не трогает
+            // Итог пары уже записан. По умолчанию доливка его не трогает; с отметкой
+            // «протокол главнее» расхождение с бумагой исправляется: итог отменяется
+            // (вместе с продвижением дальше) и записывается заново из протокола.
+            const decided = slotAt(b.id, r + 1, k);
+            if (decided) {
+              const want = protocolPair(s, roundMatches, A, C, kind, sex);
+              if (!want) continue;
+              const had = db.prepare('SELECT winner_player_id, score FROM matches WHERE tournament_id = ? AND stage = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))').get(tid, `b:${b.id}`, A.player_id, C.player_id, C.player_id, A.player_id);
+              if (had && had.winner_player_id === want.winnerId && (had.score || null) === want.score) continue;
+              // Расхождение с бумагой видно всегда — молчать о нём нельзя; правится только
+              // по явной отметке «протокол главнее».
+              if (!overwrite) {
+                report.warnings.push(`${s.title}: ${want.label}: на сайте «${had ? (had.score || 'без счёта') : '—'}», в протоколе «${want.score || 'без счёта'}» — оставлено как есть (отметьте «протокол главнее», чтобы исправить)`);
+                continue;
+              }
+              undo(db, tid, b.id, r, k);
+              sec.fixed++;
+              report.warnings.push(`${s.title}: ${want.label}: на сайте было «${had ? (had.score || 'без счёта') : '—'}», записано по протоколу «${want.score || 'без счёта'}»`);
+            }
             const m = roundMatches.find((x) => {
               const ids = [x.a, x.b].filter((n) => !isBye(n)).map((n) => entrantOf(n, kind, sex).playerId);
               return ids.includes(A.player_id) && ids.includes(C.player_id);
@@ -346,7 +388,7 @@ export function importTournament(db, text, { userId = null, tournamentId = null 
         // Пересчитываем места, только если раздел что-то внёс либо мест ещё нет: повторная
         // доливка того же текста не должна перетирать 3/4, расставленные матчем за 3 место.
         const hadPlaces = db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ? AND discipline = ? AND player_id IN (SELECT player_id FROM bracket_slots WHERE bracket_id = ?)').get(tid, disc, b.id).n;
-        if (champion && (sec.matches > 0 || !hadPlaces)) {
+        if (champion && (sec.matches > 0 || sec.fixed > 0 || !hadPlaces)) {
           sec.places += bracketPlaces(db, tid, b.id);
           if (third) {
             // Победитель — из «→», иначе по счёту (слева победитель, как в остальных строках).
