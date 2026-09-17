@@ -388,7 +388,12 @@ export function importTournament(db, text, { userId = null, tournamentId = null,
         // Пересчитываем места, только если раздел что-то внёс либо мест ещё нет: повторная
         // доливка того же текста не должна перетирать 3/4, расставленные матчем за 3 место.
         const hadPlaces = db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ? AND discipline = ? AND player_id IN (SELECT player_id FROM bracket_slots WHERE bracket_id = ?)').get(tid, disc, b.id).n;
-        if (champion && (sec.matches > 0 || sec.fixed > 0 || !hadPlaces)) {
+        // Сетка дозакрыта и ничего не менялось — тихо ничего не делаем: раньше в этом
+        // случае печаталось ложное «финал не сыгран», хотя чемпион давно записан
+        // (замер боем 17.09.2026 — повторная заливка того же протокола).
+        if (champion && sec.matches === 0 && sec.fixed === 0 && hadPlaces) {
+          // места на месте, протокол совпал — сообщать не о чем
+        } else if (champion && (sec.matches > 0 || sec.fixed > 0 || !hadPlaces)) {
           sec.places += bracketPlaces(db, tid, b.id);
           if (third) {
             // Победитель — из «→», иначе по счёту (слева победитель, как в остальных строках).
