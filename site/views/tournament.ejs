@@ -17,8 +17,15 @@
       <%= tournament.city ? tournament.city + ' · ' : '' %><%= ({team:'командная встреча',championship:'чемпионат / первенство',other:'турнир'})[tournament.kind] || 'турнир' %><%= tournament.age_group ? ' · ' + tournament.age_group : '' %><%= tournament.sex ? ' · ' + ({ M: 'мужчины / юноши', F: 'женщины / девушки', X: 'смешанный' })[tournament.sex] : '' %><%= tournament.venue ? ' · ' + tournament.venue : '' %> ·
       категория <span class="badge badge--<%= tournament.category.toLowerCase() %>"><%= tournament.category %></span>
     </p>
-    <% if (tournament.organizer || tournament.organizer_contact) { %>
-      <p class="muted">Организатор: <%= tournament.organizer || '' %><%= tournament.organizer && tournament.organizer_contact ? ' · ' : '' %><%= tournament.organizer_contact || '' %></p>
+    <%
+      // Подпись «Организатор:» печатается только когда организатор ЕСТЬ. Иначе в поле
+      // контакта часто стоит «Главный судья: …», и выходило «Организатор: Главный судья…»
+      // (замер боем 17.09.2026).
+    %>
+    <% if (tournament.organizer) { %>
+      <p class="muted">Организатор: <%= tournament.organizer %><%= tournament.organizer_contact ? ' · ' + tournament.organizer_contact : '' %></p>
+    <% } else if (tournament.organizer_contact) { %>
+      <p class="muted"><%= tournament.organizer_contact %></p>
     <% } %>
     <% if (tournament.format) { %>
       <p class="muted">Система проведения: <%= formatRu[tournament.format] %></p>

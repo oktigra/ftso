@@ -314,7 +314,12 @@ html[data-theme="warm"] .theme-menu__icon .i-warm{display:block;}
 .status--announce::before{background:var(--accent);}
 
 /* tables */
-.table-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:1.25rem; border:1px solid var(--border); background:var(--surface); box-shadow:var(--shadow-md);}
+/* overflow-y:hidden ОБЯЗАТЕЛЕН рядом с overflow-x:auto: иначе браузер по спецификации
+   включает и вертикальную прокрутку обёртки, и scrollIntoView() двигает таблицу внутри
+   себя, а не страницу — кнопки строки остаются ниже экрана (замер 17.09.2026: страница
+   сдвигалась на 106 px, кнопка оставалась на y=1123 при высоте окна 800).
+   Длинные таблицы со своей вертикальной прокруткой — .table-scroll--tall ниже. */
+.table-scroll{overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; border-radius:1.25rem; border:1px solid var(--border); background:var(--surface); box-shadow:var(--shadow-md);}
 table{width:100%; border-collapse:collapse; min-width:520px;}
 thead th{text-align:left; font-family:'Manrope',sans-serif; font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); font-weight:700; padding:1rem 1.25rem; border-bottom:1px solid var(--border); background:var(--surface-2);}
 tbody td{padding:1rem 1.25rem; border-bottom:1px solid var(--border); vertical-align:middle;}
@@ -1062,6 +1067,13 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
    получает СВОЮ вертикальную прокрутку (.table-scroll--tall), и заголовок липнет к
    этой обёртке, а не к окну. Страница при этом не распирается, класс вешается только
    там, где строк действительно много. Фон у th обязателен — иначе строки просвечивают. */
+/* КОЛОНКА ДЕЙСТВИЙ ЛИПНЕТ К ПРАВОМУ КРАЮ (17.09.2026). Таблица турниров шире
+   обёртки (замер: 1293 при 1148), и кнопки «Редактировать / Сохранить / Удалить»
+   уезжали за горизонтальную прокрутку — по ним промахивались и человек, и агент.
+   Фон обязателен, иначе под липкой ячейкой просвечивают соседние колонки. */
+.table-scroll table td.t-actions, .table-scroll table th.t-actions{position:sticky; right:0; z-index:1; background:var(--surface); box-shadow:-8px 0 12px -10px rgba(0,0,0,.35);}
+.table-scroll table th.t-actions{background:var(--surface-2); z-index:3;}
+tbody tr:hover td.t-actions{background:var(--surface-2);}
 .table-scroll--tall{max-height:70vh; overflow:auto;}
 .table-scroll--tall thead th{position:sticky; top:0; z-index:2; background:var(--surface-2);}
 
