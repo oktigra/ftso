@@ -2926,6 +2926,9 @@ await check('импорт «протокол главнее»: расхожде�
   eq(again.status, 200, 'повтор с отметкой');
   eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t.id).n, was, 'повтор не должен двоить матчи');
   assert(!/исправлено/.test(again.text), 'повтор не должен «исправлять» то, что уже совпало');
+  // Замер боем 17.09.2026: повторная заливка закрытой сетки печатала ложное
+  // «финал не сыгран», хотя чемпион записан и места на месте.
+  assert(!/финал не сыгран/.test(again.text), 'у закрытой сетки не должно быть «финал не сыгран» при повторе');
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(t.id); db.prepare("DELETE FROM players WHERE full_name LIKE 'Прав%'").run(); db.prepare('DELETE FROM write_attempts').run();
   return 'расхождение показано без отметки и не записано; с отметкой «протокол главнее» счёт исправлен, места 1–4 целы, матчей 4, повтор ничего не трогает';
 });
