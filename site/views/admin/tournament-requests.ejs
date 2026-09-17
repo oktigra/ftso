@@ -15,7 +15,7 @@
         <div class="reg-item">
           <div class="reg-head">
             <strong><%= r.name %></strong>
-            <span class="muted"><%= r.city %> · до <%= r.end_date %> · категория <%= r.category %></span>
+            <span class="muted"><%= r.city %> · до <%= r.end_date %> · категория <%= r.category %><%= ageRangeLabel(r.age_min, r.age_max) ? ' · ' + ageRangeLabel(r.age_min, r.age_max) : '' %></span>
           </div>
           <p class="muted reg-meta">
             Организатор: <%= r.organizer %> · <%= r.email %><%= r.phone ? ' · ' + r.phone : '' %>

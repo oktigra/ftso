@@ -61,6 +61,28 @@
         </div>
 
         <div class="field">
+          <label for="t-agelimit">Возрастное ограничение</label>
+          <select id="t-agelimit" name="age_limit" data-age-select aria-describedby="t-age-hint">
+            <option value="none">без ограничения — открытый турнир</option>
+            <% agePresets.forEach(function (p) { %>
+              <option value="<%= p.id %>"<%= values.age_limit === p.id ? ' selected' : '' %>><%= p.label %></option>
+            <% }); %>
+            <option value="custom"<%= values.age_limit === 'custom' ? ' selected' : '' %>>свои границы</option>
+          </select>
+          <p class="field-hint" id="t-age-hint">Возраст считается как в календаре РТТ: год турнира минус год рождения. «До 13 лет» — это те, кому в год турнира исполняется 12 и меньше.</p>
+        </div>
+
+        <div class="field" data-age-custom<%= values.age_limit === 'custom' ? '' : ' hidden' %>>
+          <span class="field-hint">Возраст: полных лет в год турнира</span>
+          <span class="inline-form">
+            <label for="t-agemin">от</label>
+            <input id="t-agemin" name="age_min" inputmode="numeric" maxlength="3" size="4" value="<%= values.age_min || '' %>">
+            <label for="t-agemax">до</label>
+            <input id="t-agemax" name="age_max" inputmode="numeric" maxlength="3" size="4" value="<%= values.age_max || '' %>">
+          </span>
+        </div>
+
+        <div class="field">
           <label for="t-organizer">Организатор — ФИО или организация <span class="req" aria-hidden="true">*</span></label>
           <input id="t-organizer" name="organizer" maxlength="160" required value="<%= values.organizer || '' %>">
         </div>

@@ -276,7 +276,10 @@ export function registrationInput(body) {
  * Телефон и комментарий необязательны.
  */
 export function tournamentRequestInput(body) {
+  const ageLimit = parseAgeLimit(body);
   return {
+    age_min: ageLimit.min,
+    age_max: ageLimit.max,
     name: str(body.name, 'Название турнира', { max: 160 }),
     city: str(body.city, 'Город', { max: 80 }),
     end_date: isoDate(body.end_date, 'Дата завершения'),

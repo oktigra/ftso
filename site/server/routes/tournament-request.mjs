@@ -7,6 +7,7 @@
 // лимит, хранение вне webroot, ресайз с чисткой EXIF. Своих проверок здесь нет
 // намеренно — иначе правила разойдутся с галереей и /documents.
 import { tournamentRequestInput, ValidationError } from '../lib/validate.mjs';
+import { AGE_LIMIT_PRESETS } from '../lib/age.mjs';
 import { parseMultipart } from '../lib/multipart.mjs';
 import { checkTicket, consumeTicket } from '../lib/form-guard.mjs';
 import { storeUpload, deleteUpload, UPLOAD_PROFILES } from '../lib/uploads.mjs';
@@ -28,6 +29,7 @@ export default function mountTournamentRequest(app, { db, config, limitTournamen
       errors,
       values: req.session.tournamentDraft || {},
       categories: CATEGORIES,
+      agePresets: AGE_LIMIT_PRESETS,
       maxFiles,
       maxFileMb: Math.round(maxFileBytes / 1024 / 1024),
       legalVersionLabel: LEGAL_VERSION_LABEL,
@@ -73,6 +75,9 @@ export default function mountTournamentRequest(app, { db, config, limitTournamen
         email: fields.email,
         phone: fields.phone,
         comment: fields.comment,
+        age_limit: fields.age_limit,
+        age_min: fields.age_min,
+        age_max: fields.age_max,
         consent_processing: fields.consent_processing === '1',
       };
 

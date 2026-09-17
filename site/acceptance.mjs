@@ -3972,6 +3972,37 @@ await check('retention заявок уносит и приложенные фа�
 });
 
 // ===========================================================================
+await check('публичная заявка: организатор выбирает возрастное ограничение, оно переезжает в турнир и начинает проверяться', async () => {
+  // 17.09.2026: возраст просили и в публичной форме — чтобы ограничение приходило
+  // от организатора, а не восстанавливалось секретарём по названию турнира.
+  const page = await http('/tournament-request');
+  eq(page.status, 200, 'форма заявки');
+  assert(/name="age_limit"/.test(page.text) && /до 13 лет/.test(page.text) && /свои границы/.test(page.text), 'в публичной форме нет возрастного ограничения');
+  const { res } = await submitTournament({ ...BASE_FIELDS, name: 'Детский кубок приёмки', end_date: '2026-11-15', age_limit: 'u13' });
+  eq(res.status, 302, 'заявка принята');
+  const r = db.prepare("SELECT id, age_min, age_max FROM tournament_requests WHERE name = 'Детский кубок приёмки'").get();
+  assert(r && r.age_min === null && r.age_max === 12, 'границы заявки должны быть (null, 12)');
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const list = await http('/admin/tournament-requests', { jar });
+  assert(/до 13 лет/.test(list.text), 'модератор не видит ограничение в карточке заявки');
+  const _csrf = tokenFrom(list.text);
+  const appr = await http(`/admin/tournament-requests/${r.id}/approve`, { method: 'POST', form: { _csrf }, jar });
+  eq(appr.status, 302, 'заявка одобрена');
+  const tid = db.prepare('SELECT tournament_id FROM tournament_requests WHERE id = ?').get(r.id).tournament_id;
+  const made = db.prepare('SELECT age_min, age_max, age_group FROM tournaments WHERE id = ?').get(tid);
+  eq(`${made.age_min}:${made.age_max}:${made.age_group}`, 'null:12:до 13 лет', 'ограничение заявки должно переехать в турнир вместе с подписью');
+  // И сразу работает: взрослого в этот турнир не записать.
+  const grown = db.prepare("INSERT INTO players (full_name, city, sex, birth_date) VALUES ('Заявкавзрослов Пётр', 'Смоленск', 'M', '2005-01-01')").run().lastInsertRowid;
+  const bulk = await http(`/admin/tournaments/${tid}/results/bulk`, { method: 'POST', jar, form: { _csrf, text: '1 Заявкавзрослов Пётр', mode: 'save' } });
+  assert(bulk.status === 302 || bulk.status === 200, 'ввод места ответил');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ? AND player_id = ?').get(tid, grown).n, 0, 'ограничение из заявки должно отбивать взрослого');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
+  db.prepare('DELETE FROM tournament_requests WHERE id = ?').run(r.id);
+  db.prepare("DELETE FROM players WHERE full_name LIKE 'Заявка%'").run();
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'в публичной форме есть возрастное ограничение; (null,12) сохранено в заявке, показано модератору, перенесено в турнир с подписью «до 13 лет» и отбивает взрослого';
+});
+
 section('15. Личный кабинет и право на забвение (ст. 21)');
 
 const accounts = await import('./server/lib/player-accounts.mjs');

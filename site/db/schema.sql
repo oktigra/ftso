@@ -220,6 +220,10 @@ CREATE TABLE IF NOT EXISTS registrations (
   guardian_full_name TEXT,
   guardian_relation  TEXT,
   guardian_email     TEXT,
+  -- ВОЗРАСТНОЕ ОГРАНИЧЕНИЕ, заявленное организатором (17.09.2026): те же границы,
+  -- что у турнира; при одобрении переезжают в карточку турнира и начинают проверяться.
+  age_min       INTEGER CHECK (age_min IS NULL OR (age_min BETWEEN 0 AND 120)),
+  age_max       INTEGER CHECK (age_max IS NULL OR (age_max BETWEEN 0 AND 120)),
   status        TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected')),
   status_token  TEXT NOT NULL UNIQUE,
   -- заполняется при одобрении: новый игрок либо привязка к существующему
