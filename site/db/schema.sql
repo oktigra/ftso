@@ -66,6 +66,11 @@ CREATE TABLE IF NOT EXISTS tournaments (
   start_date TEXT,
   kind       TEXT NOT NULL DEFAULT 'other' CHECK (kind IN ('team','championship','other')),
   age_group  TEXT,
+  -- ВОЗРАСТНОЕ ОГРАНИЧЕНИЕ (17.09.2026): границы в полных годах по календарю РТТ
+  -- (год турнира минус год рождения), включительно; NULL — без ограничения.
+  -- age_group остаётся ПОДПИСЬЮ и заполняется из границ автоматически.
+  age_min    INTEGER CHECK (age_min IS NULL OR (age_min BETWEEN 0 AND 120)),
+  age_max    INTEGER CHECK (age_max IS NULL OR (age_max BETWEEN 0 AND 120)),
   -- Пол участников (как у РТТ/БТФ): M — мужчины/юноши, F — женщины/девушки, X — смешанный, NULL — не задан.
   sex        TEXT CHECK (sex IS NULL OR sex IN ('M','F','X')),
   -- ТЗ 4.3 «место проведения» и «контакт организатора» (06.09.2026).

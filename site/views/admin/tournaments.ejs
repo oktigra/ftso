@@ -44,14 +44,16 @@
           <% Object.keys(sexRu).forEach(function (k) { %><option value="<%= k %>"><%= sexRu[k] %></option><% }); %>
         </select>
       </div>
-      <div class="field"><label for="t-age">Возраст</label>
-        <select id="t-age" name="age_group" data-age-select>
-          <option value="">—</option>
-          <% ages.forEach(function (a) { %><option value="<%= a %>"><%= a %></option><% }); %>
-          <option value="custom">ввод вручную</option>
+      <div class="field"><label for="t-agelimit">Возрастное ограничение</label>
+        <select id="t-agelimit" name="age_limit" data-age-select>
+          <option value="none">без ограничения</option>
+          <% agePresets.forEach(function (p) { %><option value="<%= p.id %>"><%= p.label %></option><% }); %>
+          <option value="custom">свои границы</option>
         </select>
       </div>
-      <div class="field" data-age-custom hidden><label for="t-age-custom">Возраст вручную</label><input id="t-age-custom" name="age_group_custom" maxlength="40" placeholder="напр. 35–44"></div>
+      <div class="field" data-age-custom hidden><label for="t-agemin">Возраст: от / до (полных лет в год турнира)</label>
+        <span class="inline-form"><input id="t-agemin" name="age_min" inputmode="numeric" maxlength="3" placeholder="от" size="4"> <input id="t-agemax" name="age_max" inputmode="numeric" maxlength="3" placeholder="до" size="4"></span>
+      </div>
       <div class="field"><label for="t-org">Организатор</label><input id="t-org" name="organizer" maxlength="160" placeholder="ТК «Алпина»"></div>
       <div class="field"><label for="t-orgc">Контакт организатора</label><input id="t-orgc" name="organizer_contact" maxlength="160" placeholder="телефон, почта"></div>
       <div class="field"><label for="t-fee">Взнос</label><input id="t-fee" name="fee" maxlength="80" placeholder="500 ₽ с игрока"></div>
@@ -107,14 +109,21 @@
                   <% Object.keys(sexRu).forEach(function (k) { %><option value="<%= k %>"<%= t.sex === k ? ' selected' : '' %>><%= sexRu[k] %></option><% }); %>
                 </select>
               </td>
-              <td><span class="ro"><%= t.age_group || '—' %></span>
-                <% const known = !t.age_group || ages.includes(t.age_group); %>
-                <select class="ed" form="edit-tournament-<%= t.id %>" name="age_group" data-age-select>
-                  <option value=""<%= !t.age_group ? ' selected' : '' %>>—</option>
-                  <% ages.forEach(function (a) { %><option value="<%= a %>"<%= t.age_group === a ? ' selected' : '' %>><%= a %></option><% }); %>
-                  <option value="custom"<%= !known ? ' selected' : '' %>>ввод вручную</option>
+              <td><span class="ro"><%= t.age_group || (t.age_min === null && t.age_max === null ? '—' : '') %><%= (t.age_min !== null || t.age_max !== null) ? ' 🔒' : '' %></span>
+                <%
+                  // Подпись «🔒» — ограничение реально проверяется при посеве и вводе результатов.
+                  const preset = agePresets.find(function (p) { return p.min === t.age_min && p.max === t.age_max; });
+                  const noLimit = t.age_min === null && t.age_max === null;
+                %>
+                <select class="ed" form="edit-tournament-<%= t.id %>" name="age_limit" data-age-select>
+                  <option value="none"<%= noLimit ? ' selected' : '' %>>без ограничения</option>
+                  <% agePresets.forEach(function (p) { %><option value="<%= p.id %>"<%= preset && preset.id === p.id ? ' selected' : '' %>><%= p.label %></option><% }); %>
+                  <option value="custom"<%= !noLimit && !preset ? ' selected' : '' %>>свои границы</option>
                 </select>
-                <input class="ed" form="edit-tournament-<%= t.id %>" name="age_group_custom" value="<%= known ? '' : t.age_group %>" maxlength="40" placeholder="вручную" data-age-custom<%= known ? ' hidden' : '' %>>
+                <span class="ed" data-age-custom<%= (noLimit || preset) ? ' hidden' : '' %>>
+                  <input class="ed" form="edit-tournament-<%= t.id %>" name="age_min" value="<%= t.age_min === null ? '' : t.age_min %>" maxlength="3" placeholder="от" size="4">
+                  <input class="ed" form="edit-tournament-<%= t.id %>" name="age_max" value="<%= t.age_max === null ? '' : t.age_max %>" maxlength="3" placeholder="до" size="4">
+                </span>
               </td>
               <td><%= t.entries %></td>
               <td class="inline-form">

@@ -4,6 +4,7 @@
 // Места: победитель 1, финалист 2, проигравшие полуфинала 3, четвертьфинала 5, далее 9, 17.
 import { ValidationError } from './validate.mjs';
 import { parseScore, scoreFor } from './groups.mjs';
+import { assertAgeAllowed } from './age.mjs';
 
 export const BRACKET_SIZES = [4, 8, 16, 32];
 /** Разряд ЗАЧЁТА сетки или группы: 'single' / 'double' / 'mixed'. Пусто — как играют (kind). */
@@ -74,6 +75,7 @@ export function seed(db, tournamentId, bid, position, playerId, partnerId = null
   const busy = db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND (player_id = ? OR partner_id = ?)');
   if (busy.get(b.id, playerId, playerId) || (partnerId && busy.get(b.id, partnerId, partnerId))) throw new ValidationError('Этот игрок уже в сетке');
   if (db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND round = 0 AND position = ?').get(b.id, position - 1)) throw new ValidationError(`Позиция ${position} уже занята`);
+  assertAgeAllowed(db, tournamentId, [playerId, partnerId], { ValidationError });
   db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id, partner_id) VALUES (?, 0, ?, ?, ?)').run(b.id, position - 1, playerId, partnerId);
   return b;
 }
@@ -290,6 +292,7 @@ export function seedByRating(db, tournamentId, bid, rawList) {
     }
     entrants.push(en);
   }
+  assertAgeAllowed(db, tournamentId, [...seen], { ValidationError });
   const standings = currentStandings(db);
   const disc = disciplineOf(b);
   const table = standings ? (disc === 'mixed' ? (standings.mixed || []) : disc === 'double' ? standings.doubles : standings.players) : [];

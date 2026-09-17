@@ -2460,19 +2460,20 @@ await check('форма турнира: черновик / опубликова�
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const page = await http('/admin/tournaments', { jar });
   const _csrf = tokenFrom(page.text);
-  // Порядок полей формы: название → начало → завершение → категория → город → тип → возраст.
+  // Порядок полей формы: название → начало → завершение → категория → город → тип → возрастное ограничение.
   const form = page.text.slice(page.text.indexOf('action="/admin/tournaments"'), page.text.indexOf('Сохранить черновик'));
-  const order = ['name="name"', 'name="start_date"', 'name="end_date"', 'name="category"', 'name="city"', 'name="kind"', 'name="age_group"'].map((n) => form.indexOf(n));
+  const order = ['name="name"', 'name="start_date"', 'name="end_date"', 'name="category"', 'name="city"', 'name="kind"', 'name="age_limit"'].map((n) => form.indexOf(n));
   assert(order.every((x, i) => x > 0 && (i === 0 || x > order[i - 1])), `порядок полей нарушен: ${order.join(',')}`);
   assert(/value="draft">Сохранить черновик/.test(page.text) && /value="publish">Опубликовать/.test(page.text), 'нет кнопок черновик/опубликовать');
-  assert(/<option value="до 14">/.test(form) && /<option value="55\+">/.test(form) && /<option value="custom">ввод вручную/.test(form), 'в возрасте нет списка/ввода вручную');
+  // Возраст — ограничение (17.09.2026): готовые варианты + «свои границы»; подпись строится сама.
+  assert(/<option value="u15">до 15 лет/.test(form) && /<option value="v55">55 и старше/.test(form) && /<option value="custom">свои границы/.test(form), 'в возрастном ограничении нет списка/своих границ');
   const post = (form) => http('/admin/tournaments', { method: 'POST', form: { _csrf, category: 'B', kind: 'other', ...form }, jar });
-  eq((await post({ name: 'Черновик турнира', end_date: '2026-10-10', start_date: '2026-10-09', city: 'Смоленск', age_group: 'до 14', action: 'draft' })).status, 302, 'черновик');
-  eq((await post({ name: 'Опубликованный турнир', end_date: '2026-10-12', age_group: 'custom', age_group_custom: '35–44', action: 'publish' })).status, 302, 'опубликовать');
-  const draft = db.prepare("SELECT id, is_published, age_group FROM tournaments WHERE name = 'Черновик турнира'").get();
-  const pub = db.prepare("SELECT id, is_published, age_group FROM tournaments WHERE name = 'Опубликованный турнир'").get();
-  eq(draft.is_published + ':' + draft.age_group, '0:до 14', 'черновик: статус и возраст из списка');
-  eq(pub.is_published + ':' + pub.age_group, '1:35–44', 'опубликован: статус и возраст вручную');
+  eq((await post({ name: 'Черновик турнира', end_date: '2026-10-10', start_date: '2026-10-09', city: 'Смоленск', age_limit: 'u15', action: 'draft' })).status, 302, 'черновик');
+  eq((await post({ name: 'Опубликованный турнир', end_date: '2026-10-12', age_limit: 'custom', age_min: '35', age_max: '44', action: 'publish' })).status, 302, 'опубликовать');
+  const draft = db.prepare("SELECT id, is_published, age_group, age_min, age_max FROM tournaments WHERE name = 'Черновик турнира'").get();
+  const pub = db.prepare("SELECT id, is_published, age_group, age_min, age_max FROM tournaments WHERE name = 'Опубликованный турнир'").get();
+  eq(draft.is_published + ':' + draft.age_group + ':' + draft.age_max, '0:до 15 лет:14', 'черновик: статус и границы из списка');
+  eq(pub.is_published + ':' + pub.age_group + ':' + pub.age_min + '-' + pub.age_max, '1:35–44 года:35-44', 'опубликован: свои границы и подпись из них');
   // Витрина: черновика нет нигде.
   const list = (await http('/tournaments')).text;
   assert(!/Черновик турнира/.test(list) && /Опубликованный турнир/.test(list), 'черновик виден в календаре или опубликованный не виден');
@@ -2850,6 +2851,46 @@ await check('импорт турнира из текста: сетка с bye/о
   assert(!/Импортный ветеранский/.test((await http('/tournaments')).text), 'черновик виден на витрине');
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(t.id); db.prepare("DELETE FROM players WHERE full_name LIKE 'Имп%'").run(); db.prepare('DELETE FROM write_attempts').run();
   return 'сетка 8 с bye, отказом и матчем за 3-е, группа, пары → черновик; 15 игроков, 11 матчей, места 1/2/3/4/5 и пар; ошибка — без записи';
+});
+
+await check('возрастное ограничение турнира: задаётся в карточке и РЕАЛЬНО отбивает посев, состав группы, места и импорт', async () => {
+  // 17.09.2026: до этого возраст у турнира был только подписью — в детскую сетку
+  // можно было посеять взрослого, и никто не мешал.
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/tournaments', { jar });
+  eq(page.status, 200, 'страница турниров');
+  assert(/name="age_limit"/.test(page.text) && /до 13 лет/.test(page.text), 'в форме турнира нет возрастного ограничения');
+  const _csrf = tokenFrom(page.text);
+  const made = await http('/admin/tournaments', { method: 'POST', jar, form: { _csrf, name: 'Возрастной кубок', end_date: '2026-08-29', category: 'B', age_limit: 'u13', action: 'draft' } });
+  eq(made.status, 302, 'турнир заведён');
+  const t = db.prepare("SELECT id, age_min, age_max, age_group FROM tournaments WHERE name = 'Возрастной кубок'").get();
+  assert(t && t.age_min === null && t.age_max === 12, 'границы «до 13 лет» должны быть (null, 12)');
+  eq(t.age_group, 'до 13 лет', 'подпись строится из границ — календарь и карточка не должны расходиться');
+  const kid = db.prepare("INSERT INTO players (full_name, city, sex, birth_date) VALUES ('Возрмалышев Иван', 'Смоленск', 'M', '2015-05-01')").run().lastInsertRowid;
+  const teen = db.prepare("INSERT INTO players (full_name, city, sex, birth_date) VALUES ('Возрподростков Пётр', 'Смоленск', 'M', '2010-03-01')").run().lastInsertRowid;
+  const nobd = db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Возрбездаты Семён', 'Смоленск', 'M')").run().lastInsertRowid;
+  const bid = db.prepare("INSERT INTO tournament_brackets (tournament_id, name, kind, discipline, size) VALUES (?, 'Основная', 'single', 'single', 4)").run(t.id).lastInsertRowid;
+  const seedOne = (player, position) => http(`/admin/tournaments/${t.id}/brackets/${bid}/seed`, { method: 'POST', jar, form: { _csrf, player: `#${player}`, position: String(position) } });
+  await seedOne(kid, 1);
+  assert(db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND player_id = ?').get(bid, kid), 'ребёнок по возрасту должен сеяться');
+  await seedOne(teen, 2);
+  assert(!db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND player_id = ?').get(bid, teen), 'взрослый не должен попасть в сетку «до 13 лет»');
+  await seedOne(nobd, 3);
+  assert(db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND player_id = ?').get(bid, nobd), 'без даты рождения ввод стопорить нельзя — игрок должен посеяться');
+  // Массовый ввод мест и импорт протокола ловят то же самое.
+  const bulk = await http(`/admin/tournaments/${t.id}/results/bulk`, { method: 'POST', jar, form: { _csrf, text: '1 Возрподростков Пётр', mode: 'save' } });
+  assert(bulk.status === 302 || bulk.status === 200, 'массовый ввод ответил');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ? AND player_id = ?').get(t.id, teen).n, 0, 'место взрослому в детском турнире записываться не должно');
+  const imp = await http('/admin/tournaments/import', { method: 'POST', jar, form: { _csrf, into: String(t.id), text: ['Сетка: Вторая | пол: M', '1/2: Возрмалышев Иван — Возрподростков Пётр 6:0/6:0 → Возрмалышев Иван'].join('\n') } });
+  eq(imp.status, 400, 'импорт со взрослым в детском турнире — 400');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_brackets WHERE tournament_id = ? AND name = 'Вторая'").get(t.id).n, 0, 'при отказе импорт не должен ничего записывать');
+  // Снятие ограничения открывает турнир для всех.
+  const off = await http(`/admin/tournaments/${t.id}/update`, { method: 'POST', jar, form: { _csrf, name: 'Возрастной кубок', end_date: '2026-08-29', category: 'B', age_limit: 'none' } });
+  assert(off.status === 302 || off.status === 200, 'ограничение снято');
+  await seedOne(teen, 2);
+  assert(db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND player_id = ?').get(bid, teen), 'без ограничения взрослый должен сеяться');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t.id); db.prepare("DELETE FROM players WHERE full_name LIKE 'Возр%'").run(); db.prepare('DELETE FROM write_attempts').run();
+  return 'ограничение «до 13 лет» → границы (null,12) и подпись; посев, места и импорт отбивают 16-летнего, ребёнка и игрока без даты пропускают; снятие ограничения открывает турнир';
 });
 
 await check('импорт: парная и микстовая СЕТКА парами, матч без счёта, доливка в существующий турнир; микст в свой зачёт', async () => {

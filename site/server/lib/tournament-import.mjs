@@ -35,6 +35,7 @@ import { ValidationError } from './validate.mjs';
 import { normalizeName } from './registrations.mjs';
 import { parseScore } from './groups.mjs';
 import { bracketPlaces } from './brackets.mjs';
+import { assertAgeAllowed } from './age.mjs';
 
 const DASH = /\s+[—–-]\s+/;
 const ROUND_OF = { '1/16': 32, '1/8': 16, '1/4': 8, '1/2': 4, 'финал': 2 };
@@ -197,7 +198,9 @@ export function importTournament(db, text, { userId = null, tournamentId = null 
   };
   /** Как пара записана строкой — для сверки имени победителя в «3 место». */
   const entrantLabel = (raw) => String(raw).split(/\s*(?:\/|\s+и\s+)\s*/).map((x) => x.trim()).filter(Boolean).join(' / ');
-  /** «Иванов / Петров» → {playerId, partnerId}; одиночный разряд — один игрок. */
+  /** «Иванов / Петров» → {playerId, partnerId}; одиночный разряд — один игрок.
+   *  Возраст сверяется с ограничением турнира: протокол не должен заносить в
+   *  детскую сетку взрослого (у кого дата рождения не заполнена — пропускается). */
   const entrantOf = (raw, kind, sex) => {
     const parts = String(raw).split(/\s*(?:\/|\s+и\s+)\s*/).map((x) => x.trim()).filter(Boolean);
     if (kind === 'double') {
@@ -205,6 +208,16 @@ export function importTournament(db, text, { userId = null, tournamentId = null 
       return { playerId: findOrCreate(parts[0], sex), partnerId: findOrCreate(parts[1], sex) };
     }
     return { playerId: findOrCreate(parts[0], sex), partnerId: null };
+  };
+  const checkedAge = new Set();
+  const entrantChecked = (raw, kind, sex, tid) => {
+    const e = entrantOf(raw, kind, sex);
+    for (const id of [e.playerId, e.partnerId].filter(Boolean)) {
+      if (checkedAge.has(id)) continue;
+      assertAgeAllowed(db, tid, [id], { ValidationError });
+      checkedAge.add(id);
+    }
+    return e;
   };
 
   const runAll = db.transaction(() => {
@@ -236,7 +249,7 @@ export function importTournament(db, text, { userId = null, tournamentId = null 
         const members = new Map();
         const memberId = (n) => {
           if (!members.has(n)) {
-            const e = entrantOf(n, kind, sex); members.set(n, e);
+            const e = entrantChecked(n, kind, sex, tid); members.set(n, e);
             db.prepare('INSERT OR IGNORE INTO tournament_group_members (group_id, player_id, seed) VALUES (?, ?, ?)').run(g.id, e.playerId, members.size + 1);
             if (e.partnerId) db.prepare('INSERT OR IGNORE INTO tournament_group_members (group_id, player_id, seed) VALUES (?, ?, ?)').run(g.id, e.partnerId, members.size + 1);
           }
@@ -274,7 +287,7 @@ export function importTournament(db, text, { userId = null, tournamentId = null 
         const firstRound = s.matches.filter((m) => m.stage && ROUND_OF[m.stage] === size);
         const putSlot = (pos, raw) => {
           if (isBye(raw)) return;
-          const e = entrantOf(raw, kind, sex);
+          const e = entrantChecked(raw, kind, sex, tid);
           const have = slotAt(b.id, 0, pos);
           if (have) {
             if (have.player_id !== e.playerId || (have.partner_id || null) !== (e.partnerId || null)) {
@@ -358,13 +371,13 @@ export function importTournament(db, text, { userId = null, tournamentId = null 
         } else if (s.places.length) {
           // Финал не в протоколе, но итог известен (например, из публикации) — места из «Итог:».
           const ins = db.prepare('INSERT OR REPLACE INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
-          for (const pl of s.places) for (const n of pl.who.split('/').map((x) => x.trim()).filter(Boolean)) { ins.run(tid, findOrCreate(n, sex), pl.place, disc); sec.places++; }
+          for (const pl of s.places) for (const n of pl.who.split('/').map((x) => x.trim()).filter(Boolean)) { ins.run(tid, entrantChecked(n, 'single', sex, tid).playerId, pl.place, disc); sec.places++; }
           report.warnings.push(`${s.title}: финал не сыгран в протоколе — места взяты из строки «Итог»`);
         } else report.warnings.push(`${s.title}: финал не сыгран — места не записаны`);
       } else { // pairs — только итоговые места
         const ins = db.prepare('INSERT OR REPLACE INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
         for (const pl of s.places) {
-          for (const n of pl.who.split('/').map((x) => x.trim()).filter(Boolean)) { ins.run(tid, findOrCreate(n, sex), pl.place, disc); sec.places++; }
+          for (const n of pl.who.split('/').map((x) => x.trim()).filter(Boolean)) { ins.run(tid, entrantChecked(n, 'single', sex, tid).playerId, pl.place, disc); sec.places++; }
         }
         if (!s.places.length) report.warnings.push(`${s.title}: для парного разряда нужна строка «Итог: 1 А/Б, 2 В/Г …»`);
       }
