@@ -71,7 +71,7 @@
       <div class="panel">
         <h2>Групповой этап</h2>
         <% groups.forEach(function (g) { %>
-          <h3>Группа <%= g.name %> <span class="muted">(<%= g.kind === 'double' ? 'парный' : 'одиночный' %>)</span></h3>
+          <h3>Группа <%= g.name %> <span class="muted">(<%= g.discipline === 'mixed' ? 'микст' : g.kind === 'double' ? 'парный' : 'одиночный' %>)</span></h3>
           <div class="table-scroll">
             <table class="group-table">
               <caption class="visually-hidden">Таблица группы <%= g.name %></caption>
@@ -101,7 +101,7 @@
       <div class="panel" id="grid">
         <h2>Сетка плей-офф</h2>
         <% brackets.forEach(function (b) { %>
-          <h3><%= b.name %> <span class="muted">(на <%= b.size %>, <%= b.kind === 'double' ? 'парный' : 'одиночный' %>)</span></h3>
+          <h3><%= b.name %> <span class="muted">(на <%= b.size %>, <%= b.discipline === 'mixed' ? 'микст' : b.kind === 'double' ? 'парный' : 'одиночный' %>)</span></h3>
           <div class="bracket bracket--public">
             <% b.rounds.forEach(function (round) { %>
               <div class="bracket__round">

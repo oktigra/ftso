@@ -63,13 +63,13 @@
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="field"><label for="g-name">Новая группа</label><input id="g-name" name="name" maxlength="40" placeholder="A" required></div>
       <div class="field"><label for="g-kind">Разряд</label>
-        <select id="g-kind" name="kind"><option value="single">одиночный</option><option value="double">парный</option></select></div>
+        <select id="g-kind" name="kind"><option value="single">одиночный</option><option value="double">парный</option><option value="mixed">микст</option></select></div>
       <button class="btn btn--secondary btn--small" type="submit">Создать группу</button>
     </form>
     <% } %>
     <% groups.forEach(function (g) { %>
       <div class="group-block">
-        <h3>Группа <%= g.name %> <span class="muted">(<%= g.kind === 'double' ? 'парный' : 'одиночный' %>, сыграно <%= g.playedTotal %> из <%= g.total %>)</span></h3>
+        <h3>Группа <%= g.name %> <span class="muted">(<%= g.discipline === 'mixed' ? 'микст' : g.kind === 'double' ? 'парный' : 'одиночный' %>, сыграно <%= g.playedTotal %> из <%= g.total %>)</span></h3>
         <form method="post" action="/admin/tournaments/<%= tournament.id %>/groups/<%= g.id %>/members" class="inline-form">
           <input type="hidden" name="_csrf" value="<%= csrfToken %>">
           <div class="field field--wide"><label for="gm-<%= g.id %>">Добавить участника</label>
@@ -177,13 +177,13 @@
       <div class="field"><label for="b-size">Размер</label>
         <select id="b-size" name="size"><% bracketSizes.forEach(function (n) { %><option value="<%= n %>"<%= n === 8 ? ' selected' : '' %>><%= n %></option><% }); %></select></div>
       <div class="field"><label for="b-kind">Разряд</label>
-        <select id="b-kind" name="kind"><option value="single">одиночный</option><option value="double">парный</option></select></div>
+        <select id="b-kind" name="kind"><option value="single">одиночный</option><option value="double">парный</option><option value="mixed">микст</option></select></div>
       <button class="btn btn--secondary btn--small" type="submit">Создать сетку</button>
     </form>
     <% } %>
     <% brackets.forEach(function (b) { %>
       <div class="group-block">
-        <h3>Сетка «<%= b.name %>» на <%= b.size %> <span class="muted">(<%= b.kind === 'double' ? 'парный' : 'одиночный' %>, посеяно <%= b.filled %> из <%= b.size %><%= b.champion ? ', победитель: ' + b.champion.full_name : '' %>)</span></h3>
+        <h3>Сетка «<%= b.name %>» на <%= b.size %> <span class="muted">(<%= b.discipline === 'mixed' ? 'микст' : b.kind === 'double' ? 'парный' : 'одиночный' %>, посеяно <%= b.filled %> из <%= b.size %><%= b.champion ? ', победитель: ' + b.champion.full_name : '' %>)</span></h3>
         <% if (!b.filled && !judgeMode) { %>
           <form method="post" action="/admin/tournaments/<%= tournament.id %>/brackets/<%= b.id %>/seed-by-rating" class="stacked-form">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">

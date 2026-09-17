@@ -6,6 +6,10 @@ import { ValidationError } from './validate.mjs';
 import { parseScore, scoreFor } from './groups.mjs';
 
 export const BRACKET_SIZES = [4, 8, 16, 32];
+/** Разряд ЗАЧЁТА сетки или группы: 'single' / 'double' / 'mixed'. Пусто — как играют (kind). */
+export const disciplineOf = (x) => (x && x.discipline) || (x && x.kind) || 'single';
+/** Как зовётся разряд на экране. */
+export const disciplineLabel = (d) => (d === 'mixed' ? 'микст' : d === 'double' ? 'парный' : 'одиночный');
 export const roundsOf = (size) => Math.log2(size);
 export function roundName(size, r) {
   const left = size / 2 ** r; // участников в раунде
@@ -16,7 +20,7 @@ export function roundName(size, r) {
 }
 
 export function listBrackets(db, tournamentId) {
-  return db.prepare('SELECT id, name, kind, size FROM tournament_brackets WHERE tournament_id = ? ORDER BY id').all(tournamentId)
+  return db.prepare('SELECT id, name, kind, discipline, size FROM tournament_brackets WHERE tournament_id = ? ORDER BY id').all(tournamentId)
     .map((b) => ({ ...b, ...bracketView(db, tournamentId, b) }));
 }
 
@@ -55,7 +59,7 @@ export function bracketView(db, tournamentId, b) {
 }
 
 const bracketOf = (db, tournamentId, bid) => {
-  const b = db.prepare('SELECT id, name, kind, size FROM tournament_brackets WHERE id = ? AND tournament_id = ?').get(bid, tournamentId);
+  const b = db.prepare('SELECT id, name, kind, discipline, size FROM tournament_brackets WHERE id = ? AND tournament_id = ?').get(bid, tournamentId);
   if (!b) throw new ValidationError('Сетка не найдена');
   return b;
 };
@@ -182,13 +186,14 @@ export function bracketPlaces(db, tournamentId, bid) {
     const lost = R - 1 - mr; // 0 — финал
     places.push([pid, lost === 0 ? 2 : 2 ** lost + 1]);
   }
-  // Место пишется в разряд сетки (парная сетка → парный разряд, обоим игрокам пары);
+  // Место пишется в РАЗРЯД ЗАЧЁТА сетки (парная → парный, микст → микст, обоим игрокам пары);
   // чужие разряды того же игрока не трогаются — раньше DELETE сносил и его одиночный результат.
+  const disc = disciplineOf(b);
   db.transaction(() => {
     const del = db.prepare('DELETE FROM results WHERE tournament_id = ? AND player_id = ? AND discipline = ?');
     const ins = db.prepare('INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
     for (const [pid, place] of places) {
-      for (const who of [pid, partnerOf.get(pid)].filter(Boolean)) { del.run(tournamentId, who, b.kind); ins.run(tournamentId, who, place, b.kind); }
+      for (const who of [pid, partnerOf.get(pid)].filter(Boolean)) { del.run(tournamentId, who, disc); ins.run(tournamentId, who, place, disc); }
     }
   })();
   return places.length;
@@ -252,10 +257,11 @@ export function placesWithGroups(db, tournamentId, bid) {
   const inBracket = new Set(db.prepare('SELECT DISTINCT player_id FROM bracket_slots WHERE bracket_id = ?').all(b.id).map((r) => r.player_id));
   const rest = [];
   for (const g of listGroups(db, tournamentId).filter((x) => x.kind === b.kind)) for (const pid of g.order) if (!inBracket.has(pid)) rest.push(pid);
+  const disc = disciplineOf(b);
   db.transaction(() => {
-    const del = db.prepare('DELETE FROM results WHERE tournament_id = ? AND player_id = ?');
-    const ins = db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)');
-    for (const pid of rest) { del.run(tournamentId, pid); ins.run(tournamentId, pid, b.size + 1); }
+    const del = db.prepare('DELETE FROM results WHERE tournament_id = ? AND player_id = ? AND discipline = ?');
+    const ins = db.prepare('INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
+    for (const pid of rest) { del.run(tournamentId, pid, disc); ins.run(tournamentId, pid, b.size + 1, disc); }
   })();
   return { bracket: n, rest: rest.length };
 }
@@ -285,7 +291,8 @@ export function seedByRating(db, tournamentId, bid, rawList) {
     entrants.push(en);
   }
   const standings = currentStandings(db);
-  const table = standings ? (b.kind === 'double' ? standings.doubles : standings.players) : [];
+  const disc = disciplineOf(b);
+  const table = standings ? (disc === 'mixed' ? (standings.mixed || []) : disc === 'double' ? standings.doubles : standings.players) : [];
   const rank = new Map(table.map((p) => [p.playerId, p.rank]));
   const points = new Map(table.map((p) => [p.playerId, p.ratingPoints]));
   const allIds = [...seen];

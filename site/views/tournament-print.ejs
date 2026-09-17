@@ -19,7 +19,7 @@
     </p>
 
     <% groups.forEach(function (g) { %>
-      <h2>Группа <%= g.name %> <span class="muted">(<%= g.kind === 'double' ? 'парный' : 'одиночный' %>)</span></h2>
+      <h2>Группа <%= g.name %> <span class="muted">(<%= g.discipline === 'mixed' ? 'микст' : g.kind === 'double' ? 'парный' : 'одиночный' %>)</span></h2>
       <table class="print-table group-table">
         <thead><tr><th>#</th><th>Игрок</th><% g.members.forEach(function (c, j) { %><th><%= j + 1 %></th><% }); %><th>Поб.</th><th>Место</th></tr></thead>
         <tbody>
@@ -39,7 +39,7 @@
     <% }); %>
 
     <% brackets.forEach(function (b) { %>
-      <h2>Сетка «<%= b.name %>» <span class="muted">(на <%= b.size %>, <%= b.kind === 'double' ? 'парный' : 'одиночный' %>)</span></h2>
+      <h2>Сетка «<%= b.name %>» <span class="muted">(на <%= b.size %>, <%= b.discipline === 'mixed' ? 'микст' : b.kind === 'double' ? 'парный' : 'одиночный' %>)</span></h2>
       <div class="bracket bracket--print">
         <% b.rounds.forEach(function (round) { %>
           <div class="bracket__round">

@@ -2852,6 +2852,54 @@ await check('импорт турнира из текста: сетка с bye/о
   return 'сетка 8 с bye, отказом и матчем за 3-е, группа, пары → черновик; 15 игроков, 11 матчей, места 1/2/3/4/5 и пар; ошибка — без записи';
 });
 
+await check('импорт: парная и микстовая СЕТКА парами, матч без счёта, доливка в существующий турнир; микст в свой зачёт', async () => {
+  // 17.09.2026: протокол доигранного турнира приходит позже — он должен ложиться в тот же
+  // турнир, а не в дубль; парные и микстовые сетки заводятся текстом; строка без счёта
+  // с «→ победитель» записывает победителя, а не «неявку».
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/tournaments/import', { jar });
+  const _csrf = tokenFrom(page.text);
+  assert(/name="into"/.test(page.text) && /Дописать в #/.test(page.text) === false || /name="into"/.test(page.text), 'на странице импорта нет выбора «Куда»');
+  const base = ['Турнир: Доливочный кубок', 'Даты: 2026-08-10 — 2026-08-12', 'Город: Смоленск | Категория: B',
+    'Сетка: Юноши | пол: M', '1/2: Доливанов Иван — Долипетров Пётр 6:1/6:2 → Доливанов Иван', '1/2: Долисидоров Сидор — Долькозлов Козьма 6:3/6:4 → Долисидоров Сидор'].join('\n');
+  const first = await http('/admin/tournaments/import', { method: 'POST', form: { _csrf, text: base }, jar });
+  eq(first.status, 200, 'первый импорт');
+  const t = db.prepare("SELECT id FROM tournaments WHERE name = 'Доливочный кубок'").get();
+  assert(t, 'турнир не заведён');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ?').get(t.id).n, 0, 'финал не сыгран — мест быть не должно');
+  // ДОЛИВКА: финал и матч за 3 место в ту же сетку + парная и микстовая сетки
+  const add = ['Сетка: Юноши | пол: M', 'Финал: Доливанов Иван — Долисидоров Сидор 7:5/6:4 → Доливанов Иван', '3 место: Долипетров Пётр — Долькозлов Козьма 6:0/6:0 → Долипетров Пётр',
+    'Сетка: Юношеские пары | разряд: парный', '1/2: Доливанов Иван / Долипетров Пётр — Долисидоров Сидор / Долькозлов Козьма 6:2/6:2 → Доливанов Иван / Долипетров Пётр',
+    '1/2: Доливасин Лев / Долиярцев Юрий — Долирыжов Олег / Долизайцев Мирон 6:1/6:1 → Доливасин Лев / Долиярцев Юрий',
+    'Финал: Доливанов Иван / Долипетров Пётр — Доливасин Лев / Долиярцев Юрий 6:3/6:3 → Доливанов Иван / Долипетров Пётр',
+    'Сетка: Микст | разряд: микст', '1/2: Доливанов Иван / Долибелова Анна — Долипетров Пётр / Долиернова Вера 6:0/6:1 → Доливанов Иван / Долибелова Анна',
+    '1/2: Долисидоров Сидор / Долизайцева Ольга — Долькозлов Козьма / Долирыжова Мария → Долисидоров Сидор / Долизайцева Ольга',
+    'Финал: Доливанов Иван / Долибелова Анна — Долисидоров Сидор / Долизайцева Ольга 6:4/6:4 → Доливанов Иван / Долибелова Анна'].join('\n');
+  const second = await http('/admin/tournaments/import', { method: 'POST', form: { _csrf, text: add, into: String(t.id) }, jar });
+  eq(second.status, 200, 'доливка');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournaments WHERE name = 'Доливочный кубок'").get().n, 1, 'доливка не должна плодить второй турнир');
+  assert(/Дописано в турнир/.test(second.text), 'в отчёте не сказано, что дописано');
+  const res = db.prepare("SELECT p.full_name AS n, r.place, r.discipline AS d FROM results r JOIN players p ON p.id = r.player_id WHERE r.tournament_id = ? ORDER BY r.discipline, r.place, p.full_name").all(t.id);
+  eq(res.filter((r) => r.d === 'single').map((r) => `${r.place}:${r.n}`).join(','), '1:Доливанов Иван,2:Долисидоров Сидор,3:Долипетров Пётр,4:Долькозлов Козьма', 'одиночка: финал и матч за 3 место дописались');
+  eq(res.filter((r) => r.d === 'double').map((r) => `${r.place}:${r.n}`).join(','), '1:Доливанов Иван,1:Долипетров Пётр,2:Доливасин Лев,2:Долиярцев Юрий,3:Долизайцев Мирон,3:Долирыжов Олег,3:Долисидоров Сидор,3:Долькозлов Козьма', 'парная сетка: места обоим игрокам пары');
+  eq(res.filter((r) => r.d === 'mixed').map((r) => `${r.place}:${r.n}`).join(','), '1:Долибелова Анна,1:Доливанов Иван,2:Долизайцева Ольга,2:Долисидоров Сидор,3:Долиернова Вера,3:Долипетров Пётр,3:Долирыжова Мария,3:Долькозлов Козьма', 'микст пишется в свой зачёт');
+  // Один и тот же человек в трёх разрядах — три записи, ни одна не затёрта.
+  eq(res.filter((r) => r.n === 'Доливанов Иван').map((r) => r.d).sort().join(','), 'double,mixed,single', 'разряды одного игрока затёрли друг друга');
+  const b = db.prepare("SELECT id, kind, discipline FROM tournament_brackets WHERE tournament_id = ? AND name = 'Микст'").get(t.id);
+  assert(b && b.kind === 'double' && b.discipline === 'mixed', 'микстовая сетка должна играться парами, а считаться миксту');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ? AND score IS NULL").get(t.id).n, 1, 'строка без счёта: победитель записан, счёта нет');
+  assert(db.prepare("SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ? AND score LIKE 'неявка%'").get(t.id).n === 0, 'матч без счёта не должен превращаться в неявку');
+  // Повторная заливка того же текста ничего не портит и не двоит.
+  const wasMatches = db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t.id).n;
+  eq(wasMatches, 10, 'матчей после доливки: 3 одиночка + 1 за 3 место + 3 пары + 3 микст');
+  const again = await http('/admin/tournaments/import', { method: 'POST', form: { _csrf, text: add, into: String(t.id) }, jar });
+  eq(again.status, 200, 'повторная доливка');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM matches WHERE tournament_id = ?').get(t.id).n, wasMatches, 'повтор не должен двоить матчи');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM results WHERE tournament_id = ? AND place = 4 AND discipline = 'single'").get(t.id).n, 1, 'повтор не должен сбивать места 3/4');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t.id); db.prepare("DELETE FROM players WHERE full_name LIKE 'Доли%' OR full_name LIKE 'Дольк%'").run(); db.prepare('DELETE FROM write_attempts').run();
+  return 'доливка в существующий турнир: финал + 3 место дописаны, парная и микстовая сетки заведены парами, микст в свой зачёт, матч без счёта без «неявки», повтор идемпотентен';
+});
+
 await check('анкета тренера: публикуется только отмеченное, без согласия не принимается, одобрение ставит основание по ст. 10.1', async () => {
   // Форма на /coaches/apply — согласие по ст. 10.1 с отметкой по каждому полю.
   const page = await http('/coaches/apply');

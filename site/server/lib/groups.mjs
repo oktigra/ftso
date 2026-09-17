@@ -74,7 +74,7 @@ export function scoreFor(stored, won) {
 }
 
 export function listGroups(db, tournamentId) {
-  const groups = db.prepare('SELECT id, name, kind FROM tournament_groups WHERE tournament_id = ? ORDER BY name, id').all(tournamentId);
+  const groups = db.prepare('SELECT id, name, kind, discipline FROM tournament_groups WHERE tournament_id = ? ORDER BY name, id').all(tournamentId);
   return groups.map((g) => ({ ...g, members: groupMembers(db, g.id), ...groupTable(db, tournamentId, g) }));
 }
 
@@ -173,10 +173,12 @@ export function setCell(db, tournamentId, group, rowId, colId, rawScore) {
 export function writeGroupPlaces(db, tournamentId, group) {
   const t = groupTable(db, tournamentId, group);
   if (!t.complete) throw new ValidationError('Группа сыграна не полностью — места ещё не определены');
+  // Места идут в РАЗРЯД ЗАЧЁТА группы (микст — в свой), чужие разряды игрока не трогаются.
+  const disc = group.discipline || group.kind || 'single';
   db.transaction(() => {
-    const del = db.prepare('DELETE FROM results WHERE tournament_id = ? AND player_id = ?');
-    const ins = db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)');
-    t.order.forEach((id, i) => { del.run(tournamentId, id); ins.run(tournamentId, id, i + 1); });
+    const del = db.prepare('DELETE FROM results WHERE tournament_id = ? AND player_id = ? AND discipline = ?');
+    const ins = db.prepare('INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
+    t.order.forEach((id, i) => { del.run(tournamentId, id, disc); ins.run(tournamentId, id, i + 1, disc); });
   })();
   return t.order.length;
 }
