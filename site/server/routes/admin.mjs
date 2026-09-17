@@ -711,8 +711,10 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
   });
 
   // ИМПОРТ ТУРНИРА ИЗ ТЕКСТА (06.09.2026): переписанный протокол → турнир черновиком целиком.
+  // Список турниров для выбора «дописать в существующий» (17.09.2026).
+  const importTargets = () => db.prepare('SELECT id, name, start_date, end_date FROM tournaments ORDER BY COALESCE(end_date, start_date) DESC, id DESC LIMIT 100').all();
   app.get('/admin/tournaments/import', requireRole(...DATA_ROLES), (req, res) => {
-    res.render('admin/tournament-import', { title: 'Импорт турнира из текста — админка ФТСО', report: null, text: '' });
+    res.render('admin/tournament-import', { title: 'Импорт турнира из текста — админка ФТСО', report: null, text: '', targets: importTargets(), into: '' });
   });
   app.post(
     '/admin/tournaments/import',
@@ -720,12 +722,13 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     limitWrites,
     (req, res, next) => {
       const text = String(req.body.text || '').slice(0, 60000);
+      const into = /^\d+$/.test(String(req.body.into || '')) ? Number(req.body.into) : null;
       try {
-        const report = importTournament(db, text, { userId: actorId(req) });
-        logAction(db, actorId(req), 'tournament.import', report.tournamentId, { sections: report.sections.length, players: report.players_created_count, warnings: report.warnings.length });
-        res.render('admin/tournament-import', { title: 'Импорт турнира — готово — админка ФТСО', report, text });
+        const report = importTournament(db, text, { userId: actorId(req), tournamentId: into });
+        logAction(db, actorId(req), report.appended ? 'tournament.import.append' : 'tournament.import', report.tournamentId, { sections: report.sections.length, players: report.players_created_count, warnings: report.warnings.length });
+        res.render('admin/tournament-import', { title: 'Импорт турнира — готово — админка ФТСО', report, text, targets: importTargets(), into: into || '' });
       } catch (err) {
-        if (err instanceof ValidationError) return res.status(400).render('admin/tournament-import', { title: 'Импорт турнира — ошибка — админка ФТСО', report: { error: err.message }, text });
+        if (err instanceof ValidationError) return res.status(400).render('admin/tournament-import', { title: 'Импорт турнира — ошибка — админка ФТСО', report: { error: err.message }, text, targets: importTargets(), into: into || '' });
         return next(err);
       }
     },
@@ -849,7 +852,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
 
   // КРУГОВЫЕ ГРУППЫ (сетка, слой 1): группа → участники → счёт в клетках → места.
   const groupOf = (tournamentId, gid) => {
-    const g = db.prepare('SELECT id, name, kind FROM tournament_groups WHERE id = ? AND tournament_id = ?').get(gid, tournamentId);
+    const g = db.prepare('SELECT id, name, kind, discipline FROM tournament_groups WHERE id = ? AND tournament_id = ?').get(gid, tournamentId);
     if (!g) throw new ValidationError('Группа не найдена');
     return g;
   };
@@ -863,10 +866,13 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const tournamentId = intAtLeast(req.params.id, 'Турнир');
       if (!db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(tournamentId)) throw new ValidationError('Турнир не найден');
       const name = str(req.body.name, 'Название группы', { max: 40 });
-      const kind = req.body.kind === 'double' ? 'double' : 'single';
+      // Разряд в форме один список: одиночный / парный / микст. Микст ИГРАЕТСЯ парами
+      // (kind='double'), а зачёт у него свой (discipline='mixed').
+      const disc = ['single', 'double', 'mixed'].includes(req.body.kind) ? req.body.kind : 'single';
+      const kind = disc === 'single' ? 'single' : 'double';
       try {
-        const info = db.prepare('INSERT INTO tournament_groups (tournament_id, name, kind) VALUES (?, ?, ?)').run(tournamentId, name, kind);
-        logAction(db, actorId(req), 'group.create', tournamentId, { group: Number(info.lastInsertRowid), name, kind });
+        const info = db.prepare('INSERT INTO tournament_groups (tournament_id, name, kind, discipline) VALUES (?, ?, ?, ?)').run(tournamentId, name, kind, disc);
+        logAction(db, actorId(req), 'group.create', tournamentId, { group: Number(info.lastInsertRowid), name, kind, discipline: disc });
       } catch (err) {
         if (String(err.message).includes('UNIQUE')) throw new ValidationError(`Группа «${name}» уже есть`);
         throw err;
@@ -960,11 +966,13 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
   }));
   bracketRoute('/admin/tournaments/:id/brackets', (req, tid) => {
     const name = str(req.body.name, 'Название сетки', { max: 40 });
-    const kind = req.body.kind === 'double' ? 'double' : 'single';
+    // Тот же список, что у групп: микст играется парами, а место пишется в разряд «микст».
+    const disc = ['single', 'double', 'mixed'].includes(req.body.kind) ? req.body.kind : 'single';
+    const kind = disc === 'single' ? 'single' : 'double';
     const size = Number(req.body.size);
     if (!BRACKET_SIZES.includes(size)) throw new ValidationError('Размер сетки: 4, 8, 16 или 32');
     try {
-      const info = db.prepare('INSERT INTO tournament_brackets (tournament_id, name, kind, size) VALUES (?, ?, ?, ?)').run(tid, name, kind, size);
+      const info = db.prepare('INSERT INTO tournament_brackets (tournament_id, name, kind, discipline, size) VALUES (?, ?, ?, ?, ?)').run(tid, name, kind, disc, size);
       logAction(db, actorId(req), 'bracket.create', tid, { bracket: Number(info.lastInsertRowid), name, kind, size });
     } catch (err) {
       if (String(err.message).includes('UNIQUE')) throw new ValidationError(`Сетка «${name}» уже есть`);
@@ -1123,7 +1131,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
           if (!m) { errors.push(`${key}: ключ не разобран`); continue; }
           try {
             if (m[1] === 'g') {
-              const g = db.prepare('SELECT id, name, kind FROM tournament_groups WHERE id = ? AND tournament_id = ?').get(Number(m[2]), tournamentId);
+              const g = db.prepare('SELECT id, name, kind, discipline FROM tournament_groups WHERE id = ? AND tournament_id = ?').get(Number(m[2]), tournamentId);
               if (!g) throw new ValidationError('группа не найдена');
               setCell(db, tournamentId, g, Number(m[3]), Number(m[4]), score);
             } else {

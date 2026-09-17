@@ -30,7 +30,7 @@ export function sheetModel({ tournament, groups, brackets, results }) {
       tournament.sex ? ({ M: 'мужчины / юноши', F: 'женщины / девушки', X: 'смешанный' })[tournament.sex] : null,
     ].filter(Boolean).join(' · '),
     groups: groups.map((g) => ({
-      title: `Группа ${g.name} (${g.kind === 'double' ? 'парный' : 'одиночный'})`,
+      title: `Группа ${g.name} (${g.discipline === 'mixed' ? 'микст' : g.kind === 'double' ? 'парный' : 'одиночный'})`,
       header: ['#', 'Игрок', ...g.members.map((_, j) => String(j + 1)), 'Поб.', 'Место'],
       rows: g.members.map((r, i) => [
         String(i + 1),
@@ -46,7 +46,7 @@ export function sheetModel({ tournament, groups, brackets, results }) {
     })),
     brackets: brackets.map((b) => ({
       id: b.id,
-      title: `Сетка «${b.name}» на ${b.size} (${b.kind === 'double' ? 'парный' : 'одиночный'})`,
+      title: `Сетка «${b.name}» на ${b.size} (${b.discipline === 'mixed' ? 'микст' : b.kind === 'double' ? 'парный' : 'одиночный'})`,
       rounds: b.rounds.map((r) => ({
         name: r.name,
         pairs: r.pairs.map((p) => ({

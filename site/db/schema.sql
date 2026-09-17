@@ -146,6 +146,11 @@ CREATE TABLE IF NOT EXISTS tournament_groups (
   tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   name          TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 40),
   kind          TEXT NOT NULL DEFAULT 'single' CHECK (kind IN ('single','double')),
+  -- РАЗРЯД ЗАЧЁТА (17.09.2026). kind — как ИГРАЮТ (один на один или пара на пару),
+  -- discipline — КУДА идут места: 'single' / 'double' / 'mixed'. Микст играется парами
+  -- (kind='double'), но зачёт у него свой, иначе его места затирают парные тем же игрокам.
+  -- NULL = совпадает с kind (все записи, созданные до этой колонки).
+  discipline    TEXT CHECK (discipline IS NULL OR discipline IN ('single','double','mixed')),
   UNIQUE (tournament_id, name, kind)
 );
 CREATE TABLE IF NOT EXISTS tournament_group_members (
@@ -161,6 +166,8 @@ CREATE TABLE IF NOT EXISTS tournament_brackets (
   tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
   name          TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 40),
   kind          TEXT NOT NULL DEFAULT 'single' CHECK (kind IN ('single','double')),
+  -- РАЗРЯД ЗАЧЁТА — см. комментарий у tournament_groups. NULL = как kind.
+  discipline    TEXT CHECK (discipline IS NULL OR discipline IN ('single','double','mixed')),
   size          INTEGER NOT NULL CHECK (size IN (4,8,16,32)),
   UNIQUE (tournament_id, name, kind)
 );

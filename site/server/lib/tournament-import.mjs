@@ -19,6 +19,14 @@
 //   Пары: Мужские пары | пол: M                          ← парный разряд: только итоговые места
 //   Итог: 1 Ермаков/Пестов, 2 Акаев/Груздин, 3 Антонов/Строков
 //
+//   Сетка: Микст до 17 | разряд: микст                   ← ПАРНАЯ или МИКСТОВАЯ сетка (17.09.2026):
+//   1/2: Захарян / Акаев — Андреев / Фролович 6:0/6:0 → Захарян / Акаев     участник — ПАРА «А / Б»
+//   Финал: Захарян / Акаев — Захарян С. / Таразевич → Захарян / Акаев       (счёта может не быть:
+//   3 место: Мушкатерова / Коржаков — Полякова / Богачев 6:2/6:4            победитель после «→»)
+//
+// «разряд:» у раздела — одиночный (по умолчанию) | парный | микст. Микст играется парами,
+// но места идут в свой зачёт, а не в парный.
+//
 // Игрок задаётся фамилией (и инициалом/именем, если есть): «Антонов», «Адаева И.», «Иванов Иван».
 // Незнакомый заводится с полом раздела и городом турнира, дата рождения — пустая (секретарь
 // дозаполнит). Одна фамилия на двоих в базе → ошибка с подсказкой «#номер». Ничего не пишется,
@@ -26,7 +34,7 @@
 import { ValidationError } from './validate.mjs';
 import { normalizeName } from './registrations.mjs';
 import { parseScore } from './groups.mjs';
-import { seedOrder } from './brackets.mjs';
+import { bracketPlaces } from './brackets.mjs';
 
 const DASH = /\s+[—–-]\s+/;
 const ROUND_OF = { '1/16': 32, '1/8': 16, '1/4': 8, '1/2': 4, 'финал': 2 };
@@ -60,7 +68,15 @@ export function parseTournamentText(text) {
     if ((m = /^(сетка|группа|пары):\s*(.+)$/i.exec(line))) {
       const o = kv(m[2]); const title = (m[2].split('|')[0] || '').trim();
       const kindWord = m[1].toLowerCase();
-      cur = { type: kindWord === 'сетка' ? 'bracket' : kindWord === 'группа' ? 'group' : 'pairs', title, sex: (o['пол'] || '').toUpperCase() || null, age: o['возраст'] || null, matches: [], places: [] };
+      // РАЗРЯД РАЗДЕЛА (17.09.2026): «разряд: одиночный|парный|микст». Слово из названия
+      // («Микст до 13», «Мужские пары») тоже считается — секретарю не надо помнить ключ.
+      const discWord = String(o['разряд'] || '').toLowerCase();
+      const mixedByName = /микст|смешан/i.test(title);
+      const pairByName = /\bпар(ы|ный|ные)\b/i.test(title);
+      const discipline = /микст|смешан/.test(discWord) || (!discWord && mixedByName) ? 'mixed'
+        : /пар/.test(discWord) || (!discWord && pairByName) ? 'double'
+        : /одиноч/.test(discWord) ? 'single' : null;
+      cur = { type: kindWord === 'сетка' ? 'bracket' : kindWord === 'группа' ? 'group' : 'pairs', title, sex: (o['пол'] || '').toUpperCase() || null, age: o['возраст'] || null, discipline, matches: [], places: [] };
       t.sections.push(cur); continue;
     }
     if (!cur) throw new ValidationError(`Строка вне раздела: «${line}» — сначала «Сетка:», «Группа:» или «Пары:»`);
@@ -86,22 +102,42 @@ export function parseTournamentText(text) {
     const sm = /^(.*?)(?:\s+((?:\d{1,2}[:\-]\d{1,2}(?:\(\d+\))?[\s/]*)+(?:отказ(?:\s*п\/б)?\s*\d?|отк\.?\s*\d?)?|неявка(?:\s*\d)?|не сыгран(?:о)?|отказ(?:\s*п\/б)?|w\/o))?$/i.exec(tail);
     const b = (sm ? sm[1] : tail).trim(); const scoreRaw = sm && sm[2] ? sm[2].trim() : '';
     if (!b) throw new ValidationError(`Не разобран соперник в строке «${line}»`);
-    if (/^не сыгран/i.test(scoreRaw) || (!scoreRaw && !winner && cur.type !== 'bracket')) { cur.matches.push({ stage, a, b, skipped: true }); continue; }
+    if (/^не сыгран/i.test(scoreRaw) || (!scoreRaw && !winner)) { cur.matches.push({ stage, a, b, skipped: true }); continue; }
     cur.matches.push({ stage, a, b, score: scoreRaw, winner });
   }
-  if (!t.name) throw new ValidationError('Нет строки «Турнир: название»');
-  if (!t.end_date) throw new ValidationError('Нет строки «Даты: ГГГГ-ММ-ДД»');
-  if (!['A', 'B'].includes(t.category)) throw new ValidationError('Категория — A или B');
   if (!t.sections.length) throw new ValidationError('Нет ни одного раздела «Сетка:» / «Группа:» / «Пары:»');
   return t;
 }
 
 const isBye = (s) => /^(x|х|—|-|bye|свободен)$/i.test(String(s).trim());
 
-/** Применение: создаёт турнир (черновик) и всё содержимое одной транзакцией. Возвращает отчёт. */
-export function importTournament(db, text, { userId = null } = {}) {
+/** Переворот сетов: счёт в протоколе пишется с точки зрения ЛЕВОГО игрока строки. */
+function flipSets(s) {
+  return String(s).split(' ').map((x) => { const m = /^(\d{1,2}):(\d{1,2})(\(\d+\))?$/.exec(x); return m ? `${m[2]}:${m[1]}${m[3] || ''}` : x; }).join(' ');
+}
+
+/**
+ * Применение: создаёт турнир (черновиком) ЛИБО дописывает разделы в существующий
+ * (tournamentId), одной транзакцией. Возвращает отчёт.
+ *
+ * ДОЛИВКА (17.09.2026): раздел с тем же названием и разрядом дополняется — уже
+ * записанные пары не трогаются, дописываются недостающие. Так протокол, пришедший
+ * позже (финалы, парные сетки, микст), ложится в тот же турнир, а не в дубль.
+ */
+export function importTournament(db, text, { userId = null, tournamentId = null } = {}) {
   const t = parseTournamentText(text);
-  const report = { players_created: [], warnings: [], sections: [] };
+  let target = null;
+  if (tournamentId) {
+    target = db.prepare('SELECT id, name, city, end_date FROM tournaments WHERE id = ?').get(tournamentId);
+    if (!target) throw new ValidationError('Турнир для дополнения не найден');
+  } else {
+    if (!t.name) throw new ValidationError('Нет строки «Турнир: название»');
+    if (!t.end_date) throw new ValidationError('Нет строки «Даты: ГГГГ-ММ-ДД»');
+    if (!['A', 'B', 'C'].includes(t.category)) throw new ValidationError('Категория — A, B или C');
+  }
+  const city = (target ? target.city : t.city) || t.city || 'Смоленская область';
+  const playedOn = t.end_date || (target ? target.end_date : null);
+  const report = { players_created: [], warnings: [], sections: [], appended: Boolean(tournamentId) };
   // Имена, уже встреченные в ЭТОМ импорте: «Захарян К.» и «Захарян» в поздних кругах — тот же
   // человек, что «Захарян Кристина» в первом. Сначала ищем среди них, потом в базе.
   const seen = new Map(); // normalizeName(полное) → id
@@ -132,13 +168,10 @@ export function importTournament(db, text, { userId = null } = {}) {
     // ВОЗМОЖНЫЙ ДУБЛЬ: в базе есть «Фамилия Имя Отчество», а в протоколе — «Фамилия Имя».
     // Точное сравнение их не связывает, и появляется вторая карточка того же человека.
     // Молча склеивать нельзя (тёзки), поэтому предупреждаем и показываем номер.
-    const prefix = db
-      .prepare('SELECT id, full_name FROM players WHERE anonymized_at IS NULL')
-      .all()
-      .filter((p) => {
-        const n = normalizeName(p.full_name);
-        return n !== key && (n.startsWith(`${key} `) || key.startsWith(`${n} `));
-      });
+    const prefix = all.filter((p) => {
+      const n = normalizeName(p.full_name);
+      return n !== key && (n.startsWith(`${key} `) || key.startsWith(`${n} `));
+    });
     if (prefix.length) {
       report.warnings.push(
         `«${name}»: возможно, это уже заведённый игрок ${prefix.map((p) => `#${p.id} ${p.full_name}`).join(', ')} — сверьте и объедините вручную`,
@@ -157,113 +190,181 @@ export function importTournament(db, text, { userId = null } = {}) {
         report.warnings.push(`«${name}»: пол не определяется по фамилии, записан «мужской» — проверьте в «Игроках»`);
       }
     }
-    const id = Number(db.prepare('INSERT INTO players (full_name, city, sex) VALUES (?, ?, ?)').run(name, t.city || 'Смоленская область', useSex).lastInsertRowid);
+    const id = Number(db.prepare('INSERT INTO players (full_name, city, sex) VALUES (?, ?, ?)').run(name, city, useSex).lastInsertRowid);
     report.players_created.push({ id, name });
     seen.set(key, id);
     return id;
   };
+  /** Как пара записана строкой — для сверки имени победителя в «3 место». */
+  const entrantLabel = (raw) => String(raw).split(/\s*(?:\/|\s+и\s+)\s*/).map((x) => x.trim()).filter(Boolean).join(' / ');
+  /** «Иванов / Петров» → {playerId, partnerId}; одиночный разряд — один игрок. */
+  const entrantOf = (raw, kind, sex) => {
+    const parts = String(raw).split(/\s*(?:\/|\s+и\s+)\s*/).map((x) => x.trim()).filter(Boolean);
+    if (kind === 'double') {
+      if (parts.length !== 2) throw new ValidationError(`Пара записывается как «Фамилия / Фамилия», получено «${String(raw).trim()}»`);
+      return { playerId: findOrCreate(parts[0], sex), partnerId: findOrCreate(parts[1], sex) };
+    }
+    return { playerId: findOrCreate(parts[0], sex), partnerId: null };
+  };
+
   const runAll = db.transaction(() => {
-    const tid = Number(db.prepare('INSERT INTO tournaments (name, start_date, end_date, category, city, kind, venue, organizer, organizer_contact, is_published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)')
+    const tid = target ? target.id : Number(db.prepare('INSERT INTO tournaments (name, start_date, end_date, category, city, kind, venue, organizer, organizer_contact, is_published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)')
       .run(t.name, t.start_date, t.end_date, t.category, t.city || null, /первенств|чемпионат/i.test(t.name) ? 'championship' : 'other', t.venue || null, t.organizer || null, t.judge ? `Главный судья: ${t.judge}` : (t.organizer_contact || null)).lastInsertRowid);
+    const slotAt = (bid, r, pos) => db.prepare('SELECT player_id, partner_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(bid, r, pos) || null;
+    const nameOf = (id) => db.prepare('SELECT full_name FROM players WHERE id = ?').get(id)?.full_name || `#${id}`;
+    const slotLabel = (sl) => (sl ? nameOf(sl.player_id) + (sl.partner_id ? ` / ${nameOf(sl.partner_id)}` : '') : '—');
+
     for (const s of t.sections) {
-      const sec = { title: s.title, type: s.type, matches: 0, places: 0 };
-      // Пол раздела: «X» (микст) НЕ схлопываем в мужской — ниже findOrCreate
-      // определит его по фамилии каждого игрока отдельно.
+      const sec = { title: s.title, type: s.type, matches: 0, places: 0, reused: false };
+      // Пол раздела: «X» (микст) НЕ схлопываем в мужской — findOrCreate определит его
+      // по фамилии каждого игрока отдельно.
       const sex = s.sex === 'F' ? 'F' : s.sex === 'X' ? 'X' : 'M';
+      // Разряд ЗАЧЁТА раздела: «разряд: …» либо название; для «Пары:» по умолчанию парный,
+      // для сеток и групп — одиночный.
+      const disc = s.discipline || (s.type === 'pairs' ? 'double' : 'single');
+      const kind = disc === 'single' ? 'single' : 'double';
+      sec.discipline = disc;
+
       if (s.type === 'group') {
-        const gid = Number(db.prepare('INSERT INTO tournament_groups (tournament_id, name, kind) VALUES (?, ?, ?)').run(tid, s.title.slice(0, 40), 'single').lastInsertRowid);
+        let g = db.prepare('SELECT id, name, kind, discipline FROM tournament_groups WHERE tournament_id = ? AND kind = ?').all(tid, kind)
+          .find((x) => normalizeName(x.name) === normalizeName(s.title));
+        if (g) sec.reused = true;
+        else {
+          const gid = Number(db.prepare('INSERT INTO tournament_groups (tournament_id, name, kind, discipline) VALUES (?, ?, ?, ?)').run(tid, s.title.slice(0, 40), kind, disc).lastInsertRowid);
+          g = { id: gid, name: s.title, kind, discipline: disc };
+        }
         const members = new Map();
-        const memberId = (n) => { if (!members.has(n)) { const id = findOrCreate(n, sex); members.set(n, id); db.prepare('INSERT OR IGNORE INTO tournament_group_members (group_id, player_id, seed) VALUES (?, ?, ?)').run(gid, id, members.size + 1); } return members.get(n); };
+        const memberId = (n) => {
+          if (!members.has(n)) {
+            const e = entrantOf(n, kind, sex); members.set(n, e);
+            db.prepare('INSERT OR IGNORE INTO tournament_group_members (group_id, player_id, seed) VALUES (?, ?, ?)').run(g.id, e.playerId, members.size + 1);
+            if (e.partnerId) db.prepare('INSERT OR IGNORE INTO tournament_group_members (group_id, player_id, seed) VALUES (?, ?, ?)').run(g.id, e.partnerId, members.size + 1);
+          }
+          return members.get(n);
+        };
         for (const m of s.matches) {
           const a = memberId(m.a); const b = memberId(m.b);
           if (m.skipped) continue;
-          const sc = normScore(m.score) || (m.winner ? 'неявка 2' : '');
+          const sc = normScore(m.score);
           let parsed; try { parsed = parseScore(sc); } catch (e) { throw new ValidationError(`${s.title}: ${m.a} — ${m.b}: ${e.message}`); }
           const rowWon = m.winner ? normalizeName(m.winner) === normalizeName(m.a) || (!/\s/.test(normalizeName(m.winner)) && normalizeName(m.a).split(' ')[0] === normalizeName(m.winner)) : parsed.rowWon;
           const w = rowWon ? a : b; const l = rowWon ? b : a;
-          const score = rowWon === parsed.rowWon ? parsed.score : parseScore(sc.split(' ').map((x) => { const mm = /^(\d+):(\d+)(\(\d+\))?$/.exec(x); return mm ? `${mm[2]}:${mm[1]}${mm[3] || ''}` : x; }).join(' ')).score;
-          db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage, played_on) VALUES (?, ?, ?, ?, ?, ?, ?)').run(tid, w, l, score, 'single', `g:${gid}`, t.end_date);
+          const score = rowWon === parsed.rowWon ? parsed.score : parseScore(flipSets(sc)).score;
+          if (db.prepare('SELECT 1 FROM matches WHERE tournament_id = ? AND stage = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))').get(tid, `g:${g.id}`, w.playerId, l.playerId, l.playerId, w.playerId)) continue;
+          db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage, winner_partner_id, loser_partner_id, played_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+            .run(tid, w.playerId, l.playerId, score, kind, `g:${g.id}`, w.partnerId, l.partnerId, playedOn);
           sec.matches++;
         }
       } else if (s.type === 'bracket') {
         const rounds = s.matches.filter((m) => m.stage && ROUND_OF[m.stage]);
         const first = rounds.length ? Math.max(...rounds.map((m) => ROUND_OF[m.stage])) : 0;
-        if (!first) throw new ValidationError(`${s.title}: в сетке нет строк «1/4:», «1/2:», «Финал:»`);
-        const size = first;
-        const bid = Number(db.prepare('INSERT INTO tournament_brackets (tournament_id, name, kind, size) VALUES (?, ?, ?, ?)').run(tid, s.title.slice(0, 40), 'single', size).lastInsertRowid);
-        // Раунд 0 — пары первого круга по порядку строк
-        const firstRound = s.matches.filter((m) => m.stage && ROUND_OF[m.stage] === size);
-        const nameId = new Map();
-        const pid = (n) => { if (isBye(n)) return null; if (!nameId.has(n)) nameId.set(n, findOrCreate(n, sex)); return nameId.get(n); };
-        firstRound.forEach((m, k) => {
-          const a = pid(m.a); const b = pid(m.b);
-          if (a) db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, 0, ?, ?)').run(bid, 2 * k, a);
-          if (b) db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, 0, ?, ?)').run(bid, 2 * k + 1, b);
-        });
+        let b = db.prepare('SELECT id, name, kind, discipline, size FROM tournament_brackets WHERE tournament_id = ? AND kind = ?').all(tid, kind)
+          .find((x) => normalizeName(x.name) === normalizeName(s.title));
+        if (b) sec.reused = true;
+        else {
+          if (!first) throw new ValidationError(`${s.title}: в сетке нет строк «1/4:», «1/2:», «Финал:»`);
+          const bid = Number(db.prepare('INSERT INTO tournament_brackets (tournament_id, name, kind, discipline, size) VALUES (?, ?, ?, ?, ?)').run(tid, s.title.slice(0, 40), kind, disc, first).lastInsertRowid);
+          b = { id: bid, name: s.title, kind, discipline: disc, size: first };
+        }
+        const size = b.size;
+        if (first && first > size) throw new ValidationError(`${s.title}: сетка на сайте на ${size}, а в протоколе круг на ${first}`);
         const R = Math.log2(size);
+        // ПОСЕВ первого круга — по порядку строк первого круга протокола. Занятый слот
+        // сверяется: расхождение — стоп, чтобы доливка не перекроила чужую сетку.
+        const firstRound = s.matches.filter((m) => m.stage && ROUND_OF[m.stage] === size);
+        const putSlot = (pos, raw) => {
+          if (isBye(raw)) return;
+          const e = entrantOf(raw, kind, sex);
+          const have = slotAt(b.id, 0, pos);
+          if (have) {
+            if (have.player_id !== e.playerId || (have.partner_id || null) !== (e.partnerId || null)) {
+              throw new ValidationError(`${s.title}: позиция ${pos + 1} занята — на сайте «${slotLabel(have)}», в протоколе «${raw}»`);
+            }
+            return;
+          }
+          if (db.prepare('SELECT 1 FROM bracket_slots WHERE bracket_id = ? AND (player_id = ? OR partner_id = ?)').get(b.id, e.playerId, e.playerId)) return;
+          db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id, partner_id) VALUES (?, 0, ?, ?, ?)').run(b.id, pos, e.playerId, e.partnerId);
+        };
+        firstRound.forEach((m, k) => { putSlot(2 * k, m.a); putSlot(2 * k + 1, m.b); });
+        // Свободная позиция первого круга: единственный игрок пары проходит дальше.
+        for (let k = 0; k < size / 2; k++) {
+          const a = slotAt(b.id, 0, 2 * k); const c = slotAt(b.id, 0, 2 * k + 1);
+          if (((a ? 1 : 0) + (c ? 1 : 0)) === 1 && !slotAt(b.id, 1, k)) {
+            const who = a || c;
+            db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id, partner_id) VALUES (?, 1, ?, ?, ?)').run(b.id, k, who.player_id, who.partner_id);
+          }
+        }
+        // МАТЧИ по кругам: пара ищется по тем, кто реально стоит в слотах.
         for (let r = 0; r < R; r++) {
           const roundMatches = s.matches.filter((m) => m.stage && ROUND_OF[m.stage] === size / 2 ** r);
-          const pairsN = size / 2 ** (r + 1);
-          for (let k = 0; k < pairsN; k++) {
-            const a = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(bid, r, 2 * k)?.player_id || null;
-            const b = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(bid, r, 2 * k + 1)?.player_id || null;
-            if (!a && !b) continue;
-            if (!a || !b) {
-              // Свободная позиция — только в первом круге (bye). Дальше пустой слот = недоигранная пара
-              // предыдущего круга: никого не продвигаем, иначе игрок «выиграет» несыгранный матч.
-              if (r === 0) db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, ?, ?, ?)').run(bid, r + 1, k, a || b);
-              else report.warnings.push(`${s.title}: круг ${r + 1}, пара ${k + 1} — соперник не определён (предыдущая пара не сыграна)`);
-              continue;
-            }
-            const m = roundMatches.find((x) => { const ids = [pid(x.a), pid(x.b)]; return ids.includes(a) && ids.includes(b); });
+          for (let k = 0; k < size / 2 ** (r + 1); k++) {
+            const A = slotAt(b.id, r, 2 * k); const C = slotAt(b.id, r, 2 * k + 1);
+            if (!A && !C) continue;
+            if (!A || !C) { if (r > 0) report.warnings.push(`${s.title}: круг ${r + 1}, пара ${k + 1} — соперник не определён (предыдущая пара не сыграна)`); continue; }
+            if (slotAt(b.id, r + 1, k)) continue; // итог уже записан — доливка его не трогает
+            const m = roundMatches.find((x) => {
+              const ids = [x.a, x.b].filter((n) => !isBye(n)).map((n) => entrantOf(n, kind, sex).playerId);
+              return ids.includes(A.player_id) && ids.includes(C.player_id);
+            });
             if (!m || m.skipped) { report.warnings.push(`${s.title}: пара ${r === R - 1 ? 'финала' : 'круга ' + (r + 1)} не сыграна — сетка оставлена открытой`); continue; }
-            const sc = normScore(m.score) || 'неявка 2';
-            const aIsTop = pid(m.a) === a;
-            let parsed; try { parsed = parseScore(sc); } catch (e) { throw new ValidationError(`${s.title}: ${m.a} — ${m.b}: ${e.message}`); }
-            let winnerId = m.winner ? pid(m.winner) : (parsed.rowWon ? pid(m.a) : pid(m.b));
-            if (![a, b].includes(winnerId)) throw new ValidationError(`${s.title}: победитель «${m.winner}» не из пары ${m.a} — ${m.b}`);
-            const loserId = winnerId === a ? b : a;
-            // счёт хранится от победителя: parsed.score уже «от победителя строки m.a»; если победитель m.b — перевернуть
-            const winnerIsA = winnerId === pid(m.a);
-            const score = (winnerIsA === parsed.rowWon) ? parsed.score : parseScore(sc.split(' ').map((x) => { const mm = /^(\d+):(\d+)(\(\d+\))?$/.exec(x); return mm ? `${mm[2]}:${mm[1]}${mm[3] || ''}` : x; }).join(' ')).score;
-            db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage, played_on) VALUES (?, ?, ?, ?, ?, ?, ?)').run(tid, winnerId, loserId, score, 'single', `b:${bid}`, t.end_date);
-            db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id) VALUES (?, ?, ?, ?)').run(bid, r + 1, k, winnerId);
+            const aId = isBye(m.a) ? null : entrantOf(m.a, kind, sex).playerId;
+            const sc = normScore(m.score);
+            let parsed = null;
+            if (sc) { try { parsed = parseScore(sc); } catch (e) { throw new ValidationError(`${s.title}: ${m.a} — ${m.b}: ${e.message}`); } }
+            // Победитель — из «→», иначе по счёту. Счёт в строке — с точки зрения ЛЕВОГО
+            // участника, поэтому «6:4 5:2 отказ → Костылев» значит «вёл, но снялся».
+            const winnerId = m.winner ? entrantOf(m.winner, kind, sex).playerId : (parsed ? (parsed.rowWon ? aId : (aId === A.player_id ? C.player_id : A.player_id)) : null);
+            if (!winnerId || ![A.player_id, C.player_id].includes(winnerId)) throw new ValidationError(`${s.title}: не понял, кто выиграл пару ${m.a} — ${m.b}`);
+            const W = winnerId === A.player_id ? A : C;
+            const L = W === A ? C : A;
+            // Счёт хранится ОТ ПОБЕДИТЕЛЯ: если победил не левый — переворачиваем сеты.
+            const winnerIsA = winnerId === aId;
+            const score = parsed ? ((winnerIsA === parsed.rowWon) ? parsed.score : parseScore(flipSets(sc)).score) : null;
+            if (!score) report.warnings.push(`${s.title}: ${m.a} — ${m.b}: счёта в протоколе нет, записан только победитель`);
+            db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage, winner_partner_id, loser_partner_id, played_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+              .run(tid, W.player_id, L.player_id, score, kind, `b:${b.id}`, W.partner_id, L.partner_id, playedOn);
+            db.prepare('INSERT INTO bracket_slots (bracket_id, round, position, player_id, partner_id) VALUES (?, ?, ?, ?, ?)').run(b.id, r + 1, k, W.player_id, W.partner_id);
             sec.matches++;
           }
         }
-        // Матч за 3 место — отдельный матч, места 3/4
-        const third = s.matches.find((m) => m.stage === '3 место');
-        const champion = db.prepare('SELECT player_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = 0').get(bid, R)?.player_id;
-        if (champion) {
-          const rows = db.prepare('SELECT round, player_id FROM bracket_slots WHERE bracket_id = ?').all(bid);
-          const maxRound = new Map(); for (const x of rows) maxRound.set(x.player_id, Math.max(maxRound.get(x.player_id) ?? -1, x.round));
-          const ins = db.prepare('INSERT OR REPLACE INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
-          for (const [p, mr] of maxRound) { const lost = R - 1 - mr; ins.run(tid, p, p === champion ? 1 : lost === 0 ? 2 : 2 ** lost + 1, 'single'); sec.places++; }
-          if (third && !third.skipped) {
-            const a = pid(third.a); const b = pid(third.b); const sc = normScore(third.score) || 'неявка 2';
-            const parsed = parseScore(sc); const winnerId = third.winner ? pid(third.winner) : (parsed.rowWon ? a : b); const loserId = winnerId === a ? b : a;
-            const winnerIsA = winnerId === a;
-            const score = (winnerIsA === parsed.rowWon) ? parsed.score : parseScore(sc.split(' ').map((x) => { const mm = /^(\d+):(\d+)(\(\d+\))?$/.exec(x); return mm ? `${mm[2]}:${mm[1]}${mm[3] || ''}` : x; }).join(' ')).score;
-            db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage, played_on) VALUES (?, ?, ?, ?, ?, ?, ?)').run(tid, winnerId, loserId, score, 'single', 'manual', t.end_date);
-            ins.run(tid, winnerId, 3, 'single'); ins.run(tid, loserId, 4, 'single'); sec.matches++;
+        // МЕСТА: только при сыгранном финале. Матч за 3 место — отдельным матчем, места 3/4.
+        const champion = slotAt(b.id, R, 0);
+        const third = s.matches.find((m) => m.stage === '3 место' && !m.skipped);
+        // Пересчитываем места, только если раздел что-то внёс либо мест ещё нет: повторная
+        // доливка того же текста не должна перетирать 3/4, расставленные матчем за 3 место.
+        const hadPlaces = db.prepare('SELECT COUNT(*) AS n FROM results WHERE tournament_id = ? AND discipline = ? AND player_id IN (SELECT player_id FROM bracket_slots WHERE bracket_id = ?)').get(tid, disc, b.id).n;
+        if (champion && (sec.matches > 0 || !hadPlaces)) {
+          sec.places += bracketPlaces(db, tid, b.id);
+          if (third) {
+            // Победитель — из «→», иначе по счёту (слева победитель, как в остальных строках).
+            const thirdScore = normScore(third.score);
+            const aWon = third.winner
+              ? normalizeName(third.winner) === normalizeName(third.a) || normalizeName(entrantLabel(third.a)) === normalizeName(third.winner)
+              : (thirdScore ? parseScore(thirdScore).rowWon : true);
+            const W = entrantOf(aWon ? third.a : third.b, kind, sex);
+            const L = entrantOf(aWon ? third.b : third.a, kind, sex);
+            const sc = thirdScore ? (aWon === (parseScore(thirdScore).rowWon) ? parseScore(thirdScore).score : parseScore(flipSets(thirdScore)).score) : null;
+            const already = db.prepare("SELECT 1 FROM matches WHERE tournament_id = ? AND stage = 'manual' AND kind = ? AND ((winner_player_id = ? AND loser_player_id = ?) OR (winner_player_id = ? AND loser_player_id = ?))").get(tid, kind, W.playerId, L.playerId, L.playerId, W.playerId);
+            if (!already) {
+              db.prepare('INSERT INTO matches (tournament_id, winner_player_id, loser_player_id, score, kind, stage, winner_partner_id, loser_partner_id, played_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+                .run(tid, W.playerId, L.playerId, sc, kind, 'manual', W.partnerId, L.partnerId, playedOn);
+              sec.matches++;
+            }
+            const put = db.prepare('INSERT OR REPLACE INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
+            const wipe = db.prepare('DELETE FROM results WHERE tournament_id = ? AND player_id = ? AND discipline = ?');
+            for (const id of [W.playerId, W.partnerId].filter(Boolean)) { wipe.run(tid, id, disc); put.run(tid, id, 3, disc); sec.places++; }
+            for (const id of [L.playerId, L.partnerId].filter(Boolean)) { wipe.run(tid, id, disc); put.run(tid, id, 4, disc); sec.places++; }
           }
         } else if (s.places.length) {
-          // Финал не в протоколе, но итог известен (например, из публикации) — места из строки «Итог:».
+          // Финал не в протоколе, но итог известен (например, из публикации) — места из «Итог:».
           const ins = db.prepare('INSERT OR REPLACE INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
-          for (const pl of s.places) { ins.run(tid, findOrCreate(pl.who, sex), pl.place, 'single'); sec.places++; }
+          for (const pl of s.places) for (const n of pl.who.split('/').map((x) => x.trim()).filter(Boolean)) { ins.run(tid, findOrCreate(n, sex), pl.place, disc); sec.places++; }
           report.warnings.push(`${s.title}: финал не сыгран в протоколе — места взяты из строки «Итог»`);
         } else report.warnings.push(`${s.title}: финал не сыгран — места не записаны`);
-      } else { // pairs — только места
+      } else { // pairs — только итоговые места
         const ins = db.prepare('INSERT OR REPLACE INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
-        // МИКСТ — ОТДЕЛЬНАЯ ДИСЦИПЛИНА (08.09.2026). Раньше он писался как 'double',
-        // и у того, кто играл в турнире и пары, и микст, одно место молча пропадало:
-        // UNIQUE (турнир, игрок, дисциплина) допускает одну запись, а INSERT OR REPLACE
-        // перетирал прежнюю без предупреждения. Признаём микст по полу «X» или по
-        // названию раздела.
-        const isMixed = sex === 'X' || /микст|смешан/i.test(s.title || '');
-        const kind = isMixed ? 'mixed' : 'double';
         for (const pl of s.places) {
-          for (const n of pl.who.split('/').map((x) => x.trim()).filter(Boolean)) { ins.run(tid, findOrCreate(n, sex), pl.place, kind); sec.places++; }
+          for (const n of pl.who.split('/').map((x) => x.trim()).filter(Boolean)) { ins.run(tid, findOrCreate(n, sex), pl.place, disc); sec.places++; }
         }
         if (!s.places.length) report.warnings.push(`${s.title}: для парного разряда нужна строка «Итог: 1 А/Б, 2 В/Г …»`);
       }
@@ -271,6 +372,6 @@ export function importTournament(db, text, { userId = null } = {}) {
     }
     return tid;
   });
-  const tournamentId = runAll();
-  return { tournamentId, ...report, players_created_count: report.players_created.length };
+  const tid = runAll();
+  return { tournamentId: tid, ...report, players_created_count: report.players_created.length };
 }

@@ -8,12 +8,12 @@
 
   <% if (report && report.error) { %><div class="flash flash--error"><%= report.error %></div><% } %>
   <% if (report && report.tournamentId) { %>
-    <div class="flash flash--ok">Турнир заведён черновиком (#<%= report.tournamentId %>): разделов <%= report.sections.length %>, новых записей игроков <%= report.players_created_count %> (только результаты — без кабинета и контактов; основание публикации — участие в соревнованиях).
+    <div class="flash flash--ok"><%= report.appended ? 'Дописано в турнир' : 'Турнир заведён черновиком' %> (#<%= report.tournamentId %>): разделов <%= report.sections.length %>, новых записей игроков <%= report.players_created_count %> (только результаты — без кабинета и контактов; основание публикации — участие в соревнованиях).
       <a href="/admin/tournaments/<%= report.tournamentId %>/results">Открыть результаты</a> · <a href="/admin/tournaments">Список турниров</a></div>
     <div class="panel">
       <h2>Что сделано</h2>
       <ul class="search-list">
-        <% report.sections.forEach(function (s) { %><li><%= s.title %> — <%= s.type === 'bracket' ? 'сетка' : s.type === 'group' ? 'группа' : 'пары' %>: матчей <%= s.matches %>, мест <%= s.places %></li><% }); %>
+        <% report.sections.forEach(function (s) { %><li><%= s.title %> — <%= s.type === 'bracket' ? 'сетка' : s.type === 'group' ? 'группа' : 'пары' %><%= s.discipline === 'mixed' ? ', микст' : s.discipline === 'double' ? ', парный' : '' %><%= s.reused ? ' (дополнена)' : '' %>: матчей <%= s.matches %>, мест <%= s.places %></li><% }); %>
       </ul>
       <% if (report.players_created.length) { %>
         <h3>Новые записи игроков — дозаполните имя, пол, город и дату рождения в «Игроках»</h3>
@@ -29,9 +29,18 @@
   <% } %>
 
   <div class="panel">
-    <p class="muted">Переписанный протокол простым текстом. Незнакомые фамилии заводятся как записи игроков — результаты и место в рейтинге, без кабинета и контактов (пол — по разделу, город — турнира, дата рождения — пустая). Ничего не пишется, пока весь текст не разобран.</p>
+    <p class="muted">Переписанный протокол простым текстом. Можно завести новый турнир или дописать разделы в существующий — например, доигранные финалы, парные сетки и микст. Незнакомые фамилии заводятся как записи игроков — результаты и место в рейтинге, без кабинета и контактов (пол — по разделу, город — турнира, дата рождения — пустая). Ничего не пишется, пока весь текст не разобран.</p>
     <form method="post" action="/admin/tournaments/import" class="stacked-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field">
+        <label for="imp-into">Куда</label>
+        <select id="imp-into" name="into">
+          <option value="">Новый турнир — завести черновиком</option>
+          <% (targets || []).forEach(function (t) { %>
+            <option value="<%= t.id %>"<%= String(into) === String(t.id) ? ' selected' : '' %>>Дописать в #<%= t.id %> — <%= t.name %><%= t.end_date ? ' (' + t.end_date + ')' : '' %></option>
+          <% }); %>
+        </select>
+      </div>
       <div class="field">
         <label for="imp-text">Текст протокола</label>
         <textarea id="imp-text" name="text" rows="18" maxlength="60000" required placeholder="Турнир: Первенство области среди ветеранов
@@ -52,7 +61,7 @@
 Пары: Мужские пары | пол: M
 Итог: 1 Ермаков/Пестов, 2 Акаев/Груздин, 3 Антонов/Строков"><%= text %></textarea>
       </div>
-      <button class="btn btn--primary" type="submit">Завести турнир черновиком</button>
+      <button class="btn btn--primary" type="submit">Разобрать протокол</button>
     </form>
     <details><summary>Правила текста</summary>
       <ul>
@@ -60,6 +69,9 @@
         <li><code>Сетка: название | пол: M/F | возраст: …</code> — олимпийка; строки <code>1/8:</code>, <code>1/4:</code>, <code>1/2:</code>, <code>Финал:</code>, <code>3 место:</code>. Пара: <code>А — Б 6:3/6:1 → победитель</code>; <code>X</code> — свободен. Несыгранная пара оставляет сетку открытой.</li>
         <li><code>Группа: название | пол: …</code> — круговая; строки <code>А — Б 6:3/6:4</code> (слева победитель, если нет «→»); <code>не сыгран</code> пропускается.</li>
         <li><code>Пары: название | пол: …</code> — парный разряд, только <code>Итог: 1 А/Б, 2 В/Г, 3 Д/Е</code>.</li>
+        <li><code>разряд: одиночный | парный | микст</code> у любого раздела (можно не писать, если это видно из названия: «Микст до 13», «Мужские пары»). В парной и микстовой сетке участник — пара: <code>1/2: Захарян / Акаев — Андреев / Фролович 6:0/6:0 → Захарян / Акаев</code>. Места микста идут в свой зачёт, а не в парный.</li>
+        <li>Счёта может не быть: <code>Финал: А / Б — В / Г → А / Б</code> запишет победителя без счёта (раньше такая строка превращалась в «неявку»).</li>
+        <li><b>Куда</b>: «Новый турнир» заводит черновик; выбор существующего — дописывает в него. Раздел с тем же названием и разрядом дополняется, уже записанные пары не трогаются.</li>
         <li>Счёт: сеты через «/» или пробел, «7:6(5)», «6:4/5:2 отказ» (снялся проигравший), «неявка».</li>
       </ul>
     </details>
