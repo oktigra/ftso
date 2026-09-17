@@ -2456,6 +2456,21 @@ await check('протокол секретаря: пустая сетка в PDF
   return 'пустая сетка с «счёт: ____»; протокол 5 пар с ключами; заливка записала 3+1 матч, -wo продвинул B; повтор без дублей; следующий протокол — оставшиеся пары; чужой файл отбит';
 });
 
+await check('карточка турнира: без организатора не печатается пустая подпись «Организатор:»', async () => {
+  // Замер боем 17.09.2026: у турнира с пустым организатором и контактом «Главный судья: …»
+  // выходило «Организатор: Главный судья: Н. Груздин».
+  const id = db.prepare("INSERT INTO tournaments (name, end_date, category, organizer_contact, is_published) VALUES ('Судейский кубок', '2026-06-01', 'B', 'Главный судья: Тестов Т.Т.', 1)").run().lastInsertRowid;
+  const page = await http(`/tournaments/${id}`);
+  eq(page.status, 200, 'карточка турнира');
+  assert(/Главный судья: Тестов Т\.Т\./.test(page.text), 'контакт судьи должен быть виден');
+  assert(!/Организатор:\s*Главный судья/.test(page.text), 'подпись «Организатор:» не должна печататься перед судьёй при пустом организаторе');
+  db.prepare("UPDATE tournaments SET organizer = 'ТК «Алпина»' WHERE id = ?").run(id);
+  const withOrg = await http(`/tournaments/${id}`);
+  assert(/Организатор: ТК «Алпина» · Главный судья: Тестов Т\.Т\./.test(withOrg.text), 'с организатором подпись и контакт печатаются вместе');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(id);
+  return 'пустой организатор — печатается только контакт судьи; заполненный — «Организатор: … · Главный судья: …»';
+});
+
 await check('форма турнира: черновик / опубликовать / снять; черновик не виден в календаре, на витрине, в sitemap и в рейтинге; возраст из списка и вручную', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const page = await http('/admin/tournaments', { jar });
