@@ -9,7 +9,7 @@ import { mountTournamentSheets } from '../lib/tournament-sheet-routes.mjs';
 import { protocolKeyFromLabel } from '../lib/tournament-export.mjs';
 import { postInBackground } from '../lib/max-post.mjs';
 import { importTournament } from '../lib/tournament-import.mjs';
-import { assertAgeAllowed, AGE_LIMIT_PRESETS } from '../lib/age.mjs';
+import { assertAgeAllowed, AGE_LIMIT_PRESETS, ageRangeLabel } from '../lib/age.mjs';
 import { devNoticeMode, devNoticeOn } from '../app.mjs';
 import { ERASED_LABEL } from '../lib/rating-service.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
@@ -613,6 +613,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       title: 'Заявки на турниры — админка ФТСО',
       pending: pendingRequests(db).map((r) => ({ ...r, files: requestFiles(db, r.id) })),
       decided: decidedRequests(db),
+      ageRangeLabel,
     });
   });
 

@@ -9,6 +9,7 @@
 // движок рейтинга из файлов не считает и считать не должен.
 import { randomBytes } from 'node:crypto';
 import { storeUpload, deleteUpload } from './uploads.mjs';
+import { ageRangeLabel } from './age.mjs';
 import { recordConsent } from './consent-journal.mjs';
 
 export function byToken(db, token) {
@@ -54,8 +55,8 @@ export function createRequest(db, { fields, uploads, ip }) {
     const info = db
       .prepare(
         `INSERT INTO tournament_requests
-           (name, city, end_date, category, organizer, email, phone, comment, status_token, ip)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (name, city, end_date, category, organizer, email, phone, comment, age_min, age_max, status_token, ip)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         fields.name,
@@ -66,6 +67,8 @@ export function createRequest(db, { fields, uploads, ip }) {
         fields.email,
         fields.phone,
         fields.comment,
+        fields.age_min ?? null,
+        fields.age_max ?? null,
         token,
         ip || null,
       );
@@ -100,8 +103,10 @@ export function approveRequest(db, requestId, { userId = null } = {}) {
     const tournamentId = Number(
       db
         // Организатор и контакт из заявки — в карточку турнира (ТЗ 4.3 «контакт организатора»).
-        .prepare('INSERT INTO tournaments (name, end_date, category, city, organizer, organizer_contact) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(req.name, req.end_date, req.category, req.city, req.organizer, [req.email, req.phone].filter(Boolean).join(', ')).lastInsertRowid,
+        // Возрастное ограничение заявки переезжает в турнир вместе с подписью: с этого
+        // момента оно не пожелание организатора, а проверка при вводе участников.
+        .prepare('INSERT INTO tournaments (name, end_date, category, city, organizer, organizer_contact, age_min, age_max, age_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(req.name, req.end_date, req.category, req.city, req.organizer, [req.email, req.phone].filter(Boolean).join(', '), req.age_min ?? null, req.age_max ?? null, ageRangeLabel(req.age_min, req.age_max)).lastInsertRowid,
     );
     db.prepare(
       "UPDATE tournament_requests SET status = 'approved', tournament_id = ?, decided_by = ?, decided_at = datetime('now') WHERE id = ?",
