@@ -13,7 +13,7 @@
     <div class="panel">
       <h2>Что сделано</h2>
       <ul class="search-list">
-        <% report.sections.forEach(function (s) { %><li><%= s.title %> — <%= s.type === 'bracket' ? 'сетка' : s.type === 'group' ? 'группа' : 'пары' %><%= s.discipline === 'mixed' ? ', микст' : s.discipline === 'double' ? ', парный' : '' %><%= s.reused ? ' (дополнена)' : '' %>: матчей <%= s.matches %>, мест <%= s.places %></li><% }); %>
+        <% report.sections.forEach(function (s) { %><li><%= s.title %> — <%= s.type === 'bracket' ? 'сетка' : s.type === 'group' ? 'группа' : 'пары' %><%= s.discipline === 'mixed' ? ', микст' : s.discipline === 'double' ? ', парный' : '' %><%= s.reused ? ' (дополнена)' : '' %>: матчей <%= s.matches %><%= s.fixed ? ', исправлено ' + s.fixed : '' %>, мест <%= s.places %></li><% }); %>
       </ul>
       <% if (report.players_created.length) { %>
         <h3>Новые записи игроков — дозаполните имя, пол, город и дату рождения в «Игроках»</h3>
@@ -40,6 +40,10 @@
             <option value="<%= t.id %>"<%= String(into) === String(t.id) ? ' selected' : '' %>>Дописать в #<%= t.id %> — <%= t.name %><%= t.end_date ? ' (' + t.end_date + ')' : '' %></option>
           <% }); %>
         </select>
+      </div>
+      <div class="field">
+        <label class="checkbox"><input type="checkbox" name="overwrite" value="1"<%= overwrite ? ' checked' : '' %>> Протокол главнее: переписать уже записанные пары, если счёт расходится</label>
+        <p class="field-hint">Без отметки записанные итоги не трогаются, расхождения показываются в «Внимание». С отметкой итог пары отменяется и пишется заново из протокола — вместе с продвижением по сетке.</p>
       </div>
       <div class="field">
         <label for="imp-text">Текст протокола</label>

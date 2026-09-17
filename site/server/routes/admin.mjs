@@ -717,7 +717,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
   // Список турниров для выбора «дописать в существующий» (17.09.2026).
   const importTargets = () => db.prepare('SELECT id, name, start_date, end_date FROM tournaments ORDER BY COALESCE(end_date, start_date) DESC, id DESC LIMIT 100').all();
   app.get('/admin/tournaments/import', requireRole(...DATA_ROLES), (req, res) => {
-    res.render('admin/tournament-import', { title: 'Импорт турнира из текста — админка ФТСО', report: null, text: '', targets: importTargets(), into: '' });
+    res.render('admin/tournament-import', { title: 'Импорт турнира из текста — админка ФТСО', report: null, text: '', targets: importTargets(), into: '', overwrite: false });
   });
   app.post(
     '/admin/tournaments/import',
@@ -726,12 +726,13 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     (req, res, next) => {
       const text = String(req.body.text || '').slice(0, 60000);
       const into = /^\d+$/.test(String(req.body.into || '')) ? Number(req.body.into) : null;
+      const overwrite = req.body.overwrite === '1';
       try {
-        const report = importTournament(db, text, { userId: actorId(req), tournamentId: into });
-        logAction(db, actorId(req), report.appended ? 'tournament.import.append' : 'tournament.import', report.tournamentId, { sections: report.sections.length, players: report.players_created_count, warnings: report.warnings.length });
-        res.render('admin/tournament-import', { title: 'Импорт турнира — готово — админка ФТСО', report, text, targets: importTargets(), into: into || '' });
+        const report = importTournament(db, text, { userId: actorId(req), tournamentId: into, overwrite });
+        logAction(db, actorId(req), report.appended ? 'tournament.import.append' : 'tournament.import', report.tournamentId, { sections: report.sections.length, players: report.players_created_count, warnings: report.warnings.length, fixed: report.sections.reduce((n, x) => n + (x.fixed || 0), 0), overwrite });
+        res.render('admin/tournament-import', { title: 'Импорт турнира — готово — админка ФТСО', report, text, targets: importTargets(), into: into || '', overwrite });
       } catch (err) {
-        if (err instanceof ValidationError) return res.status(400).render('admin/tournament-import', { title: 'Импорт турнира — ошибка — админка ФТСО', report: { error: err.message }, text, targets: importTargets(), into: into || '' });
+        if (err instanceof ValidationError) return res.status(400).render('admin/tournament-import', { title: 'Импорт турнира — ошибка — админка ФТСО', report: { error: err.message }, text, targets: importTargets(), into: into || '', overwrite });
         return next(err);
       }
     },
