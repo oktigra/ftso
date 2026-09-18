@@ -1312,3 +1312,11 @@ tbody tr:hover td.t-actions{background:var(--surface-2);}
 .donate__tabs{display:flex; gap:.5rem; flex-wrap:wrap; margin:0 0 1.25rem;}
 .dues-form{display:flex; flex-direction:column; gap:.9rem; text-align:left; margin-bottom:1rem;}
 .dues-form .field-hint{font-size:.8rem;}
+
+/* Объединение карточек игрока — свёрнуто в кнопку, раскрывается формой (19.09.2026). */
+.merge-box{display:inline-block; vertical-align:middle;}
+.merge-box summary{list-style:none; cursor:pointer; display:inline-flex;}
+.merge-box summary::-webkit-details-marker{display:none;}
+.merge-box[open] summary{display:none;}
+.merge-box .inline-form{display:inline-flex; gap:.35rem; align-items:center; flex-wrap:wrap;}
+.merge-box input{min-width:16rem;}

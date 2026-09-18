@@ -156,9 +156,20 @@ export function personName(body, { prefix = '', field = 'ФИО', requireFirst =
     // ни пол, ни город, пока секретарь не найдёт имя в бумагах.
     const first = str(body[key('first_name')], `${field}: имя`, { max: 60, required: requireFirst });
     const middle = str(body[key('middle_name')], `${field}: отчество`, { max: 60, required: false });
-    return [last, first, middle].filter(Boolean).join(' ');
+    return [last, first, middle].filter(Boolean).map(titleCase).join(' ');
   }
-  return str(body[key('full_name')], field, { max: 120 });
+  return str(body[key('full_name')], field, { max: 120 }).split(/\s+/).map(titleCase).join(' ');
+}
+
+/**
+ * Регистр ФИО и города (19.09.2026): «коротков олег» из формы завёл дубль к «Коротков
+ * Олег Александрович» и не нашёлся поиском. Заглавная — первая буква каждой части
+ * (Петров-Водкин, д'Артаньян), остальное как есть, если слово не набрано капсом целиком.
+ */
+export function titleCase(word) {
+  const w = String(word || '');
+  const lower = w === w.toUpperCase() ? w.toLowerCase() : w;
+  return lower.replace(/(^|[-'’ ])(\p{L})/gu, (m, sep, ch) => sep + ch.toUpperCase());
 }
 
 /** Обратно: «Фамилия Имя Отчество» → { last, first, middle } для полей формы. */
@@ -248,7 +259,7 @@ export function email(value, field = 'E-mail', { required = true } = {}) {
 export function registrationInput(body) {
   const base = {
     full_name: personName(body),
-    city: str(body.city, 'Город', { max: 80 }),
+    city: str(body.city, 'Город', { max: 80 }).split(/\s+/).map(titleCase).join(' '),
     sex: oneOf(body.sex, 'Пол', SEXES),
     // Возрастная группа НЕ вводится: считается от даты рождения (решение федерации 23.08).
     age_group: null,

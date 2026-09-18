@@ -4231,6 +4231,48 @@ await check('пожертвования и членский взнос: QR по 
   return 'без реквизитов 404 и без ссылки; с реквизитами страница, ссылка в подвале, строка ST00012 со всеми полями и Sum в копейках, QR прочитан jsQR; взнос: QR собран в браузере с ФИО и годом, ФИО на сервер не ушло';
 });
 
+await check('дубль карточки: заявка без отчества видна как двойник, регистр ФИО выправлен, «Объединить» переносит всё на настоящую карточку и удаляет дубль', async () => {
+  // Бой 19.09.2026: «коротков олег» из формы одобрен новым игроком #111, кабинет повис на нём,
+  // результаты остались на #2. Здесь тот же сценарий от начала до конца.
+  const { registrationInput } = await import('./server/lib/validate.mjs');
+  const { findNameMatches } = await import('./server/lib/registrations.mjs');
+  const real = db.prepare("INSERT INTO players (full_name, city, sex, birth_date) VALUES ('Дублёв Олег Александрович', 'Смоленск', 'M', '1967-03-28')").run().lastInsertRowid;
+  const t = db.prepare('SELECT id FROM tournaments ORDER BY id LIMIT 1').get().id;
+  db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, 5, 'single')").run(t, real);
+  // 1) регистр из формы: «дублёв олег», «смоленск» → «Дублёв Олег», «Смоленск»
+  const inp = registrationInput({ last_name: 'дублёв', first_name: 'олег', city: 'смоленск', sex: 'M', birth_date: '1967-03-28', email: 'd@example.com', consent_processing: '1' });
+  eq(inp.full_name + ' / ' + inp.city, 'Дублёв Олег / Смоленск', 'регистр ФИО и города выправлен на входе');
+  // 2) сторож двойников видит совпадение по «фамилия + имя», даже без отчества
+  const m = findNameMatches(db, 'Дублёв Олег');
+  assert(m.some((x) => x.id === real && x.exact === false), 'двойник по фамилии и имени должен находиться');
+  // 3) секретарь всё же завёл дубль с кабинетом и согласием — объединяем кнопкой
+  const dup = db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Дублёв Олег', 'Смоленск', 'M')").run().lastInsertRowid;
+  db.prepare("INSERT INTO player_accounts (player_id, email) VALUES (?, 'dublev@example.com')").run(dup);
+  db.prepare("INSERT INTO consents (player_id, kind, event, legal_version, source, basis) VALUES (?, 'distribution', 'granted', '2026-09-05', 'web', 'форма')").run(dup);
+  db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, 9, 'double')").run(t, dup);
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/players', { jar });
+  assert(new RegExp(`action="/admin/players/${dup}/merge"`).test(page.text) && /Объединить…/.test(page.text), 'в строке игрока нет кнопки «Объединить…»');
+  const _csrf = tokenFrom(page.text);
+  await http(`/admin/players/${dup}/merge`, { method: 'POST', jar, form: { _csrf, into: `#${dup}` } });
+  assert(db.prepare('SELECT 1 FROM players WHERE id = ?').get(dup), 'объединение с самим собой не должно ничего удалять');
+  const res = await http(`/admin/players/${dup}/merge`, { method: 'POST', jar, form: { _csrf, into: `#${real}` } });
+  eq(res.status, 302, 'слияние прошло');
+  assert(!db.prepare('SELECT 1 FROM players WHERE id = ?').get(dup), 'дубль удалён');
+  eq(db.prepare('SELECT COUNT(*) AS n FROM results WHERE player_id = ?').get(real).n, 2, 'результаты обеих карточек — на настоящей');
+  eq(db.prepare('SELECT email FROM player_accounts WHERE player_id = ?').get(real)?.email, 'dublev@example.com', 'кабинет переехал на настоящую карточку');
+  const c = db.prepare("SELECT basis FROM consents WHERE player_id = ? AND kind = 'distribution'").get(real);
+  assert(c && /Перенос при объединении/.test(c.basis), 'согласие дубля записано на настоящую карточку новой строкой с основанием переноса');
+  assert(db.prepare("SELECT 1 FROM action_log WHERE action LIKE '%\"type\":\"player.merge\"%'").get(), 'слияние записано в журнал действий');
+  // Кабинет живой: ссылка на вход выдаётся уже для настоящей карточки.
+  const link = await http(`/admin/players/${real}/cabinet-link`, { method: 'POST', jar, form: { _csrf } });
+  eq(link.status, 302, 'ссылка в кабинет для настоящей карточки');
+  // Уборка — как штатное удаление игрока: журнал согласий закрыт триггером, ворота открываем явно.
+  const { withConsentErasure } = await import('./server/lib/consent-journal.mjs');
+  withConsentErasure(db, () => db.prepare("DELETE FROM players WHERE full_name LIKE 'Дублёв%'").run()); db.prepare('DELETE FROM write_attempts').run();
+  return 'регистр выправлен, двойник по «фамилия имя» найден, кнопка «Объединить…»: результаты 1+1=2 на настоящей, кабинет и согласие переехали, дубль удалён, журнал записан';
+});
+
 section('15. Личный кабинет и право на забвение (ст. 21)');
 
 const accounts = await import('./server/lib/player-accounts.mjs');
