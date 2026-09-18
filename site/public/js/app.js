@@ -512,4 +512,33 @@
     var today = grid.querySelector('.cal__cell.is-today.has-items') || grid.querySelector('.cal__cell.has-items');
     if (today && lists && window.matchMedia('(max-width: 720px)').matches) open(today.getAttribute('data-day'));
   });
+
+  // ЗОНА ФАЙЛА: имя выбранного файла, кнопка «убрать», перетаскивание на десктопе (18.09.2026).
+  document.querySelectorAll('[data-file-drop]').forEach(function (box) {
+    var input = box.querySelector('input[type="file"]');
+    var nameEl = box.querySelector('[data-file-name]');
+    if (!input || !nameEl) return;
+    var fmt = function (n) { return n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' КБ' : (n / 1048576).toFixed(1).replace('.', ',') + ' МБ'; };
+    var render = function () {
+      var f = input.files && input.files[0];
+      nameEl.innerHTML = '';
+      if (!f) { nameEl.hidden = true; box.classList.remove('has-file'); return; }
+      nameEl.appendChild(document.createTextNode(f.name + ' · ' + fmt(f.size)));
+      var clear = document.createElement('button'); clear.type = 'button'; clear.className = 'file-drop__clear'; clear.textContent = 'убрать';
+      clear.addEventListener('click', function () { input.value = ''; render(); });
+      nameEl.appendChild(clear); nameEl.hidden = false; box.classList.add('has-file');
+    };
+    input.addEventListener('change', render);
+    // Перетаскивание: только где есть мышь. Файл кладём в тот же input — форма уходит как обычно.
+    if (!window.matchMedia('(hover: hover)').matches || typeof DataTransfer === 'undefined') { render(); return; }
+    ['dragenter', 'dragover'].forEach(function (ev) { box.addEventListener(ev, function (e) { e.preventDefault(); box.classList.add('is-over'); }); });
+    ['dragleave', 'drop'].forEach(function (ev) { box.addEventListener(ev, function (e) { e.preventDefault(); box.classList.remove('is-over'); }); });
+    box.addEventListener('drop', function (e) {
+      var files = e.dataTransfer && e.dataTransfer.files;
+      if (!files || !files.length) return;
+      var dt = new DataTransfer(); dt.items.add(files[0]);
+      input.files = dt.files; render();
+    });
+    render();
+  });
 })();
