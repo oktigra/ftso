@@ -557,7 +557,8 @@ html[data-theme="warm"]{
 .cal__bar.is-cont-l::before, .cal__bar.is-cont-r::after{position:absolute; top:50%; transform:translateY(-50%); font-size:.9rem; line-height:1; opacity:.7; pointer-events:none;}
 .cal__bar.is-cont-l{padding-left:1.1rem;} .cal__bar.is-cont-l::before{content:"‹"; left:.35rem;}
 .cal__bar.is-cont-r{padding-right:1.1rem;} .cal__bar.is-cont-r::after{content:"›"; right:.4rem;}
-.cal__bar.is-dim{opacity:.22;}
+/* Приглушение чужих полос — мягкое: их всё ещё можно прочитать. */
+.cal__bar.is-dim{opacity:.45;}
 /* Идущий турнир дышит заливкой: 3,6 с на цикл, плавно; у категории C — от своего серого. */
 .cal__bar.is-live, .cal__li.is-live{animation:cal-grow .55s ease-out backwards, cal-breathe 3.6s cubic-bezier(.45,0,.55,1) .6s infinite;}
 .cal__bar--C.is-live{animation-name:cal-grow, cal-breathe-c;}

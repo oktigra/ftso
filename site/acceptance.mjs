@@ -6570,6 +6570,10 @@ try {
   await desk.hover(`.cal__cell[data-day="${iso(-2)}"]`, { position: { x: 12, y: 12 } }); await desk.waitForTimeout(100);
   const dim = await desk.evaluate((m) => [...document.querySelectorAll(m)].map((b) => `${/недельный|завершённый/.test(b.title) ? 'on' : 'off'}:${b.classList.contains('is-dim') ? 'dim' : 'lit'}`).join(','), mine('.cal__bar'));
   assert(!/on:dim/.test(dim) && !/off:lit/.test(dim), `наведение на день должно гасить чужие полосы: ${dim}`);
+  // Над ПУСТЫМ днём гасить нечего — полосы остаются яркими (скрин владельца 18.09: единственный
+  // турнир месяца блек от любого движения мыши по сетке).
+  await desk.hover(`.cal__cell[data-day="${iso(-10)}"]`, { position: { x: 12, y: 12 } }); await desk.waitForTimeout(100);
+  eq(await desk.locator(mine('.cal__bar') + '.is-dim').count(), 0, 'над пустым днём ни одна полоса не гаснет');
   // Клик по полосе — на страницу турнира.
   await desk.locator(mine('.cal__bar'), { hasText: 'детский' }).click(); await desk.waitForLoadState('domcontentloaded');
   eq(new URL(desk.url()).pathname, `/tournaments/${ids[4]}`, 'полоса ведёт на свой турнир');

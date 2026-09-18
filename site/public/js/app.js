@@ -486,6 +486,9 @@
     grid.addEventListener('mouseover', function (e) {
       var cell = e.target.closest('.cal__cell[data-day]');
       if (!cell) return;
+      // Гасим чужие полосы только над днём, в котором что-то есть: над пустым днём гасить
+      // нечего, а единственный турнир месяца блек от любого движения мыши (скрин владельца 18.09).
+      if (!cell.classList.contains('has-items')) { bars.forEach(function (b) { b.classList.remove('is-dim'); }); return; }
       var iso = cell.getAttribute('data-day');
       bars.forEach(function (b) { b.classList.toggle('is-dim', !covers(b, iso)); });
     });
