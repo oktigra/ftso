@@ -176,12 +176,29 @@
                 <% if (p.account) { %>
                   <button class="btn btn--secondary btn--small" type="submit" form="link-player-<%= p.id %>" title="Ссылка для входа в кабинет — когда письмо не доходит">Ссылка в кабинет</button>
                 <% } %>
+                <%
+                  /* ОБЪЕДИНИТЬ С ДРУГОЙ КАРТОЧКОЙ (19.09.2026): эта строка — дубль, в поле — та,
+                     что остаётся. Всё (результаты, матчи, кабинет, согласия, фото) переедет туда,
+                     эта карточка удалится. Раньше это делали командой в терминале и теряли кабинет. */
+                %>
+                <details class="merge-box">
+                  <summary class="btn btn--secondary btn--small" title="Слить эту карточку-дубль с настоящей">Объединить…</summary>
+                  <form class="inline-form" method="post" action="/admin/players/<%= p.id %>/merge">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <label class="visually-hidden" for="merge-<%= p.id %>">В какую карточку объединить</label>
+                    <input id="merge-<%= p.id %>" name="into" list="players-list" autocomplete="off" maxlength="140" placeholder="#2 или Фамилия Имя (Город)" required>
+                    <button class="btn btn--danger btn--small" type="submit" data-confirm="Объединить #<%= p.id %> «<%= p.full_name %>» с указанной карточкой? Всё — результаты, матчи, кабинет, согласия, фото — переедет туда, а #<%= p.id %> будет удалена. Отменить нельзя.">Объединить</button>
+                  </form>
+                </details>
               </td>
             </tr>
           <% }); %>
         </tbody>
       </table>
     </div>
+    <datalist id="players-list">
+      <% players.forEach(function (p) { %><option value="<%= p.full_name %> (<%= p.city %>)"></option><% }); %>
+    </datalist>
     <% players.forEach(function (p) { %>
       <form id="edit-player-<%= p.id %>" method="post" action="/admin/players/<%= p.id %>/update" hidden>
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">

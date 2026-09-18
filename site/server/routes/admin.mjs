@@ -10,6 +10,7 @@ import { protocolKeyFromLabel } from '../lib/tournament-export.mjs';
 import { postInBackground } from '../lib/max-post.mjs';
 import { importTournament } from '../lib/tournament-import.mjs';
 import { assertAgeAllowed, AGE_LIMIT_PRESETS, ageRangeLabel } from '../lib/age.mjs';
+import { mergePlayers } from '../lib/player-merge.mjs';
 import { devNoticeMode, devNoticeOn } from '../app.mjs';
 import { ERASED_LABEL } from '../lib/rating-service.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
@@ -256,6 +257,29 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       if (!info.changes) throw new ValidationError('Игрок не найден');
       logAction(db, actorId(req), 'player.update', id, data);
       flash(req, res, 'ok', 'Игрок обновлён.', '/admin/players');
+    }),
+  );
+
+  /**
+   * ОБЪЕДИНЕНИЕ КАРТОЧЕК (19.09.2026): :id — дубль, into — карточка, которая остаётся.
+   * Переезжает всё, что ссылается на дубль (результаты, матчи, кабинет, согласия, посевы,
+   * заявки, представители, фото), дубль удаляется. См. lib/player-merge.mjs.
+   */
+  app.post(
+    '/admin/players/:id/merge',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const dropId = intAtLeast(req.params.id, 'id');
+      const raw = String(req.body.into || '').trim();
+      const keepId = resolvePlayer(db, raw, { ValidationError });
+      if (!keepId) throw new ValidationError('Укажите, в какую карточку объединить: «#2» или «Фамилия Имя Отчество (Город)»');
+      if (keepId === dropId) throw new ValidationError('Карточку нельзя объединить саму с собой');
+      let summary;
+      try { summary = mergePlayers(db, keepId, dropId); } catch (err) { throw new ValidationError(err.message); }
+      logAction(db, actorId(req), 'player.merge', keepId, { from: dropId, ...summary });
+      const moved = Object.values(summary.moved).reduce((a, b) => a + b, 0);
+      flash(req, res, 'ok', `Карточка #${dropId} объединена с #${keepId}: перенесено записей ${moved}${summary.accountMoved ? ', кабинет переехал' : ''}${summary.consentsCopied ? `, согласий ${summary.consentsCopied}` : ''}. Пересчитайте рейтинг.`, '/admin/players');
     }),
   );
 

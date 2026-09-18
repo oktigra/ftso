@@ -44,11 +44,17 @@ export function normalizeName(name) {
 export function findNameMatches(db, fullName, birthDate = null) {
   const target = normalizeName(fullName);
   if (!target) return [];
+  // Двойник — и полное совпадение, и совпадение «фамилия + имя» (19.09.2026: «коротков олег»
+  // без отчества не находил «Коротков Олег Александрович» и заводился новой карточкой).
+  const stem = (n) => n.split(' ').slice(0, 2).join(' ');
+  const targetStem = stem(target);
   return db
     .prepare('SELECT id, full_name, city, sex, age_group, birth_date FROM players WHERE anonymized_at IS NULL')
     .all()
-    .filter((p) => normalizeName(p.full_name) === target)
-    .filter((p) => !birthDate || !p.birth_date || p.birth_date === birthDate);
+    .map((p) => ({ ...p, exact: normalizeName(p.full_name) === target }))
+    .filter((p) => p.exact || (targetStem.includes(' ') && stem(normalizeName(p.full_name)) === targetStem))
+    .filter((p) => !birthDate || !p.birth_date || p.birth_date === birthDate)
+    .sort((a, b) => Number(b.exact) - Number(a.exact) || a.id - b.id);
 }
 
 /**
@@ -238,7 +244,7 @@ export function approveRegistration(db, registrationId, { playerId = null, userI
     let id = playerId;
     // «Новым игроком» при живом двойнике (ФИО + дата) заводить нельзя — только привязка.
     if (id === null) {
-      const twin = findNameMatches(db, reg.full_name, reg.birth_date).find((p) => p.birth_date && p.birth_date === reg.birth_date);
+      const twin = findNameMatches(db, reg.full_name, reg.birth_date).find((p) => p.exact && p.birth_date && p.birth_date === reg.birth_date);
       if (twin) throw new Error(`Игрок с такими ФИО и датой рождения уже есть (#${twin.id}) — одобрите с привязкой к нему`);
     }
     if (id === null) {
