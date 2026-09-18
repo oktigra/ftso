@@ -4123,6 +4123,14 @@ await check('зона файлов: накопление до трёх, кноп
   return 'одна накопительная зона: два выбора + перетаскивание = три файла, четвёртый и дубль отбиты, «Удалить» убирает свой; три файла доезжают до заявки; телефон без слов о перетаскивании; в админке все поля обёрнуты; редакция только на /privacy';
 });
 
+await check('подвал: подпись разработчика со ссылкой на его сайт, в новой вкладке и с noopener', async () => {
+  // Просьба владельца 19.09.2026.
+  const home = await http('/');
+  assert(/Разработка сайта — <a href="https:\/\/webguardreport\.ru\/" target="_blank" rel="noopener">ИП Коротков О\.А\.<\/a>/.test(home.text), 'в подвале нет подписи разработчика со ссылкой');
+  const adm = await http('/admin', { headers: { cookie: '' } });
+  return 'подвал: «Разработка сайта — ИП Коротков О.А.» → https://webguardreport.ru/, target=_blank, rel=noopener';
+});
+
 section('15. Личный кабинет и право на забвение (ст. 21)');
 
 const accounts = await import('./server/lib/player-accounts.mjs');
@@ -6273,7 +6281,7 @@ try {
     return `корпус наклонился (${before.transform.slice(0, 12)}… → ${after.transform.slice(0, 12)}…), третья папка поднялась на ${lift} px`;
   });
 
-  await check('рейтинг: пластина при наведении НЕ сдвигается, справка раскрывается', async () => {
+  await check('рейтинг: пластина при наведении выходит вперёд без дрожания, справка раскрывается', async () => {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     await page.goto(inst.base + '/rating', { waitUntil: 'networkidle' });
     const read = () => page.evaluate(() => {
@@ -6286,12 +6294,23 @@ try {
     await page.waitForTimeout(700); // раскрытие справки .34s + запас
     const after = await read();
     await page.close();
-    // Сдвига быть НЕ должно (14.09.2026): подъём уводил пластину из-под курсора,
-    // и на границе двух пластин наведение прыгало — «дрожание».
+    // 14.09 подъём убрали из-за «дрожания» на границе пластин; 19.09 владелец попросил подъём
+    // вернуть — теперь у поднятой пластины продлена зона наведения вниз, и курсор из-под неё не выпадает.
     const lift = before.top - after.top;
-    eq(lift, 0, `пластина сдвинулась при наведении на ${lift} px`);
+    eq(lift, 3, `пластина должна подняться на 3 px, поднялась на ${lift}`);
     assert(after.infoH > before.infoH + 20, `справка не раскрылась: ${before.infoH} → ${after.infoH} px`);
-    return `сдвиг 0 px, справка раскрылась с ${before.infoH} до ${after.infoH} px`;
+    // Дрожание: курсор на нижнем крае пластины — transform остаётся стабильным 600 мс.
+    const p2 = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await p2.goto(inst.base + '/rating', { waitUntil: 'networkidle' });
+    await p2.evaluate(() => { document.querySelector('[data-cookie-bar]')?.remove(); document.querySelector('.dev-notice')?.remove(); });
+    const pl = p2.locator('.rplates--full .rplate').nth(1); await pl.scrollIntoViewIfNeeded();
+    const box = await pl.boundingBox();
+    await p2.mouse.move(box.x + box.width / 2, box.y + box.height - 2); await p2.waitForTimeout(500);
+    const samples = [];
+    for (let i = 0; i < 6; i++) { samples.push(await pl.evaluate((x) => getComputedStyle(x).transform)); await p2.waitForTimeout(100); }
+    await p2.close();
+    assert(new Set(samples).size === 1 && /-3\)$/.test(samples[0]), `на нижнем крае пластина не должна дрожать: ${[...new Set(samples)].join(' | ')}`);
+    return `подъём 3 px без дрожания на нижнем крае, справка раскрылась с ${before.infoH} до ${after.infoH} px`;
   });
 
   await check('справочник: карточка отзывается на наведение (поведение, а не объявление)', async () => {
@@ -6592,6 +6611,21 @@ try {
   await mob.close();
   db.prepare("DELETE FROM tournaments WHERE name LIKE 'Дорожка %'").run();
   return 'десктоп: 5 полос, недельный одной полосой, пересечения на разных дорожках, «идёт» по датам, серый завершённый, корт под сегодня, счётчик 2; наведение не двигает соседей, день гасит чужие полосы, клик ведёт на турнир; телефон: полосы скрыты, счётчики, список дня, ссылка на турнир';
+});
+
+await check('пластина рейтинга при наведении выходит вперёд (scale + подъём), только transform', async () => {
+  // Просьба владельца 19.09.2026: эффект увеличения/3D-движения вперёд карточки игрока.
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await page.goto(inst.base + '/rating', { waitUntil: 'networkidle' });
+  await page.evaluate(() => { document.querySelector('[data-cookie-bar]')?.remove(); document.querySelector('.dev-notice')?.remove(); });
+  const n = await page.locator('.rplate').count();
+  if (n < 2) { await page.close(); return 'в приёмочной базе меньше двух пластин — пропуск'; }
+  const pl = page.locator('.rplate').nth(1); await pl.scrollIntoViewIfNeeded();
+  const b0 = await pl.boundingBox(); await pl.hover(); await page.waitForTimeout(450); const b1 = await pl.boundingBox();
+  assert(b1.width > b0.width + 5 && b1.y < b0.y - 1, `пластина должна вырасти и подняться (ширина ${Math.round(b0.width)}→${Math.round(b1.width)}, верх ${Math.round(b0.y)}→${Math.round(b1.y)})`);
+  assert(/matrix\(1\.01/.test(await pl.evaluate((x) => getComputedStyle(x).transform)), 'эффект — через transform');
+  await page.close();
+  return `наведение: ширина ${Math.round(b0.width)}→${Math.round(b1.width)}, подъём ${Math.round(b0.y - b1.y)}px, transform scale(1.012) translateY(-3px)`;
 });
 
 await check('адаптив: бургер-меню, одна колонка, таблицы со скроллом', async () => {
