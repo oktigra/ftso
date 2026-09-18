@@ -224,7 +224,9 @@ export function homeStats(db, standings) {
        UNION SELECT city FROM tournaments WHERE is_published = 1 AND city IS NOT NULL AND city <> '')`,
   ).get().n;
   return [
-    { value: String(year), label: 'турниров за год' },
+    // Окно скользящее — последние 12 месяцев, а не календарный год: 1 января витрина
+    // не обнуляется (замечание владельца 19.09.2026). Подпись говорит об этом честно.
+    { value: String(year), label: 'турниров за 12 месяцев' },
     { value: String(standings ? standings.players.length : 0), label: 'игроков в рейтинге' },
     { value: String(cities), label: cities === 1 ? 'город области' : 'городов области' },
   ];

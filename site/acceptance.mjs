@@ -1954,8 +1954,8 @@ await check('главная: цифры и «ближайший турнир» �
   const ratingN = db.prepare('SELECT COUNT(*) AS n FROM players').get().n;
   const players = stat(home.text, 'игроков в рейтинге');
   assert(Number.isFinite(players) && players <= ratingN, `игроков в рейтинге на главной (${players}) больше, чем игроков в базе (${ratingN})`);
-  const tours = stat(home.text, 'турниров за год');
-  eq(tours, db.prepare("SELECT COUNT(*) AS n FROM tournaments WHERE is_published = 1 AND end_date >= date('now','-12 months')").get().n, 'турниров за год — не по базе');
+  const tours = stat(home.text, 'турниров за 12 месяцев');
+  eq(tours, db.prepare("SELECT COUNT(*) AS n FROM tournaments WHERE is_published = 1 AND end_date >= date('now','-12 months')").get().n, 'турниров за 12 месяцев — не по базе');
   // Ближайший турнир: заводим будущий — карточка показывает его дату и ссылку; без будущих — «скоро в календаре».
   const future = new Date(Date.now() + 20 * 864e5).toISOString().slice(0, 10);
   const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category) VALUES ('Ближайший тест', ?, 'B')").run(future).lastInsertRowid);
