@@ -86,7 +86,15 @@
         <% } %>
         <div class="field">
           <label for="p-photo">Фотография</label>
-          <input id="p-photo" name="photo" type="file" aria-describedby="p-photo-hint">
+          <div class="file-drop" data-file-drop>
+            <input id="p-photo" name="photo" type="file" class="file-drop__input" accept="image/*" aria-describedby="p-photo-hint">
+            <label class="file-drop__zone" for="p-photo">
+              <span class="file-drop__icon" aria-hidden="true"></span>
+              <span class="file-drop__text"><b>Выберите фото</b><span class="file-drop__or"> или перетащите сюда</span></span>
+              <span class="file-drop__meta">JPG или PNG</span>
+            </label>
+            <span class="file-drop__name" data-file-name hidden></span>
+          </div>
           <p class="field-hint" id="p-photo-hint">
             Фотография отображается в вашем публичном профиле на сайте. Загружая её, вы даёте
             <a href="/consent#distribution" target="_blank" rel="noopener">согласие на распространение

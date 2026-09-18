@@ -4064,6 +4064,42 @@ await check('публичная заявка: организатор выбир�
   return 'в публичной форме есть возрастное ограничение; (null,12) сохранено в заявке, показано модератору, перенесено в турнир с подписью «до 13 лет» и отбивает взрослого';
 });
 
+await check('зона файла: крупная площадка вместо системной кнопки, имя и «убрать», перетаскивание на десктопе, без слов о нём на телефоне; «Редакция от» только на юридических страницах', async () => {
+  // 18.09.2026, просьба владельца: «добавь красоты» в поля файлов и убери редакцию из форм.
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-sandbox'] });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.goto(`${inst.base}/tournament-request`, { waitUntil: 'networkidle' });
+    assert(!/Редакция от/.test(await page.evaluate(() => document.body.innerText)), 'на форме заявки не должно быть «Редакция от»');
+    const zone = page.locator('.file-drop__zone').first();
+    eq(await zone.count(), 1, 'зона файла есть');
+    const box = await zone.boundingBox();
+    assert(box.height >= 60, `зона должна быть заметной, высота ${Math.round(box.height)}px`);
+    eq(await zone.evaluate((z) => getComputedStyle(z).textTransform), 'none', 'текст зоны — не капсом, как подписи полей');
+    assert(/Выберите файл/.test(await zone.innerText()) && /перетащите/.test(await zone.innerText()), 'на десктопе зона зовёт перетащить');
+    // Клик по зоне открывает выбор файла; выбранный показан с именем и размером.
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), zone.click()]);
+    await chooser.setFiles({ name: 'polozhenie.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') });
+    await page.waitForTimeout(150);
+    assert(/polozhenie\.pdf/.test(await page.locator('[data-file-name]').first().innerText()), 'после выбора видно имя файла');
+    await page.locator('.file-drop__clear').first().click(); await page.waitForTimeout(100);
+    eq(await page.locator('#t-doc1').evaluate((i) => i.files.length), 0, '«убрать» очищает поле');
+    // Перетаскивание кладёт файл в тот же input.
+    await page.locator('.file-drop').nth(1).evaluate((b) => { const dt = new DataTransfer(); dt.items.add(new File(['x'], 'setka.pdf', { type: 'application/pdf' })); b.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true })); window.__over = b.classList.contains('is-over'); b.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); });
+    assert(await page.evaluate(() => window.__over), 'при перетаскивании над зоной она подсвечивается');
+    eq(await page.locator('#t-doc2').evaluate((i) => i.files[0] && i.files[0].name), 'setka.pdf', 'перетащенный файл лежит в input');
+    await page.close();
+    const mob = await browser.newPage({ viewport: { width: 390, height: 844 } });
+    await mob.goto(`${inst.base}/tournament-request`, { waitUntil: 'networkidle' });
+    assert(!/перетащите/.test(await mob.locator('.file-drop__zone').first().innerText()), 'на телефоне слов о перетаскивании нет');
+    await mob.close();
+    const reg = await http('/register'); assert(!/[Рр]едакция от/.test(reg.text), 'на регистрации редакции нет');
+    const priv = await http('/privacy'); assert(/Редакция от/.test(priv.text), 'на политике редакция остаётся');
+  } finally { await browser.close(); }
+  return 'зона 600×74, текст не капсом, выбор по клику, имя и «убрать», перетаскивание кладёт файл в input; телефон без слов о перетаскивании; редакция только на /privacy';
+});
+
 section('15. Личный кабинет и право на забвение (ст. 21)');
 
 const accounts = await import('./server/lib/player-accounts.mjs');

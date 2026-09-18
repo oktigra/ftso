@@ -107,13 +107,33 @@
 
         <fieldset class="consent-box">
           <legend>Документы</legend>
+          <%
+            // ЗОНА ФАЙЛА (18.09.2026, просьба владельца): крупная кнопка-площадка вместо системного
+            // «Выберите файл»; на десктопе файл можно перетащить (app.js), без JS — обычный input.
+          %>
           <div class="field">
             <label for="t-doc1">Положение о турнире</label>
-            <input id="t-doc1" name="doc_polozhenie" type="file" aria-describedby="t-doc-hint">
+            <div class="file-drop" data-file-drop>
+              <input id="t-doc1" name="doc_polozhenie" type="file" class="file-drop__input" aria-describedby="t-doc-hint">
+              <label class="file-drop__zone" for="t-doc1">
+                <span class="file-drop__icon" aria-hidden="true"></span>
+                <span class="file-drop__text"><b>Выберите файл</b><span class="file-drop__or"> или перетащите сюда</span></span>
+                <span class="file-drop__meta">PDF, Word, изображение · до <%= maxFileMb %> МБ</span>
+              </label>
+              <span class="file-drop__name" data-file-name hidden></span>
+            </div>
           </div>
           <div class="field">
             <label for="t-doc2">Сетка или регламент</label>
-            <input id="t-doc2" name="doc_setka" type="file">
+            <div class="file-drop" data-file-drop>
+              <input id="t-doc2" name="doc_setka" type="file" class="file-drop__input">
+              <label class="file-drop__zone" for="t-doc2">
+                <span class="file-drop__icon" aria-hidden="true"></span>
+                <span class="file-drop__text"><b>Выберите файл</b><span class="file-drop__or"> или перетащите сюда</span></span>
+                <span class="file-drop__meta">PDF, Word, изображение · до <%= maxFileMb %> МБ</span>
+              </label>
+              <span class="file-drop__name" data-file-name hidden></span>
+            </div>
           </div>
           <p class="field-hint" id="t-doc-hint">
             До <%= maxFiles %> файлов, каждый не больше <%= maxFileMb %> МБ. Принимаются PDF, документы
@@ -149,8 +169,6 @@
             <a href="mailto:<%= op.email %>"><%= op.email %></a>.
           </p>
         </fieldset>
-
-        <p class="muted"><%= legalVersionLabel %></p>
 
         <%- include('partials/form-check', { pref: 't' }) %>
         <button class="btn btn--primary" type="submit">Отправить заявку</button>
