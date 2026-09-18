@@ -3414,12 +3414,14 @@ await check('календарь: вид «сетка месяца» — неде
   // дне — строка списка дня (.cal__li), а на неделю — одна полоса (.cal__bar).
   assert(/<span role="columnheader">Пн<\/span>[\s\S]*<span role="columnheader">Вс<\/span>/.test(g.text) && /cal__title">май 2031/i.test(g.text), 'заголовок/дни недели');
   const chips = (id) => (g.text.match(new RegExp(`class="cal__li[^"]*" href="/tournaments/${id}"`, 'g')) || []).length;
-  eq([chips(two), chips(one), chips(span)].join(','), '2,1,2', 'турнир должен стоять в каждом дне своего интервала в пределах месяца (список дня)');
+  // Сетка теперь показывает и 1 июня (хвост недели) — турнир 30.05–02.06 стоит в трёх днях.
+  eq([chips(two), chips(one), chips(span)].join(','), '2,1,3', 'турнир должен стоять в каждом дне своего интервала в пределах сетки (список дня)');
   const bars = (id) => (g.text.match(new RegExp(`class="cal__bar[^"]*"\\s+href="/tournaments/${id}"`, 'g')) || []).length;
   eq([bars(two), bars(one), bars(span)].join(','), '1,1,1', 'на неделю — одна полоса на турнир, а не по полосе на день');
   assert(new RegExp(`href="/tournaments/${span}"[^>]*data-to="2031-06-02"`).test(g.text), 'полоса через границу месяца знает свой настоящий конец');
-  // 1 мая 2031 — четверг: перед ним три пустых ячейки (Пн, Вт, Ср).
-  assert(/cal__week[^>]*>\s*(<div class="cal__cell cal__cell--empty col-\d" role="cell"><\/div>\s*){3}<div class="cal__cell col-4/.test(g.text), 'недели должны начинаться с понедельника (1 мая 2031 — четверг)');
+  // 1 мая 2031 — четверг: перед ним три дня апреля (Пн–Ср), приглушённые, но настоящие.
+  assert(/data-day="2031-04-28"[\s\S]*data-day="2031-04-30"[\s\S]*data-day="2031-05-01"/.test(g.text) && (g.text.match(/is-other/g) || []).length >= 3, 'недели полные, с понедельника: перед 1 мая 2031 стоят 28–30 апреля (is-other)');
+  assert(/data-day="2031-06-01"/.test(g.text), 'хвост июня в последней неделе мая');
   assert(g.text.includes('gm=2031-04') && g.text.includes('gm=2031-06'), 'нет ссылок на соседние месяцы');
   const remembered = await http('/tournaments', { headers: { cookie: 'ftso.calendar=grid' } });
   assert(/cal__grid/.test(remembered.text), 'cookie=grid без ?view должен открывать сетку');
@@ -6480,6 +6482,25 @@ try {
   const edge = await desk.evaluate((m) => [...document.querySelectorAll(m)].filter((x) => /is-cont/.test(x.className)).map((x) => { const cs = getComputedStyle(x); return { m: cs.marginLeft === cs.marginRight && parseFloat(cs.marginLeft) > 0, r: parseFloat(cs.borderTopLeftRadius) > 0 && parseFloat(cs.borderTopRightRadius) > 0, arrow: /[‹›]/.test(getComputedStyle(x, x.className.includes('cont-r') ? '::after' : '::before').content), hyphen: /\S-\n|\u00AD/.test(x.innerText) }; }), mine('.cal__bar'));
   assert(edge.length >= 1 && edge.every((e) => e.m && e.r && e.arrow && !e.hyphen), `стык недель: отступ, скругление и стрелка у продолжения, без дефисов: ${JSON.stringify(edge)}`);
   eq(d.inlineStyle, 0, 'позиции — классами: style="" режется CSP');
+  // Второй круг (замечания владельца 18.09): полные недели, одинаковые клетки, корт по форме ячейки.
+  const shape = await desk.evaluate(() => { const g = document.querySelector('.cal__grid'); const cells = [...g.querySelectorAll('.cal__cell')]; const first = cells[0]; const c = g.querySelector('.cal__cell.is-today'); const r = c.getBoundingClientRect();
+    const hs = cells.map((x) => x.getBoundingClientRect().height);
+    return { всеПоСемь: [...g.querySelectorAll('.cal__week')].every((w) => w.querySelectorAll('.cal__cell').length === 7), первыйПн: new Date(first.dataset.day + 'T12:00:00Z').getUTCDay() === 1, разбросВысот: Math.max(...hs) - Math.min(...hs),
+      корт: r.height > r.width ? getComputedStyle(c.querySelector('.cal__court--v')).display !== 'none' && getComputedStyle(c.querySelector('.cal__court--h')).display === 'none' : getComputedStyle(c.querySelector('.cal__court--h')).display !== 'none', barH: !!g.style.getPropertyValue('--cal-bar-h') }; });
+  assert(shape.всеПоСемь && shape.первыйПн, 'сетка всегда с понедельника по воскресенье, хвосты соседних месяцев показаны');
+  assert(shape.разбросВысот <= 1.5, `все клетки месяца одной высоты (разброс ${shape.разбросВысот.toFixed(1)}px — допуск на субпиксель)`);
+  assert(shape.корт && shape.barH, 'корт лежит по форме ячейки, высота дорожки выставлена по самой высокой полосе');
+  // Наведение поднимает полосу (transform), и весь турнир целиком — оба куска на стыке недель.
+  const weekly = desk.locator(mine('.cal__bar'), { hasText: 'недельный' });
+  const n = await weekly.count();
+  if (n >= 2) {
+    const y0 = (await weekly.first().boundingBox()).y; await weekly.first().hover(); await desk.waitForTimeout(350);
+    const y1 = (await weekly.first().boundingBox()).y;
+    assert(y0 - y1 >= 1, `полоса при наведении должна приподняться (сдвиг ${y0 - y1}px)`);
+    assert(await weekly.nth(1).evaluate((x) => x.classList.contains('is-hover') && /-2\)$/.test(getComputedStyle(x).transform)), 'второй кусок того же турнира поднимается вместе с первым');
+    await desk.mouse.move(2, 2); await desk.waitForTimeout(300);
+    eq(await desk.locator('.cal__bar.is-hover').count(), 0, 'после ухода мыши подсветка снимается');
+  }
   // Наведение меняет только transform: соседи не двигаются.
   const before = await desk.evaluate(() => [...document.querySelectorAll('.cal__cell[data-day]')].map((c) => Math.round(c.getBoundingClientRect().height)).join(','));
   await desk.locator(mine('.cal__bar'), { hasText: 'детский' }).hover(); await desk.waitForTimeout(350);

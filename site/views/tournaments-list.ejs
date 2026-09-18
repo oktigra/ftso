@@ -136,23 +136,24 @@
           <li><i class="cal__swatch cal__swatch--live"></i>идёт сейчас</li>
           <li><i class="cal__swatch cal__swatch--reg"></i>приём заявок</li>
         </ul>
-        <div class="cal__grid" role="table" aria-label="Турниры по дням: <%= monthTitle(grid.month) %>">
+        <div class="cal__grid lanes-<%= grid.maxLanes %>" role="table" aria-label="Турниры по дням: <%= monthTitle(grid.month) %>">
           <div class="cal__head" role="row"><% ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].forEach(function (d) { %><span role="columnheader"><%= d %></span><% }); %></div>
           <% grid.weeks.forEach(function (week) { %>
             <div class="cal__week" role="row">
               <% week.cells.forEach(function (cell, i) { %>
-                <% if (!cell) { %>
-                  <div class="cal__cell cal__cell--empty col-<%= i + 1 %>" role="cell"></div>
-                <% } else { %>
-                  <% const n = cell.items.length; const isToday = cell.iso === grid.today; %>
-                  <div class="cal__cell col-<%= i + 1 %><%= n ? ' has-items' : '' %><%= isToday ? ' is-today' : '' %>" role="cell" data-day="<%= cell.iso %>"<%= n ? ' tabindex="0"' : '' %>>
+                <% const n = cell.items.length; const isToday = cell.iso === grid.today; %>
+                <div class="cal__cell col-<%= i + 1 %><%= n ? ' has-items' : '' %><%= isToday ? ' is-today' : '' %><%= cell.other ? ' is-other' : '' %>" role="cell" data-day="<%= cell.iso %>"<%= n ? ' tabindex="0"' : '' %>>
                     <% if (isToday) { %>
-                      <svg class="cal__court" viewBox="0 0 78 170" preserveAspectRatio="xMidYMid slice" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><rect x="3" y="3" width="72" height="164"/><rect x="12" y="3" width="54" height="164"/><line x1="12" y1="45" x2="66" y2="45"/><line x1="12" y1="125" x2="66" y2="125"/><line x1="39" y1="45" x2="39" y2="125"/><line x1="3" y1="85" x2="75" y2="85" stroke-width="2.4"/><line x1="39" y1="3" x2="39" y2="8"/><line x1="39" y1="162" x2="39" y2="167"/></svg>
+                      <%
+                        // Корт лежит так же, как ячейка: широкая — горизонтальный (десктоп),
+                        // высокая — вертикальный (телефон). Какой показать — решает CSS по ширине экрана.
+                      %>
+                      <svg class="cal__court cal__court--h" viewBox="0 0 170 78" preserveAspectRatio="xMidYMid meet" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><rect x="3" y="3" width="164" height="72"/><rect x="3" y="12" width="164" height="54"/><line x1="45" y1="12" x2="45" y2="66"/><line x1="125" y1="12" x2="125" y2="66"/><line x1="45" y1="39" x2="125" y2="39"/><line x1="85" y1="3" x2="85" y2="75" stroke-width="2.4"/><line x1="3" y1="39" x2="8" y2="39"/><line x1="162" y1="39" x2="167" y2="39"/></svg>
+                      <svg class="cal__court cal__court--v" viewBox="0 0 78 170" preserveAspectRatio="xMidYMid meet" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" aria-hidden="true"><rect x="3" y="3" width="72" height="164"/><rect x="12" y="3" width="54" height="164"/><line x1="12" y1="45" x2="66" y2="45"/><line x1="12" y1="125" x2="66" y2="125"/><line x1="39" y1="45" x2="39" y2="125"/><line x1="3" y1="85" x2="75" y2="85" stroke-width="2.4"/><line x1="39" y1="3" x2="39" y2="8"/><line x1="39" y1="162" x2="39" y2="167"/></svg>
                     <% } %>
                     <span class="cal__day"><%= cell.day %><% if (isToday) { %><span class="visually-hidden"> — сегодня</span><% } %></span>
                     <% if (n) { %><span class="cal__count" aria-label="турниров: <%= n %>"><%= n %></span><% } %>
-                  </div>
-                <% } %>
+                </div>
               <% }); %>
               <% week.bars.forEach(function (b) { %>
                 <%
@@ -160,20 +161,20 @@
                   // молча выбрасывает инлайн-стили, и полосы падали в кучу под ячейками.
                 %>
                 <a class="cal__bar cal__bar--<%= b.category %> col-<%= b.col %> end-<%= b.colEnd %> lane-<%= Math.min(b.lane, 15) %><%= b.live ? ' is-live' : '' %><%= b.done ? ' is-done' : '' %><%= b.entryOpen ? ' is-reg' : '' %><%= b.continuesLeft ? ' is-cont-l' : '' %><%= b.continuesRight ? ' is-cont-r' : '' %>"
-                   href="/tournaments/<%= b.id %>" title="<%= barTitle(b) %>" data-from="<%= b.from %>" data-to="<%= b.to %>">
-                  <span class="cal__cat" aria-hidden="true"><%= b.category %></span><span class="cal__name"><%= b.name %></span>
+                   href="/tournaments/<%= b.id %>" title="<%= barTitle(b) %>" data-id="<%= b.id %>" data-from="<%= b.from %>" data-to="<%= b.to %>">
+                  <span class="cal__name"><span class="cal__cat" aria-hidden="true"><%= b.category %></span><%= b.name %></span>
                 </a>
               <% }); %>
             </div>
           <% }); %>
         </div>
         <div class="cal__lists" data-cal-lists>
-          <% grid.weeks.forEach(function (week) { week.cells.forEach(function (cell) { if (!cell || !cell.items.length) return; %>
+          <% grid.weeks.forEach(function (week) { week.cells.forEach(function (cell) { if (!cell.items.length) return; %>
             <div class="cal__daylist" data-day="<%= cell.iso %>" hidden>
-              <h3 class="cal__daylist-title"><%= cell.day %> <%= ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'][Number(grid.month.slice(5, 7)) - 1] %></h3>
+              <h3 class="cal__daylist-title"><%= cell.day %> <%= ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'][Number(cell.iso.slice(5, 7)) - 1] %></h3>
               <% cell.items.forEach(function (t) { const live = tournamentStatusOf(t) === 'ongoing'; const done = tournamentStatusOf(t) === 'finished'; %>
                 <a class="cal__li cal__bar--<%= t.category %><%= live ? ' is-live' : '' %><%= done ? ' is-done' : '' %><%= !done && t.entry === 'open' ? ' is-reg' : '' %>" href="/tournaments/<%= t.id %>">
-                  <span class="cal__cat" aria-hidden="true"><%= t.category %></span><span class="cal__name"><%= t.name %></span>
+                  <span class="cal__name"><span class="cal__cat" aria-hidden="true"><%= t.category %></span><%= t.name %></span>
                   <small><%= t.start_date && t.start_date !== t.end_date ? fmtD(t.start_date) + '–' + fmtD(t.end_date) : fmtD(t.end_date) %><%= t.city ? ' · ' + t.city : '' %><%= live ? ' · идёт сейчас' : done ? ' · завершён' : (t.entry === 'open' ? ' · приём заявок' : '') %></small>
                 </a>
               <% }); %>
