@@ -6,7 +6,8 @@ import {
   ERASED_LABEL,
 } from '../lib/rating-service.mjs';
 import { OPERATOR, LEGAL_VERSION, LEGAL_VERSION_LABEL, PUBLIC_DOCUMENTS } from '../lib/legal.mjs';
-import { donateConfig, donateQrSvg, parseSum } from '../lib/donate.mjs';
+import { donateConfig, donateQrSvg, parseSum, gostPrefix } from '../lib/donate.mjs';
+import { moscowToday } from '../lib/content.mjs';
 import { feedbackInput, createFeedback } from '../lib/feedback.mjs';
 import { checkTicket, consumeTicket } from '../lib/form-guard.mjs';
 import { queueMail } from '../lib/mailer.mjs';
@@ -329,6 +330,9 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
         section: { title: 'Поддержать федерацию', path: '/donate' },
         op: OPERATOR, donate: cfg, sum,
         qr: await donateQrSvg(cfg, sum),
+        tab: req.query.tab === 'dues' ? 'dues' : 'donate',
+        duesYear: moscowToday().slice(0, 4),
+        duesPrefix: gostPrefix(cfg),
       });
     } catch (err) { next(err); }
   });
