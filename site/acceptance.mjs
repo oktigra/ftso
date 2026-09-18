@@ -4064,7 +4064,7 @@ await check('публичная заявка: организатор выбир�
   return 'в публичной форме есть возрастное ограничение; (null,12) сохранено в заявке, показано модератору, перенесено в турнир с подписью «до 13 лет» и отбивает взрослого';
 });
 
-await check('зона файла: крупная площадка вместо системной кнопки, имя и «убрать», перетаскивание на десктопе, без слов о нём на телефоне; «Редакция от» только на юридических страницах', async () => {
+await check('зона файлов: накопление до трёх, кнопка «Удалить», перетаскивание на десктопе, без слов о нём на телефоне; админка обёрнута; «Редакция от» только на юридических страницах', async () => {
   // 18.09.2026, просьба владельца: «добавь красоты» в поля файлов и убери редакцию из форм.
   const { chromium } = await import('playwright');
   const browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-sandbox'] });
@@ -4074,21 +4074,27 @@ await check('зона файла: крупная площадка вместо �
     assert(!/Редакция от/.test(await page.evaluate(() => document.body.innerText)), 'на форме заявки не должно быть «Редакция от»');
     const zone = page.locator('.file-drop__zone').first();
     eq(await zone.count(), 1, 'зона файла есть');
+    assert(await page.locator('.file-drop--multi #t-docs[multiple]').count() === 1, 'документы — одна накопительная зона с multiple');
     const box = await zone.boundingBox();
     assert(box.height >= 60, `зона должна быть заметной, высота ${Math.round(box.height)}px`);
     eq(await zone.evaluate((z) => getComputedStyle(z).textTransform), 'none', 'текст зоны — не капсом, как подписи полей');
-    assert(/Выберите файл/.test(await zone.innerText()) && /перетащите/.test(await zone.innerText()), 'на десктопе зона зовёт перетащить');
-    // Клик по зоне открывает выбор файла; выбранный показан с именем и размером.
-    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), zone.click()]);
-    await chooser.setFiles({ name: 'polozhenie.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') });
-    await page.waitForTimeout(150);
-    assert(/polozhenie\.pdf/.test(await page.locator('[data-file-name]').first().innerText()), 'после выбора видно имя файла');
-    await page.locator('.file-drop__clear').first().click(); await page.waitForTimeout(100);
-    eq(await page.locator('#t-doc1').evaluate((i) => i.files.length), 0, '«убрать» очищает поле');
-    // Перетаскивание кладёт файл в тот же input.
-    await page.locator('.file-drop').nth(1).evaluate((b) => { const dt = new DataTransfer(); dt.items.add(new File(['x'], 'setka.pdf', { type: 'application/pdf' })); b.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true })); window.__over = b.classList.contains('is-over'); b.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); });
+    assert(/Добавить файл/.test(await zone.innerText()) && /перетащите/.test(await zone.innerText()), 'на десктопе зона зовёт добавить и перетащить');
+    // Накопление (замечание владельца 18.09): два файла по одному через диалог, третий — перетаскиванием;
+    // четвёртый и дубль отбиты; «Удалить» убирает ровно свой.
+    const names = () => page.locator('#t-docs').evaluate((i) => [...i.files].map((f) => f.name).join(','));
+    for (const n of ['polozhenie.pdf', 'setka.pdf']) { const [ch] = await Promise.all([page.waitForEvent('filechooser'), zone.click()]); await ch.setFiles({ name: n, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 x') }); await page.waitForTimeout(120); }
+    eq(await names(), 'polozhenie.pdf,setka.pdf', 'второй выбор ДОБАВЛЯЕТСЯ к первому, а не заменяет его');
+    await page.locator('.file-drop--multi').evaluate((b) => { const dt = new DataTransfer(); dt.items.add(new File(['x'], 'reglament.docx')); b.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true })); window.__over = b.classList.contains('is-over'); b.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); });
     assert(await page.evaluate(() => window.__over), 'при перетаскивании над зоной она подсвечивается');
-    eq(await page.locator('#t-doc2').evaluate((i) => i.files[0] && i.files[0].name), 'setka.pdf', 'перетащенный файл лежит в input');
+    eq(await names(), 'polozhenie.pdf,setka.pdf,reglament.docx', 'третий файл добавлен перетаскиванием');
+    await page.locator('.file-drop--multi').evaluate((b) => { const dt = new DataTransfer(); dt.items.add(new File(['x'], 'lishniy.pdf')); dt.items.add(new File(['x'], 'setka.pdf')); b.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); });
+    eq(await names(), 'polozhenie.pdf,setka.pdf,reglament.docx', 'четвёртый файл и дубль не добавляются');
+    const del = page.locator('.file-drop__del').nth(1);
+    eq(await del.textContent(), 'Удалить', 'кнопка называется «Удалить»');
+    assert((await del.boundingBox()).height >= 26, 'кнопка «Удалить» заметного размера');
+    await del.click(); await page.waitForTimeout(100);
+    eq(await names(), 'polozhenie.pdf,reglament.docx', '«Удалить» убирает ровно свой файл');
+    eq(await page.locator('#t-docs').evaluate((i) => i.closest('.file-drop').querySelector('.file-drop__text b').textContent), 'Добавить ещё файл', 'после удаления зона снова зовёт добавить');
     await page.close();
     const mob = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await mob.goto(`${inst.base}/tournament-request`, { waitUntil: 'networkidle' });
@@ -4105,10 +4111,16 @@ await check('зона файла: крупная площадка вместо �
     await adm.evaluate(() => { const box = document.querySelector('#doc-file').closest('.file-drop'); const dt = new DataTransfer(); ['a.pdf', 'b.pdf'].forEach((n) => dt.items.add(new File(['x'], n, { type: 'application/pdf' }))); box.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); });
     eq(await adm.locator('#doc-file').evaluate((i) => i.files.length), 1, 'одиночное поле берёт только первый файл из пачки');
     await adm.close();
+    // Сквозняк: три файла под одним именем поля docs доезжают до заявки.
+    const { res: sent } = await submitTournament({ ...BASE_FIELDS, name: 'Кубок трёх файлов', email: 'org3@example.com' }, [1, 2, 3].map((i) => ({ field: 'docs', filename: `doc${i}.pdf`, type: 'application/pdf', buffer: PDF })));
+    eq(sent.status, 302, 'заявка с тремя файлами принята');
+    const r3 = db.prepare("SELECT id FROM tournament_requests WHERE name = 'Кубок трёх файлов'").get();
+    eq(db.prepare('SELECT COUNT(*) AS n FROM tournament_request_files WHERE request_id = ?').get(r3.id).n, 3, 'все три файла привязаны к заявке');
+    db.prepare('DELETE FROM tournament_requests WHERE id = ?').run(r3.id);
     const reg = await http('/register'); assert(!/[Рр]едакция от/.test(reg.text), 'на регистрации редакции нет');
     const priv = await http('/privacy'); assert(/Редакция от/.test(priv.text), 'на политике редакция остаётся');
   } finally { await browser.close(); }
-  return 'зона 600×74, текст не капсом, выбор по клику, имя и «убрать», перетаскивание кладёт файл в input; телефон без слов о перетаскивании; в админке все поля обёрнуты, галерея берёт пачку; редакция только на /privacy';
+  return 'одна накопительная зона: два выбора + перетаскивание = три файла, четвёртый и дубль отбиты, «Удалить» убирает свой; три файла доезжают до заявки; телефон без слов о перетаскивании; в админке все поля обёрнуты; редакция только на /privacy';
 });
 
 section('15. Личный кабинет и право на забвение (ст. 21)');

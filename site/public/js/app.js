@@ -521,29 +521,64 @@
   var initFileDrop = function (box) {
     var input = box.querySelector('input[type="file"]');
     var nameEl = box.querySelector('[data-file-name]');
-    if (!input || !nameEl) return;
+    var listEl = box.querySelector('[data-file-list]');
+    if (!input || (!nameEl && !listEl)) return;
+    // Накопительный режим (multiple + список): новый выбор ДОБАВЛЯЕТСЯ к уже лежащим,
+    // а не заменяет их — иначе три документа по одному не собрать (замечание владельца 18.09).
+    var multi = !!listEl && input.multiple;
+    var max = Number(box.getAttribute('data-file-max')) || (input.multiple ? 20 : 1);
+    var kept = [];
+    var setFiles = function (arr) {
+      if (typeof DataTransfer === 'undefined') return;
+      var dt = new DataTransfer(); arr.forEach(function (f) { dt.items.add(f); }); input.files = dt.files;
+    };
+    var delBtn = function (onClick) {
+      var b = document.createElement('button'); b.type = 'button'; b.className = 'file-drop__del'; b.textContent = 'Удалить';
+      b.addEventListener('click', onClick); return b;
+    };
     var render = function () {
-      var files = input.files ? Array.prototype.slice.call(input.files) : [];
+      var files = multi ? kept : (input.files ? Array.prototype.slice.call(input.files) : []);
+      if (listEl) {
+        listEl.innerHTML = '';
+        files.forEach(function (f, i) {
+          var li = document.createElement('li'); li.className = 'file-drop__item';
+          var t = document.createElement('span'); t.textContent = f.name + ' · ' + fmtSize(f.size); li.appendChild(t);
+          li.appendChild(delBtn(function () { kept.splice(i, 1); setFiles(kept); render(); }));
+          listEl.appendChild(li);
+        });
+        listEl.hidden = !files.length;
+        box.classList.toggle('has-file', files.length > 0);
+        box.classList.toggle('is-full', files.length >= max);
+        var zoneText = box.querySelector('.file-drop__text b');
+        if (zoneText) zoneText.textContent = files.length >= max ? 'Больше нельзя — до ' + max + ' файлов' : (files.length ? 'Добавить ещё файл' : 'Добавить файл');
+        return;
+      }
       nameEl.innerHTML = '';
       if (!files.length) { nameEl.hidden = true; box.classList.remove('has-file'); return; }
       var text = files.length === 1 ? files[0].name + ' · ' + fmtSize(files[0].size)
         : files.length + ' ' + (files.length < 5 ? 'файла' : 'файлов') + ': ' + files.map(function (f) { return f.name; }).join(', ');
       nameEl.appendChild(document.createTextNode(text));
-      var clear = document.createElement('button'); clear.type = 'button'; clear.className = 'file-drop__clear'; clear.textContent = 'убрать';
-      clear.addEventListener('click', function () { input.value = ''; render(); });
-      nameEl.appendChild(clear); nameEl.hidden = false; box.classList.add('has-file');
+      nameEl.appendChild(delBtn(function () { input.value = ''; render(); }));
+      nameEl.hidden = false; box.classList.add('has-file');
     };
-    input.addEventListener('change', render);
+    var accept = function (list) {
+      var arr = Array.prototype.slice.call(list);
+      if (!arr.length) return;
+      if (multi) {
+        arr.forEach(function (f) {
+          var dup = kept.some(function (k) { return k.name === f.name && k.size === f.size; });
+          if (!dup && kept.length < max) kept.push(f);
+        });
+        setFiles(kept);
+      } else if (input.multiple) setFiles(arr);
+      else setFiles(arr.slice(0, 1));
+      render();
+    };
+    input.addEventListener('change', function () { if (multi) { accept(input.files); } else render(); });
     if (canDrag) {
       ['dragenter', 'dragover'].forEach(function (ev) { box.addEventListener(ev, function (e) { e.preventDefault(); box.classList.add('is-over'); }); });
       ['dragleave', 'drop'].forEach(function (ev) { box.addEventListener(ev, function (e) { e.preventDefault(); box.classList.remove('is-over'); }); });
-      box.addEventListener('drop', function (e) {
-        var files = e.dataTransfer && e.dataTransfer.files;
-        if (!files || !files.length) return;
-        var dt = new DataTransfer();
-        Array.prototype.slice.call(files, 0, input.multiple ? files.length : 1).forEach(function (f) { dt.items.add(f); });
-        input.files = dt.files; render();
-      });
+      box.addEventListener('drop', function (e) { if (e.dataTransfer && e.dataTransfer.files) accept(e.dataTransfer.files); });
     }
     render();
   };

@@ -108,31 +108,20 @@
         <fieldset class="consent-box">
           <legend>Документы</legend>
           <%
-            // ЗОНА ФАЙЛА (18.09.2026, просьба владельца): крупная кнопка-площадка вместо системного
-            // «Выберите файл»; на десктопе файл можно перетащить (app.js), без JS — обычный input.
+            // ОДНА НАКОПИТЕЛЬНАЯ ЗОНА (замечание владельца 18.09.2026): документы добавляются по
+            // одному — выбором или перетаскиванием — до maxFiles штук, у каждого своя кнопка
+            // «Удалить». Сервер принимает до maxFiles файлов под любым именем поля.
           %>
           <div class="field">
-            <label for="t-doc1">Положение о турнире</label>
-            <div class="file-drop" data-file-drop>
-              <input id="t-doc1" name="doc_polozhenie" type="file" class="file-drop__input" aria-describedby="t-doc-hint">
-              <label class="file-drop__zone" for="t-doc1">
+            <label for="t-docs">Положение, сетка, регламент</label>
+            <div class="file-drop file-drop--multi" data-file-drop data-file-max="<%= maxFiles %>">
+              <input id="t-docs" name="docs" type="file" multiple class="file-drop__input" aria-describedby="t-doc-hint">
+              <label class="file-drop__zone" for="t-docs">
                 <span class="file-drop__icon" aria-hidden="true"></span>
-                <span class="file-drop__text"><b>Выберите файл</b><span class="file-drop__or"> или перетащите сюда</span></span>
-                <span class="file-drop__meta">PDF, Word, изображение · до <%= maxFileMb %> МБ</span>
+                <span class="file-drop__text"><b>Добавить файл</b><span class="file-drop__or"> или перетащите сюда</span></span>
+                <span class="file-drop__meta">до <%= maxFiles %> файлов · каждый до <%= maxFileMb %> МБ</span>
               </label>
-              <span class="file-drop__name" data-file-name hidden></span>
-            </div>
-          </div>
-          <div class="field">
-            <label for="t-doc2">Сетка или регламент</label>
-            <div class="file-drop" data-file-drop>
-              <input id="t-doc2" name="doc_setka" type="file" class="file-drop__input">
-              <label class="file-drop__zone" for="t-doc2">
-                <span class="file-drop__icon" aria-hidden="true"></span>
-                <span class="file-drop__text"><b>Выберите файл</b><span class="file-drop__or"> или перетащите сюда</span></span>
-                <span class="file-drop__meta">PDF, Word, изображение · до <%= maxFileMb %> МБ</span>
-              </label>
-              <span class="file-drop__name" data-file-name hidden></span>
+              <ul class="file-drop__list" data-file-list hidden></ul>
             </div>
           </div>
           <p class="field-hint" id="t-doc-hint">
