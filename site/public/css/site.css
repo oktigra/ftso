@@ -529,7 +529,11 @@ html[data-theme="warm"]{
 .cal__bar--C{background:var(--cal-c-bg); color:var(--cal-c-tx); border-color:var(--cal-c-bd); border-left-color:var(--cal-c-edge);}
 .cal__bar.is-done, .cal__li.is-done{background:var(--cal-done-bg); color:var(--cal-done-tx); border-color:var(--cal-done-bd); border-left-color:var(--cal-done-bd); box-shadow:none;}
 .cal__bar.is-reg, .cal__li.is-reg{border-left-color:var(--cal-reg);}
-.cal__bar.is-cont-l{border-top-left-radius:0; border-bottom-left-radius:0; margin-left:0;} .cal__bar.is-cont-r{border-top-right-radius:0; border-bottom-right-radius:0; margin-right:0;}
+/* Продолжение турнира на соседней неделе — стрелка на краю, а не срезанный край: полоса,
+   прилипшая к рамке ячейки, читалась как вылезшая за границу (скрин владельца 18.09.2026). */
+.cal__bar.is-cont-l::before, .cal__bar.is-cont-r::after{position:absolute; top:50%; transform:translateY(-50%); font-size:.9rem; line-height:1; opacity:.7; pointer-events:none;}
+.cal__bar.is-cont-l{padding-left:1.1rem;} .cal__bar.is-cont-l::before{content:"‹"; left:.35rem;}
+.cal__bar.is-cont-r{padding-right:1.1rem;} .cal__bar.is-cont-r::after{content:"›"; right:.4rem;}
 .cal__bar.is-dim{opacity:.22;}
 /* Идущий турнир дышит заливкой: 3,6 с на цикл, плавно; у категории C — от своего серого. */
 .cal__bar.is-live, .cal__li.is-live{animation:cal-grow .55s ease-out both, cal-breathe 3.6s cubic-bezier(.45,0,.55,1) .6s infinite;}
@@ -540,7 +544,9 @@ html[data-theme="warm"]{
 @keyframes cal-dot{0%,100%{opacity:1; transform:scale(1);} 50%{opacity:.5; transform:scale(1.35);}}
 .cal__cat{display:inline-block; min-width:14px; height:14px; line-height:14px; text-align:center; font-size:.62rem; font-weight:700; border-radius:3px; margin-right:.3rem; vertical-align:top; color:#fff; background:var(--cal-a-edge);}
 .cal__bar--B .cal__cat, .cal__li.cal__bar--B .cal__cat{background:var(--cal-b-edge);} .cal__bar--C .cal__cat, .cal__li.cal__bar--C .cal__cat{background:var(--cal-c-edge);} .is-done .cal__cat{background:var(--cal-done-bd);}
-.cal__name{display:inline-block; max-width:calc(100% - 20px); vertical-align:top; font-weight:600; white-space:normal; overflow-wrap:anywhere; hyphens:auto; transform-origin:left center; transition:transform .22s cubic-bezier(.2,.8,.3,1.2), text-shadow .22s; will-change:transform;}
+/* Перенос только по словам: дефис посреди «Смо-ленской» выглядел опечаткой. break-word рвёт
+   слово лишь когда оно целиком не влезает в ячейку. */
+.cal__name{display:inline-block; max-width:calc(100% - 20px); vertical-align:top; font-weight:600; white-space:normal; overflow-wrap:break-word; hyphens:manual; transform-origin:left center; transition:transform .22s cubic-bezier(.2,.8,.3,1.2), text-shadow .22s; will-change:transform;}
 .cal__bar:hover .cal__name, .cal__bar:focus-visible .cal__name{transform:translate(2px,-1px) scale(1.07); text-shadow:0 2px 3px var(--cal-shadow);}
 .is-live .cal__name::before{content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--cal-dot); margin-right:.35rem; vertical-align:1px; animation:cal-dot 3.6s cubic-bezier(.45,0,.55,1) .6s infinite;}
 /* Списки дня — только на телефоне. */

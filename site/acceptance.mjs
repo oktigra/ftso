@@ -6475,6 +6475,10 @@ try {
   assert(d.court && d.todayMarked, 'под сегодняшним днём нужна разметка корта на заднем плане');
   eq(d.count, '2', 'счётчик сегодняшнего дня считается из тех же данных, что и полосы');
   eq(d.overflow, 0, 'названия не должны вылезать из полос'); eq(d.legend, 6, 'легенда'); assert(!d.sideways, 'десктоп не уезжает вбок');
+  // Стык недель (скрин владельца 18.09): у куска, продолжающегося на соседней неделе, остаются отступ и
+  // скругление, продолжение показано стрелкой; в названии нет автопереносов по слогам.
+  const edge = await desk.evaluate((m) => [...document.querySelectorAll(m)].filter((x) => /is-cont/.test(x.className)).map((x) => { const cs = getComputedStyle(x); return { m: cs.marginLeft === cs.marginRight && parseFloat(cs.marginLeft) > 0, r: parseFloat(cs.borderTopLeftRadius) > 0 && parseFloat(cs.borderTopRightRadius) > 0, arrow: /[‹›]/.test(getComputedStyle(x, x.className.includes('cont-r') ? '::after' : '::before').content), hyphen: /\S-\n|\u00AD/.test(x.innerText) }; }), mine('.cal__bar'));
+  assert(edge.length >= 1 && edge.every((e) => e.m && e.r && e.arrow && !e.hyphen), `стык недель: отступ, скругление и стрелка у продолжения, без дефисов: ${JSON.stringify(edge)}`);
   eq(d.inlineStyle, 0, 'позиции — классами: style="" режется CSP');
   // Наведение меняет только transform: соседи не двигаются.
   const before = await desk.evaluate(() => [...document.querySelectorAll('.cal__cell[data-day]')].map((c) => Math.round(c.getBoundingClientRect().height)).join(','));
