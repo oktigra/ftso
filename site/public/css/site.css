@@ -462,16 +462,30 @@ tbody tr:hover{background:var(--surface-2);}
 .cal{margin-top:1rem;}
 .cal__nav{display:flex; align-items:center; justify-content:space-between; gap:.6rem; margin-bottom:.6rem; flex-wrap:wrap;}
 .cal__title{margin:0; font-size:1.25rem; text-transform:capitalize;}
-.cal__table{width:100%; table-layout:fixed; border-collapse:separate; border-spacing:4px;}
+/* min-width:0 — иначе общее правило table{min-width:520px} (для таблиц данных со своей
+   прокруткой) растягивало календарь на телефоне и вся страница уезжала вбок (замер 18.09.2026:
+   таблица 520 при окне 390). Календарь — не таблица данных, ему хватает 7 узких колонок. */
+.cal__table{width:100%; min-width:0; table-layout:fixed; border-collapse:separate; border-spacing:4px;}
 .cal__table th{font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); padding:.2rem 0;}
-.cal__cell{vertical-align:top; min-height:5.5rem; height:5.5rem; padding:.35rem; border-radius:.6rem; background:var(--surface-2); border:1px solid transparent;}
+/* ЯЧЕЙКА РАСТЁТ ПОД НАЗВАНИЯ (18.09.2026, просьба Олега): раньше высота была
+   зафиксирована, а название обрезалось многоточием — «Первенство Смолен…». Теперь
+   название переносится по словам целиком, высота строки берётся по самой высокой ячейке. */
+.cal__cell{vertical-align:top; height:5.5rem; padding:.35rem; border-radius:.6rem; background:var(--surface-2); border:1px solid transparent;}
+/* height у ячейки таблицы — это МИНИМУМ: строка с длинным названием растёт сама, пустые недели держат ровную высоту. */
 .cal__cell--empty{background:transparent;}
 .cal__cell.has-items{border-color:var(--primary);}
 .cal__day{display:block; font-family:'Manrope',sans-serif; font-weight:700; font-size:.85rem; color:var(--muted); margin-bottom:.2rem;}
-.cal__item{display:block; font-size:.74rem; line-height:1.2; padding:.15rem .35rem; margin-top:.15rem; border-radius:.35rem; background:var(--primary); color:#fff; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.cal__item{display:block; font-size:.74rem; line-height:1.25; padding:.2rem .4rem; margin-top:.2rem; border-radius:.35rem; background:var(--primary); color:#fff; text-decoration:none; white-space:normal; overflow-wrap:anywhere; hyphens:auto;}
+.cal__item:hover{filter:brightness(1.08);}
 .cal__item--finished{background:var(--muted);}
 .cal__item--ongoing{background:#b45309;}
-@media (max-width:720px){ .cal__table{border-spacing:2px;} .cal__cell{height:4.2rem; min-height:4.2rem; padding:.2rem;} .cal__item{font-size:.62rem;} }
+@media (max-width:720px){ .cal__table{border-spacing:2px;} .cal__cell{height:4.2rem; padding:.2rem;} .cal__item{font-size:.62rem; padding:.15rem .25rem;} }
+/* ПРИГЛАШЕНИЕ «ПРОВЕСТИ СВОЙ ТУРНИР» под календарём — заметный блок вместо строчки-ссылки
+   (18.09.2026). Тот же градиент, что у призыва на главной, но компактнее. */
+.cal-cta{display:flex; align-items:center; justify-content:space-between; gap:1.25rem; flex-wrap:wrap; margin-top:1.5rem; padding:clamp(1.25rem,3vw,2rem) clamp(1.25rem,4vw,2.5rem); border-radius:1.25rem; background:var(--cta-grad); color:#fff; box-shadow:var(--shadow-lg);}
+.cal-cta h2{margin:0 0 .35rem; font-size:clamp(1.2rem,1rem + 1.2vw,1.6rem); color:#fff; text-wrap:balance;}
+.cal-cta p{margin:0; color:rgba(255,255,255,.85); max-width:52ch;}
+.cal-cta .btn{white-space:nowrap;}
 .tag--entry-open{color:#15803d; border-color:#15803d;}
 .tag--entry-late{color:#b45309; border-color:#b45309;}
 .tag--entry-closed{color:var(--muted); border-color:var(--muted);}
