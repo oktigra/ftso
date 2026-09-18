@@ -71,3 +71,21 @@ export function parseSum(raw) {
   const n = Number(String(raw || '').replace(/[^\d]/g, ''));
   return Number.isInteger(n) && n >= 10 && n <= 1000000 ? n : null;
 }
+
+/**
+ * QR ДЛЯ ПОДВАЛА (решение владельца 19.09.2026: код прямо в футере, без переходов) —
+ * пожертвование без суммы, сумму плательщик вводит в банке. Кэш по строке платежа:
+ * подвал на каждой странице, генерировать заново не нужно.
+ */
+const footerCache = new Map();
+export function footerQrCached(cfg) {
+  const key = gostPayload(cfg, null);
+  if (!footerCache.has(key)) {
+    footerCache.clear();
+    // Синхронный рендер: qrcode умеет отдать SVG без промиса, если передать колбэк — ловим результат.
+    let svg = '';
+    QRCode.toString(key, { type: 'svg', errorCorrectionLevel: 'M', margin: 1, color: { dark: '#0b1f18', light: '#ffffff' } }, (err, out) => { if (!err) svg = out; });
+    footerCache.set(key, svg);
+  }
+  return footerCache.get(key);
+}

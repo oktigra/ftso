@@ -670,6 +670,17 @@ html[data-theme="warm"]{
 .footer-bottom{margin-top:clamp(2rem,5vw,3rem); padding-top:1.5rem; border-top:1px solid var(--border); display:flex; flex-wrap:wrap; gap:1rem 1.5rem; align-items:center; justify-content:space-between; color:var(--muted); font-size:.9rem;}
 .footer-dev a{color:var(--muted); text-decoration:underline; text-underline-offset:3px; transition:color .2s;} .footer-dev a:hover{color:var(--primary);}
 .footer-legal{display:flex; gap:1.5rem; flex-wrap:wrap;}
+/* QR пожертвования в подвале: белая подложка обязательна — сканеры банков читают тёмный код на светлом. */
+.footer-donate{display:flex; align-items:center; gap:1.25rem; margin-top:clamp(2rem,5vw,3rem); padding:1.1rem 1.25rem; border:1px solid var(--border); border-radius:1rem; background:var(--surface-2);}
+/* Ширина 184px — не меньше: код по ГОСТу плотный (79 модулей), с экрана читается от ~2 px на
+   модуль (замер jsQR 19.09: 118 и 140 px не читаются, 160+ читается). */
+.footer-donate__qr{flex:0 0 auto; display:block; width:184px; padding:8px; background:#fff; border-radius:.6rem; box-shadow:0 4px 14px rgba(0,0,0,.14); transition:transform .2s;}
+.footer-donate__qr:hover{transform:scale(1.04);}
+.footer-donate__qr svg{display:block; width:100%; height:auto;}
+.footer-donate__text h4{font-family:'Manrope',sans-serif; font-size:1rem; margin:0 0 .3rem; color:var(--text);}
+.footer-donate__text p{margin:0; color:var(--muted); font-size:.92rem; max-width:60ch;}
+.footer-donate__text p + p{margin-top:.35rem;}
+@media (max-width:560px){ .footer-donate{flex-direction:column; align-items:flex-start;} .footer-donate__qr{width:200px;} }
 .footer-legal a{color:var(--muted);}
 .footer-legal a:hover{color:var(--primary);}
 

@@ -48,6 +48,21 @@
       </div>
     </div>
     <%
+    /* QR ПОЖЕРТВОВАНИЯ ПРЯМО В ПОДВАЛЕ (решение владельца 19.09.2026): сканируется без
+       переходов, сумму вводят в банке. Членский взнос и реквизиты текстом — на /donate.
+       Показывается только при заданных реквизитах (см. lib/donate.mjs). */
+    %>
+    <% if (typeof footerQr !== 'undefined' && footerQr && !['/admin', '/login', '/cabinet', '/judge'].some(function (p) { return currentPath.startsWith(p); })) { %>
+      <div class="footer-donate">
+        <a class="footer-donate__qr" href="/donate" aria-label="Открыть страницу пожертвований и взносов"><%- footerQr %></a>
+        <div class="footer-donate__text">
+          <h4>Поддержать федерацию</h4>
+          <p>Отсканируйте код в приложении своего банка — пожертвование уйдёт напрямую на расчётный счёт Федерации, сумму укажете сами.</p>
+          <p class="muted small"><a href="/donate?tab=dues">Членский взнос</a> · <a href="/donate">реквизиты и QR для афиши</a></p>
+        </div>
+      </div>
+    <% } %>
+    <%
     /* ФОРМА ОБРАТНОЙ СВЯЗИ ВНИЗУ КАЖДОЙ СТРАНИЦЫ (решение владельца 06.09.2026): та же
        форма, что на /contacts (маршрут /contacts/feedback, honeypot, согласие, лимит).
        Не показывается в админке и на самой странице /contacts (там она уже есть). */

@@ -4138,7 +4138,8 @@ await check('пожертвования и членский взнос: QR по 
   for (const k of ['DONATE_ACCOUNT', 'DONATE_BIC', 'DONATE_BANK', 'DONATE_CORR']) delete process.env[k];
   eq((await http('/donate')).status, 404, 'без реквизитов /donate — 404');
   eq((await http('/donate/qr.svg')).status, 404, 'без реквизитов qr.svg — 404');
-  assert(!/href="\/donate"/.test((await http('/')).text), 'без реквизитов ссылки «Поддержать федерацию» в подвале нет');
+  const home0 = await http('/');
+  assert(!/href="\/donate"/.test(home0.text) && !/footer-donate/.test(home0.text), 'без реквизитов в подвале нет ни ссылки, ни QR');
   assert(donateConfig({ DONATE_ACCOUNT: '123', DONATE_BIC: '044525225', DONATE_BANK: 'Банк', DONATE_CORR: '30101810400000000225' }).problems.some((x) => /20 цифр/.test(x)), 'счёт не из 20 цифр — отбит');
   Object.assign(process.env, { DONATE_ACCOUNT: '40703810838000012345', DONATE_BIC: '044525225', DONATE_BANK: 'ПАО СБЕРБАНК', DONATE_CORR: '30101810400000000225' });
   try {
@@ -4148,10 +4149,30 @@ await check('пожертвования и членский взнос: QR по 
     assert(payload.startsWith('ST00012|Name=') && /\|PersonalAcc=40703810838000012345\|/.test(payload) && /\|PayeeINN=6732145252\|KPP=673201001\|/.test(payload) && /\|Sum=50000$/.test(payload), `строка ГОСТ: ${payload}`);
     const page = await http('/donate?sum=500');
     eq(page.status, 200, 'страница пожертвований'); assert(/<svg/.test(page.text) && /Сумма в коде: <b>500/.test(page.text) && /40703810838000012345/.test(page.text) && /статье 582/.test(page.text), 'на странице QR, сумма, реквизиты и условия');
-    assert(/href="\/donate">Поддержать федерацию/.test((await http('/')).text), 'ссылка в подвале появилась');
+    const sharpQ = (await import('sharp')).default; const jsQR = (await import('jsqr')).default;
+    const homeOn = await http('/');
+    assert(/href="\/donate">Поддержать федерацию/.test(homeOn.text), 'ссылка в подвале появилась');
+    // QR прямо в подвале (решение владельца 19.09): без суммы, на белой подложке, читается.
+    const fq = /<a class="footer-donate__qr"[^>]*>([\s\S]*?)<\/a>/.exec(homeOn.text);
+    assert(fq && /<svg/.test(fq[1]), 'в подвале нет QR пожертвования');
+    const dec0 = await sharpQ(Buffer.from(fq[1])).resize(500, 500).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const c0 = jsQR(new Uint8ClampedArray(dec0.data.buffer), dec0.info.width, dec0.info.height);
+    assert(c0 && c0.data === payload.replace(/\|Sum=\d+$/, ''), 'QR подвала — те же реквизиты без суммы');
+    assert(!/footer-donate/.test((await http('/admin/login')).text) && !/footer-donate/.test((await http('/login')).text), 'на служебных страницах (админка, вход) QR подвала нет');
+    // Со скриншота при штатных 184 px — как его увидит камера (меньше 160 px код по ГОСТу не читается).
+    {
+      const { chromium: chr0 } = await import('playwright'); const br0 = await chr0.launch({ executablePath: CHROMIUM, args: ['--no-sandbox'] });
+      try {
+        const fp = await br0.newPage({ viewport: { width: 1440, height: 1000 } }); await fp.goto(`${inst.base}/tournaments`, { waitUntil: 'networkidle' });
+        const w = await fp.locator('.footer-donate__qr').evaluate((x) => Math.round(x.getBoundingClientRect().width));
+        const shot = await fp.locator('.footer-donate__qr').screenshot();
+        const d1 = await sharpQ(shot).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+        const c1 = jsQR(new Uint8ClampedArray(d1.data.buffer), d1.info.width, d1.info.height);
+        assert(w >= 160 && c1 && c1.data === c0.data, `QR подвала при ${w}px должен читаться со скриншота 1:1`);
+      } finally { await br0.close(); }
+    }
     // Читаем свой QR чужим декодером — так его прочитает приложение банка.
     const svg = await http('/donate/qr.svg?sum=500'); eq(svg.status, 200, 'qr.svg'); assert(/image\/svg\+xml/.test(svg.headers.get('content-type') || ''), 'тип svg');
-    const sharpQ = (await import('sharp')).default; const jsQR = (await import('jsqr')).default;
     const { data, info } = await sharpQ(Buffer.from(svg.text)).resize(600, 600).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     const code = jsQR(new Uint8ClampedArray(data.buffer), info.width, info.height);
     assert(code && code.data === payload, `сторонний декодер должен прочитать ровно строку ГОСТ: ${code ? code.data.slice(0, 60) : 'не читается'}`);
