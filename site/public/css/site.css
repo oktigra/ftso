@@ -507,6 +507,19 @@ html[data-theme="warm"]{
 /* Первая строка — под число дня и счётчик (сама ячейка тянется на все строки и в
    первой ничего не кладёт, без явной высоты строка была бы нулевой и полосы легли бы на числа). */
 .cal__week{display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); grid-template-rows:2.2rem; grid-auto-rows:auto; gap:0 4px; position:relative;}
+/* ОДИНАКОВЫЕ КЛЕТКИ (замечание владельца 18.09.2026): у всех недель месяца одно число дорожек
+   (lanes-N на сетке — максимум по месяцу) и одна высота дорожки — по самой высокой полосе
+   (app.js меряет и пишет --cal-bar-h на сетку; без JS — auto). Пустые недели держат ту же высоту. */
+.cal__grid.lanes-1 .cal__week{grid-template-rows:2.2rem repeat(1, minmax(var(--cal-bar-h, auto), auto));}
+.cal__grid.lanes-2 .cal__week{grid-template-rows:2.2rem repeat(2, minmax(var(--cal-bar-h, auto), auto));}
+.cal__grid.lanes-3 .cal__week{grid-template-rows:2.2rem repeat(3, minmax(var(--cal-bar-h, auto), auto));}
+.cal__grid.lanes-4 .cal__week{grid-template-rows:2.2rem repeat(4, minmax(var(--cal-bar-h, auto), auto));}
+.cal__grid.lanes-5 .cal__week{grid-template-rows:2.2rem repeat(5, minmax(var(--cal-bar-h, auto), auto));}
+.cal__grid.lanes-6 .cal__week{grid-template-rows:2.2rem repeat(6, minmax(var(--cal-bar-h, auto), auto));}
+.cal__grid.lanes-7 .cal__week{grid-template-rows:2.2rem repeat(7, minmax(var(--cal-bar-h, auto), auto));}
+.cal__grid.lanes-8 .cal__week{grid-template-rows:2.2rem repeat(8, minmax(var(--cal-bar-h, auto), auto));}
+.cal__grid.lanes-9 .cal__week, .cal__grid.lanes-10 .cal__week, .cal__grid.lanes-11 .cal__week, .cal__grid.lanes-12 .cal__week, .cal__grid.lanes-13 .cal__week, .cal__grid.lanes-14 .cal__week, .cal__grid.lanes-15 .cal__week, .cal__grid.lanes-16 .cal__week{grid-template-rows:2.2rem repeat(16, minmax(var(--cal-bar-h, auto), auto));}
+.cal__week{padding-bottom:.35rem;}
 .cal__cell{position:relative; overflow:hidden; grid-row:1 / span 17; min-height:5.5rem; padding:.35rem; border-radius:.6rem; background:var(--surface-2); border:1px solid transparent; transition:border-color .2s;}
 /* Колонки и дорожки — классами (CSP запрещает style=""). Дорожек до 16 на неделю; больше у федерации не бывает. */
 .cal__cell.col-1, .cal__bar.col-1{grid-column-start:1;} .cal__cell.col-2, .cal__bar.col-2{grid-column-start:2;} .cal__cell.col-3, .cal__bar.col-3{grid-column-start:3;} .cal__cell.col-4, .cal__bar.col-4{grid-column-start:4;} .cal__cell.col-5, .cal__bar.col-5{grid-column-start:5;} .cal__cell.col-6, .cal__bar.col-6{grid-column-start:6;} .cal__cell.col-7, .cal__bar.col-7{grid-column-start:7;}
@@ -520,10 +533,20 @@ html[data-theme="warm"]{
 .cal__day{position:relative; z-index:1; display:inline-block; font-family:'Manrope',sans-serif; font-weight:700; font-size:.85rem; color:var(--muted);}
 .cal__cell.is-today .cal__day{color:var(--primary);}
 .cal__count{position:relative; z-index:1; display:inline-block; margin-left:.3rem; padding:0 .4rem; border-radius:999px; font-size:.72rem; line-height:1.3rem; background:var(--surface); border:1px solid var(--border); color:var(--muted);}
-.cal__court{position:absolute; inset:0; width:100%; height:100%; z-index:0; pointer-events:none; color:var(--cal-court); opacity:var(--cal-court-a);}
+.cal__court{position:absolute; inset:4px; width:calc(100% - 8px); height:calc(100% - 8px); z-index:0; pointer-events:none; color:var(--cal-court); opacity:var(--cal-court-a);}
+/* Корт лежит так же, как ячейка: широкая — горизонтальный, высокая — вертикальный
+   (замечание владельца 18.09.2026). Ориентацию ячейки меряет app.js и ставит на сетку
+   is-tall / is-wide; без JS — по умолчанию горизонтальный на десктопе, вертикальный на телефоне. */
+.cal__court--v{display:none;}
+.cal__grid.is-tall .cal__court--h{display:none;} .cal__grid.is-tall .cal__court--v{display:block;}
+/* Дни соседних месяцев — сетка всегда с понедельника по воскресенье. */
+.cal__cell.is-other{opacity:.55;}
+.cal__cell.is-other .cal__day{font-weight:500;}
+.cal__cell--empty{display:none;}
 /* Полоса турнира: объём — цветное ребро слева, тень снизу, светлая кромка сверху. */
-.cal__bar{position:relative; z-index:2; display:block; margin:.45rem .3rem 0; padding:.35rem .5rem .35rem .55rem; border-radius:.45rem; font-size:.78rem; line-height:1.25; color:inherit; text-decoration:none; border:1px solid; border-left:4px solid; box-shadow:0 1px 2px var(--cal-shadow), inset 0 1px 0 var(--cal-hi); transition:transform .2s, box-shadow .2s, opacity .25s; transform-origin:left center; animation:cal-grow .55s ease-out both;}
-.cal__bar:hover, .cal__bar:focus-visible{z-index:3; transform:translateY(-2px); box-shadow:0 4px 12px var(--cal-shadow), inset 0 1px 0 var(--cal-hi), 0 0 0 2px var(--bg), 0 0 0 3px currentColor; outline:none; text-decoration:none;}
+.cal__bar{position:relative; z-index:2; display:block; margin:.45rem .3rem 0; padding:.35rem .5rem .35rem .55rem; border-radius:.45rem; font-size:.78rem; line-height:1.25; color:inherit; text-decoration:none; border:1px solid; border-left:4px solid; box-shadow:0 1px 2px var(--cal-shadow), inset 0 1px 0 var(--cal-hi); transition:transform .2s, box-shadow .2s, opacity .25s; transform-origin:left center; animation:cal-grow .55s ease-out backwards;}
+/* backwards, а не both: с both анимация держит transform после конца и перебивает подъём при наведении (замер 18.09). */
+.cal__bar:hover, .cal__bar.is-hover, .cal__bar:focus-visible{z-index:3; transform:translateY(-2px); box-shadow:0 4px 12px var(--cal-shadow), inset 0 1px 0 var(--cal-hi), 0 0 0 2px var(--bg), 0 0 0 3px currentColor; outline:none; text-decoration:none;}
 .cal__bar--A{background:var(--cal-a-bg); color:var(--cal-a-tx); border-color:var(--cal-a-bd); border-left-color:var(--cal-a-edge);}
 .cal__bar--B{background:var(--cal-b-bg); color:var(--cal-b-tx); border-color:var(--cal-b-bd); border-left-color:var(--cal-b-edge);}
 .cal__bar--C{background:var(--cal-c-bg); color:var(--cal-c-tx); border-color:var(--cal-c-bd); border-left-color:var(--cal-c-edge);}
@@ -536,18 +559,20 @@ html[data-theme="warm"]{
 .cal__bar.is-cont-r{padding-right:1.1rem;} .cal__bar.is-cont-r::after{content:"›"; right:.4rem;}
 .cal__bar.is-dim{opacity:.22;}
 /* Идущий турнир дышит заливкой: 3,6 с на цикл, плавно; у категории C — от своего серого. */
-.cal__bar.is-live, .cal__li.is-live{animation:cal-grow .55s ease-out both, cal-breathe 3.6s cubic-bezier(.45,0,.55,1) .6s infinite;}
+.cal__bar.is-live, .cal__li.is-live{animation:cal-grow .55s ease-out backwards, cal-breathe 3.6s cubic-bezier(.45,0,.55,1) .6s infinite;}
 .cal__bar--C.is-live{animation-name:cal-grow, cal-breathe-c;}
 @keyframes cal-grow{from{transform:scaleX(0); opacity:0;} to{transform:scaleX(1); opacity:1;}}
 @keyframes cal-breathe{0%,100%{background-color:var(--cal-a-bg); box-shadow:0 1px 2px var(--cal-shadow), inset 0 1px 0 var(--cal-hi);} 50%{background-color:var(--cal-live); box-shadow:0 3px 12px rgba(39,179,119,.5), inset 0 1px 0 var(--cal-hi);}}
 @keyframes cal-breathe-c{0%,100%{background-color:var(--cal-c-bg); box-shadow:0 1px 2px var(--cal-shadow), inset 0 1px 0 var(--cal-hi);} 50%{background-color:var(--cal-live); box-shadow:0 3px 12px rgba(39,179,119,.5), inset 0 1px 0 var(--cal-hi);}}
 @keyframes cal-dot{0%,100%{opacity:1; transform:scale(1);} 50%{opacity:.5; transform:scale(1.35);}}
-.cal__cat{display:inline-block; min-width:14px; height:14px; line-height:14px; text-align:center; font-size:.62rem; font-weight:700; border-radius:3px; margin-right:.3rem; vertical-align:top; color:#fff; background:var(--cal-a-edge);}
+.cal__cat{display:inline-block; min-width:14px; height:14px; line-height:14px; text-align:center; font-size:.62rem; font-weight:700; border-radius:3px; margin-right:.3rem; vertical-align:1px; color:#fff; background:var(--cal-a-edge);}
 .cal__bar--B .cal__cat, .cal__li.cal__bar--B .cal__cat{background:var(--cal-b-edge);} .cal__bar--C .cal__cat, .cal__li.cal__bar--C .cal__cat{background:var(--cal-c-edge);} .is-done .cal__cat{background:var(--cal-done-bd);}
 /* Перенос только по словам: дефис посреди «Смо-ленской» выглядел опечаткой. break-word рвёт
    слово лишь когда оно целиком не влезает в ячейку. */
-.cal__name{display:inline-block; max-width:calc(100% - 20px); vertical-align:top; font-weight:600; white-space:normal; overflow-wrap:break-word; hyphens:manual; transform-origin:left center; transition:transform .22s cubic-bezier(.2,.8,.3,1.2), text-shadow .22s; will-change:transform;}
-.cal__bar:hover .cal__name, .cal__bar:focus-visible .cal__name{transform:translate(2px,-1px) scale(1.07); text-shadow:0 2px 3px var(--cal-shadow);}
+/* Не больше двух строк: однодневный кусок длинного названия иначе задаёт высоту всему месяцу
+   (замер: 6 строк → клетки по 377 px, 3 строки → 290). Полное название — в подсказке и в списке дня. */
+.cal__name{display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; max-width:100%; vertical-align:top; font-weight:600; white-space:normal; overflow-wrap:break-word; hyphens:manual; transform-origin:left center; transition:transform .22s cubic-bezier(.2,.8,.3,1.2), text-shadow .22s; will-change:transform;}
+.cal__bar:hover .cal__name, .cal__bar.is-hover .cal__name, .cal__bar:focus-visible .cal__name{transform:translate(2px,-1px) scale(1.07); text-shadow:0 2px 3px var(--cal-shadow);}
 .is-live .cal__name::before{content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--cal-dot); margin-right:.35rem; vertical-align:1px; animation:cal-dot 3.6s cubic-bezier(.45,0,.55,1) .6s infinite;}
 /* Списки дня — только на телефоне. */
 .cal__lists{display:none;}
@@ -563,8 +588,9 @@ html[data-theme="warm"]{
   .cal__bar{display:none;}
   /* Первая строка — дни, остальные — дорожки: на телефоне дорожки схлопываем в ноль,
      дни оставляем авто. grid-auto-rows:0 без template-rows обнулял и первую строку. */
-  .cal__week{grid-template-rows:auto; grid-auto-rows:0;}
+  .cal__week, .cal__grid[class*="lanes-"] .cal__week{grid-template-rows:auto; grid-auto-rows:0; padding-bottom:0;}
   .cal__cell{grid-row:1 / span 17;}
+  .cal__court--h{display:none;} .cal__court--v{display:block;}
   .cal__lists{display:block;}
   .cal__legend{font-size:.72rem; gap:.3rem .7rem;}
 }

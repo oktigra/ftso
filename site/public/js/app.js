@@ -462,6 +462,27 @@
     var bars = Array.prototype.slice.call(grid.querySelectorAll('.cal__bar'));
     var lists = document.querySelector('[data-cal-lists]');
     var covers = function (bar, iso) { return bar.getAttribute('data-from') <= iso && iso <= bar.getAttribute('data-to'); };
+    // ВЕСЬ ТУРНИР ПОДНИМАЕТСЯ: кусок на соседней неделе подсвечивается вместе с тем, на который навели.
+    grid.addEventListener('mouseover', function (e) {
+      var bar = e.target.closest('.cal__bar'); if (!bar) return;
+      var id = bar.getAttribute('data-id');
+      bars.forEach(function (b) { b.classList.toggle('is-hover', b !== bar && b.getAttribute('data-id') === id); });
+    });
+    grid.addEventListener('mouseout', function (e) {
+      if (e.target.closest('.cal__bar')) bars.forEach(function (b) { b.classList.remove('is-hover'); });
+    });
+    // ОДИНАКОВЫЕ КЛЕТКИ: все дорожки месяца — высотой с самую высокую полосу.
+    var fit = function () {
+      if (window.matchMedia('(max-width: 720px)').matches) { grid.style.removeProperty('--cal-bar-h'); return; }
+      grid.style.removeProperty('--cal-bar-h');
+      var h = 0;
+      bars.forEach(function (b) { h = Math.max(h, b.offsetHeight); });
+      if (h) grid.style.setProperty('--cal-bar-h', (h + 7) + 'px'); // 7px — верхний отступ полосы
+      // Корт — по реальной форме ячейки: выше, чем шире → вертикальный.
+      var cell = grid.querySelector('.cal__cell[data-day]');
+      if (cell) { var r = cell.getBoundingClientRect(); grid.classList.toggle('is-tall', r.height > r.width); grid.classList.toggle('is-wide', r.height <= r.width); }
+    };
+    fit(); window.addEventListener('resize', fit);
     grid.addEventListener('mouseover', function (e) {
       var cell = e.target.closest('.cal__cell[data-day]');
       if (!cell) return;
