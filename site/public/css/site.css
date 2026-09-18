@@ -180,6 +180,7 @@ body, .site-header, section, footer, .card, .badge, .status, .stat, .photo, tabl
   border-radius:1rem; box-shadow:var(--shadow-md); flex-direction:column; gap:.1rem; display:none; z-index:60;}
 .nav-more.is-open>.nav-more-list{display:flex;}
 .nav-more-list a{font-size:.95rem; padding:.5rem .75rem; border-radius:.7rem;}
+.nav-more-sep{height:1px; margin:.35rem .5rem; background:var(--border);}
 .header-actions{display:flex; align-items:center; gap:.6rem; margin-left:auto;}
 /* ВЫБОР ТЕМЫ (ТЗ оформления 07.09.2026). Был кружок на два состояния — стало
    меню на три: светлая, тёмная, теплая. У каждой строки образец палитры из трёх

@@ -246,7 +246,11 @@ await check('все 12 разделов договора есть в меню ш
   }
   // Меню — ОДИН ряд: пункты не якоря одной страницы, а реальные адреса.
   assert(!menu.includes('href="#'), 'в меню шапки остались якоря вместо реальных адресов');
-  return `${SECTIONS.length} разделов: ${SECTIONS.map((s) => s.path).join(' ')}`;
+  // «Ещё» (19.09.2026): после разделителя — те же ссылки «Участникам», что в подвале.
+  const more = menu.split('id="more-menu"')[1].split('</ul>')[0];
+  assert(/nav-more-sep/.test(more), 'в «Ещё» нет разделителя перед блоком «Участникам»');
+  for (const href of ['/register', '/cabinet', '/tournament-request', '/organizers', '/faq']) assert(more.includes(`href="${href}"`), `в «Ещё» нет ссылки ${href}`);
+  return `${SECTIONS.length} разделов: ${SECTIONS.map((s) => s.path).join(' ')}; в «Ещё» — блок «Участникам» из подвала`;
 });
 
 await check('/tournaments/:id живой для существующего, 404 для несуществующего', async () => {
