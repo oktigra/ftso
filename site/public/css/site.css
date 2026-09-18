@@ -895,9 +895,16 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 .file-drop__zone:hover .file-drop__icon, .file-drop.is-over .file-drop__icon{transform:translateY(-2px);}
 .file-drop__text{display:block; line-height:1.3;} .file-drop__text b{color:var(--primary); font-weight:700;}
 .file-drop__meta{display:block; margin-left:auto; font-size:.78rem; color:var(--muted); text-align:right;}
-.file-drop__name{display:flex; align-items:center; gap:.5rem; margin-top:.4rem; font-size:.88rem; color:var(--text);}
+.file-drop__name{display:flex; align-items:center; gap:.6rem; margin-top:.45rem; padding:.4rem .7rem; border-radius:.5rem; background:var(--surface); border:1px solid var(--border); font-size:.9rem; color:var(--text);}
 .file-drop__name::before{content:"✓"; color:var(--primary); font-weight:700;}
-.file-drop__clear{margin-left:auto; font-size:.78rem; color:var(--muted); background:none; border:0; cursor:pointer; text-decoration:underline; padding:0;}
+/* «Удалить» — кнопка, а не ссылка мелким шрифтом (замечание владельца 18.09). */
+.file-drop__del{margin-left:auto; flex:0 0 auto; font-family:inherit; font-size:.82rem; font-weight:600; padding:.35rem .8rem; border-radius:.5rem; border:1px solid color-mix(in srgb, var(--danger, #c0392b) 55%, var(--border)); background:color-mix(in srgb, var(--danger, #c0392b) 8%, var(--surface)); color:var(--danger, #c0392b); cursor:pointer; transition:background .15s, transform .15s;}
+.file-drop__del:hover{background:color-mix(in srgb, var(--danger, #c0392b) 16%, var(--surface)); transform:translateY(-1px);}
+.file-drop__list{list-style:none; margin:.5rem 0 0; padding:0; display:flex; flex-direction:column; gap:.35rem;}
+.file-drop__item{display:flex; align-items:center; gap:.6rem; padding:.45rem .7rem; border-radius:.5rem; background:var(--surface); border:1px solid var(--border); font-size:.9rem;}
+.file-drop__item::before{content:"✓"; color:var(--primary); font-weight:700;}
+.file-drop__item span{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.file-drop.is-full .file-drop__zone{opacity:.6; border-style:dotted;}
 .file-drop.has-file .file-drop__zone{border-style:solid; border-color:color-mix(in srgb, var(--primary) 60%, var(--border));}
 /* Компактный вид — в строках таблиц админки (логотип партнёра, фото в справочнике): одна строка. */
 .file-drop--compact .file-drop__zone, .field label.file-drop--compact .file-drop__zone{min-height:2.3rem; padding:.3rem .6rem; gap:.5rem; border-radius:.5rem; font-size:.85rem;}
