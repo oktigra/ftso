@@ -430,6 +430,18 @@ tbody tr:hover{background:var(--surface-2);}
 .rplate__chips{display:flex; flex-wrap:wrap; gap:.5rem; padding:.8rem 1.25rem .9rem;}
 .rplate__chips span{padding:.3rem .7rem; border-radius:999px; background:var(--surface-2); border:1px solid var(--border); color:var(--muted); font-size:.78rem; white-space:nowrap;}
 .rplate__chips span:first-child{background:var(--accent-soft); border-color:transparent; color:var(--primary); font-weight:600;}
+/* ЦВЕТ НАВЕДЕНИЯ (просьба владельца 19.09.2026): игрок, на которого смотрят, отделяется от
+   остальных цветом — имя и вся его справка ниже. Тёмная тема — жёлтый; светлая — тёплый
+   янтарь на светлом фоне; тёплая — терракота, чтобы не сливаться с охрой акцента. */
+:root{--rplate-hi:#b45309; --rplate-hi-soft:rgba(180,83,9,.12);}
+html[data-theme="dark"]{--rplate-hi:#ffd166; --rplate-hi-soft:rgba(255,209,102,.14);}
+html[data-theme="warm"]{--rplate-hi:#c2410c; --rplate-hi-soft:rgba(194,65,12,.12);}
+.rplate__name a, .rplate__chips span{transition:color .2s, background-color .2s, border-color .2s;}
+.rplate:hover .rplate__name a, .rplate:focus-within .rplate__name a, .rplate:hover .rplate__name{color:var(--rplate-hi);}
+.rplate:hover .rplate__place, .rplate:focus-within .rplate__place{color:var(--rplate-hi);}
+.rplate:hover::before, .rplate:focus-visible::before, .rplate:focus-within::before{background:var(--rplate-hi);}
+.rplate:hover .rplate__chips span, .rplate:focus-within .rplate__chips span{color:var(--rplate-hi); border-color:var(--rplate-hi-soft); background:var(--rplate-hi-soft);}
+.rplate:hover .rplate__chips span:first-child, .rplate:focus-within .rplate__chips span:first-child{color:var(--rplate-hi); background:var(--rplate-hi-soft); border-color:var(--rplate-hi);}
 .rplate--anonymized .rplate__name{color:var(--muted); font-style:italic;}
 .live-strip{padding:.9rem 0 0;} .live-strip__head{margin-bottom:.5rem;}.live-strip__row{display:flex; gap:.75rem; overflow-x:auto; padding-bottom:.5rem; scroll-snap-type:x mandatory;}
 .live-card{flex:0 0 15rem; scroll-snap-align:start; background:var(--surface); border:1px solid var(--border); border-radius:1rem; padding:.7rem .85rem; font-size:.9rem;}

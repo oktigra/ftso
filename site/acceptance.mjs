@@ -6395,7 +6395,23 @@ try {
     for (let i = 0; i < 6; i++) { samples.push(await pl.evaluate((x) => getComputedStyle(x).transform)); await p2.waitForTimeout(100); }
     await p2.close();
     assert(new Set(samples).size === 1 && /-3\)$/.test(samples[0]), `на нижнем крае пластина не должна дрожать: ${[...new Set(samples)].join(' | ')}`);
-    return `подъём 3 px без дрожания на нижнем крае, справка раскрылась с ${before.infoH} до ${after.infoH} px`;
+    // Цвет наведения (просьба владельца 19.09): игрок под курсором и вся его справка уходят в цвет
+    // выделения (тёмная — жёлтый), соседи остаются зелёными.
+    const p3 = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await p3.goto(inst.base + '/rating', { waitUntil: 'networkidle' });
+    for (const [theme, expect] of [['dark', 'rgb(255, 209, 102)'], ['light', 'rgb(180, 83, 9)'], ['warm', 'rgb(194, 65, 12)']]) {
+      await p3.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
+      const pl3 = p3.locator('.rplates--full .rplate').nth(1); await pl3.scrollIntoViewIfNeeded();
+      const idle = await pl3.evaluate((x) => getComputedStyle(x.querySelector('.rplate__name a')).color);
+      await pl3.hover(); await p3.waitForTimeout(350);
+      const c = await pl3.evaluate((x) => ({ name: getComputedStyle(x.querySelector('.rplate__name a')).color, chips: [...x.querySelectorAll('.rplate__chips span')].map((s) => getComputedStyle(s).color), other: getComputedStyle(x.parentElement.querySelectorAll('.rplate')[3].querySelector('.rplate__name a')).color }));
+      assert(c.name === expect && idle !== expect, `${theme}: имя при наведении должно стать ${expect} (было ${idle}, стало ${c.name})`);
+      assert(c.chips.length >= 2 && c.chips.every((v) => v === expect), `${theme}: вся справка игрока в цвете выделения`);
+      assert(c.other !== expect, `${theme}: соседний игрок цвет менять не должен`);
+      await p3.mouse.move(2, 2); await p3.waitForTimeout(300);
+    }
+    await p3.close();
+    return `подъём 3 px без дрожания, справка раскрылась с ${before.infoH} до ${after.infoH} px; цвет наведения: тёмная жёлтый, светлая янтарь, тёплая терракота — имя и справка вместе, соседи не меняются`;
   });
 
   await check('справочник: карточка отзывается на наведение (поведение, а не объявление)', async () => {
