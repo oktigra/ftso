@@ -6428,7 +6428,40 @@ try {
     return `${A11Y_PAGES.length} страниц: lang, один h1, main, skip-link, метки у всех полей, alt у картинок, видимый фокус с клавиатуры`;
   });
 
-  await check('адаптив: бургер-меню, одна колонка, таблицы со скроллом', async () => {
+  await check('календарь турниров: названия целиком, ячейки растут, на телефоне не уезжает вбок, под сеткой блок «Провести свой турнир»', async () => {
+  // 18.09.2026, просьба Олега: «Первенство Смолен…» с многоточием не читалось; ссылка
+  // «Провести свой турнир» терялась. Заодно замером найдено: общее table{min-width:520px}
+  // растягивало календарь на телефоне и вся страница уезжала вбок.
+  const tid = db.prepare("INSERT INTO tournaments (name, start_date, end_date, category, city, is_published) VALUES ('Первенство Смоленской области по теннису среди юношей и девушек до 13 и до 17 лет', '2026-08-24', '2026-08-29', 'A', 'Смоленск', 1)").run().lastInsertRowid;
+  const out = {};
+  for (const [w, h, label] of [[1280, 900, 'desktop'], [390, 844, 'mobile']]) {
+    const page = await browser.newPage({ viewport: { width: w, height: h } });
+    await page.goto(inst.base + '/tournaments?view=grid&gm=2026-08', { waitUntil: 'domcontentloaded' });
+    out[label] = await page.evaluate(() => {
+      // Считаем только наш турнир: в базе приёмки в этом месяце могут лежать чужие.
+      const items = [...document.querySelectorAll('.cal__item')].filter((el) => /до 13 и до 17 лет/.test(el.textContent));
+      const cut = items.filter((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1).length;
+      const cta = document.querySelector('.cal-cta');
+      const ours = items.filter((el) => /^Первенство Смоленской области по теннису среди юношей/.test(el.textContent.trim()));
+      return { items: ours.length, cut, full: ours.length >= 6 && ours.every((el) => /до 17 лет$/.test(el.textContent.trim())), sideways: document.documentElement.scrollWidth > innerWidth,
+               ctaH: cta ? Math.round(cta.getBoundingClientRect().height) : 0, ctaLink: cta ? cta.querySelector('a[href="/tournament-request"]') !== null : false };
+    });
+    await page.close();
+  }
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
+  for (const label of ['desktop', 'mobile']) {
+    const m = out[label];
+    // В полном прогоне в августе могут стоять и турниры других разделов — считаем свои.
+    assert(m.items >= 6, `${label}: в сетке должно быть не меньше шести дней турнира (${m.items})`);
+    eq(m.cut, 0, `${label}: названия не должны обрезаться`);
+    assert(m.full, `${label}: каждое название должно выводиться целиком (наше кончается на «до 17 лет»)`);
+    assert(!m.sideways, `${label}: страница не должна уезжать вбок`);
+    assert(m.ctaH >= 120 && m.ctaLink, `${label}: под календарём нужен заметный блок с ссылкой на заявку (высота ${m.ctaH})`);
+  }
+  return `названия целиком на 1280 и 390, обрезано 0, вбок не уезжает; блок «Провести свой турнир» ${out.desktop.ctaH}/${out.mobile.ctaH} px со ссылкой на /tournament-request`;
+});
+
+await check('адаптив: бургер-меню, одна колонка, таблицы со скроллом', async () => {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
     await page.goto(inst.base + '/', { waitUntil: 'networkidle' });
 
