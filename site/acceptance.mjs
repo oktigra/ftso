@@ -4131,7 +4131,7 @@ await check('подвал: подпись разработчика со ссыл
   return 'подвал: «Разработка сайта — ИП Коротков О.А.» → https://webguardreport.ru/, target=_blank, rel=noopener';
 });
 
-await check('пожертвования: QR по ГОСТ Р 56042-2014 читается сторонним декодером, без реквизитов страницы и ссылки нет', async () => {
+await check('пожертвования и членский взнос: QR по ГОСТ Р 56042-2014 читается сторонним декодером, взнос собирается в браузере, без реквизитов страницы и ссылки нет', async () => {
   // Просьба владельца 19.09.2026: деньги напрямую на расчётный счёт. Реквизиты — только из
   // .env; пока их нет, /donate обязан быть 404: QR с пустыми полями уводит деньги не туда.
   const { donateConfig, gostPayload } = await import('./server/lib/donate.mjs');
@@ -4156,8 +4156,27 @@ await check('пожертвования: QR по ГОСТ Р 56042-2014 чита
     const code = jsQR(new Uint8ClampedArray(data.buffer), info.width, info.height);
     assert(code && code.data === payload, `сторонний декодер должен прочитать ровно строку ГОСТ: ${code ? code.data.slice(0, 60) : 'не читается'}`);
     eq((await http('/donate?sum=5')).text.includes('Сумму вы укажете'), true, 'сумма меньше 10 ₽ не зашивается — плательщик введёт сам');
+    // ЧЛЕНСКИЙ ВЗНОС: отдельная вкладка, QR собирается в браузере, ФИО на сервер не уходит.
+    process.env.DUES_AMOUNT = '1500';
+    const dp = await http('/donate?tab=dues'); eq(dp.status, 200, 'вкладка взноса');
+    assert(/data-dues-prefix="ST00012\|Name=/.test(dp.text) && /id="dues-name"/.test(dp.text) && /value="1500"[^>]*readonly/.test(dp.text) && /vendor\/qrcode\.min\.js/.test(dp.text), 'на вкладке взноса: заготовка ГОСТ, поле ФИО, сумма из настроек, скрипт сборки');
+    assert(!/Purpose=/.test(dp.text.match(/data-dues-prefix="[^"]*"/)[0]), 'заготовка не содержит назначения — его собирает браузер');
+    const { chromium: chr } = await import('playwright');
+    const br = await chr.launch({ executablePath: CHROMIUM, args: ['--no-sandbox'] });
+    try {
+      const pg = await br.newPage({ viewport: { width: 1280, height: 1000 } });
+      const leaks = []; pg.on('request', (r) => { if (/Иванов|dues-name|name=/.test(decodeURIComponent(r.url())) || r.method() === 'POST') leaks.push(r.method() + ' ' + r.url()); });
+      await pg.goto(`${inst.base}/donate?tab=dues`, { waitUntil: 'networkidle' });
+      await pg.fill('#dues-name', 'Иванов И.И.'); await pg.click('.dues-form button[type="submit"]'); await pg.waitForTimeout(400);
+      const svgD = await pg.locator('[data-dues-code] svg').evaluate((x) => x.outerHTML);
+      const dec = await sharpQ(Buffer.from(svgD)).resize(600, 600).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const cd = jsQR(new Uint8ClampedArray(dec.data.buffer), dec.info.width, dec.info.height);
+      assert(cd && /\|Purpose=Членский взнос за \d{4} год, Иванов И\.И\. НДС не облагается\|Sum=150000$/.test(cd.data) && cd.data.startsWith(payload.split('|Purpose=')[0]), `QR взноса: ${cd ? cd.data.slice(-90) : 'не читается'}`);
+      eq(leaks.length, 0, `ФИО не должно уходить на сервер: ${leaks.join('; ')}`);
+      await pg.close();
+    } finally { await br.close(); delete process.env.DUES_AMOUNT; }
   } finally { for (const k of ['DONATE_ACCOUNT', 'DONATE_BIC', 'DONATE_BANK', 'DONATE_CORR']) delete process.env[k]; }
-  return 'без реквизитов 404 и без ссылки; с реквизитами страница, ссылка в подвале, строка ST00012 со всеми полями и Sum в копейках, QR прочитан jsQR';
+  return 'без реквизитов 404 и без ссылки; с реквизитами страница, ссылка в подвале, строка ST00012 со всеми полями и Sum в копейках, QR прочитан jsQR; взнос: QR собран в браузере с ФИО и годом, ФИО на сервер не ушло';
 });
 
 section('15. Личный кабинет и право на забвение (ст. 21)');

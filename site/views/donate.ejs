@@ -9,6 +9,61 @@
   </div>
 </section>
 <section class="section-pad section-pad--tight">
+  <div class="container">
+    <%
+      /* ДВЕ ВКЛАДКИ (19.09.2026): пожертвование (ст. 582 ГК, любая сумма) и членский взнос
+         (по уставу, сумма из настроек, ФИО в назначении). Счёт один — назначение разное. */
+    %>
+    <div class="donate__tabs" role="tablist">
+      <a class="btn <%= tab === 'donate' ? 'btn--primary' : 'btn--secondary' %>" role="tab" aria-selected="<%= tab === 'donate' %>" href="/donate">Пожертвование</a>
+      <a class="btn <%= tab === 'dues' ? 'btn--primary' : 'btn--secondary' %>" role="tab" aria-selected="<%= tab === 'dues' %>" href="/donate?tab=dues">Членский взнос</a>
+    </div>
+  </div>
+  <% if (tab === 'dues') { %>
+  <div class="container donate" data-dues data-dues-prefix="<%= duesPrefix %>" data-dues-purpose="<%= donate.duesPurpose %>" data-dues-year="<%= duesYear %>" data-dues-amount="<%= donate.duesAmount || '' %>">
+    <div class="donate__qr panel">
+      <form class="dues-form" data-dues-form>
+        <div class="field">
+          <label for="dues-name">Фамилия и инициалы члена федерации</label>
+          <input id="dues-name" name="name" maxlength="80" autocomplete="name" placeholder="Иванов И.И." required>
+          <p class="field-hint">Попадёт в назначение платежа, чтобы бухгалтер видел, за кого взнос. На сайт не отправляется — код собирается в вашем браузере.</p>
+        </div>
+        <div class="field">
+          <label for="dues-sum">Сумма взноса за <%= duesYear %> год, ₽</label>
+          <input id="dues-sum" name="sum" inputmode="numeric" pattern="[0-9]*" value="<%= donate.duesAmount || '' %>"<%= donate.duesAmount ? ' readonly' : ' placeholder="по решению федерации"' %>>
+        </div>
+        <button class="btn btn--primary" type="submit">Показать QR-код</button>
+      </form>
+      <div class="donate__code" data-dues-code hidden aria-label="Платёжный QR-код взноса"></div>
+      <p class="donate__sum muted small" data-dues-purpose-out hidden></p>
+      <noscript><p class="muted">Для сборки кода нужен JavaScript. Переведите взнос по реквизитам справа, указав в назначении: «<%= donate.duesPurpose.replace('{year}', duesYear).replace('{name}', 'ваши фамилия и инициалы') %>».</p></noscript>
+    </div>
+    <div class="donate__how stack">
+      <div class="panel legal-body">
+        <h2>Как оплатить взнос</h2>
+        <ol>
+          <li>Введите фамилию и инициалы<%= donate.duesAmount ? '' : ' и сумму' %> — нажмите «Показать QR-код».</li>
+          <li>Откройте приложение банка → «Оплата по QR-коду», наведите камеру.</li>
+          <li>Проверьте получателя и назначение — там должны быть ваши фамилия и год — и подтвердите.</li>
+        </ol>
+        <p class="muted">Размер и срок уплаты взноса установлены уставом и решениями Федерации. Взнос — не пожертвование: он даёт права члена Федерации и учитывается бухгалтером по фамилии в назначении платежа.</p>
+      </div>
+      <div class="panel legal-body">
+        <h2>Реквизиты</h2>
+        <dl class="legal-dl">
+          <dt>Получатель</dt><dd><%= op.name %></dd>
+          <dt>ИНН / КПП</dt><dd><%= op.inn %> / <%= op.kpp %></dd>
+          <dt>Расчётный счёт</dt><dd><code><%= donate.account %></code></dd>
+          <dt>Банк</dt><dd><%= donate.bank %></dd>
+          <dt>БИК</dt><dd><code><%= donate.bic %></code></dd>
+          <dt>Корр. счёт</dt><dd><code><%= donate.corr %></code></dd>
+          <dt>Назначение платежа</dt><dd><%= donate.duesPurpose.replace('{year}', duesYear).replace('{name}', 'Фамилия И.О.') %></dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+  <script src="/static/js/vendor/qrcode.min.js?v=<%= assetVersion %>" defer></script>
+  <% } else { %>
   <div class="container donate">
     <div class="donate__qr panel">
       <%
@@ -65,6 +120,7 @@
       </div>
     </div>
   </div>
+  <% } %>
 </section>
 </main>
 <%- include('partials/footer') %>

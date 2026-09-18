@@ -608,4 +608,31 @@
     box.appendChild(zone); box.appendChild(nameEl);
     initFileDrop(box);
   });
+
+  // ЧЛЕНСКИЙ ВЗНОС (19.09.2026): QR собирается в браузере — ФИО плательщика на сервер не уходит.
+  // Строка по ГОСТ Р 56042-2014: заготовка с сервера (реквизиты) + назначение с ФИО и годом + сумма в копейках.
+  var dues = document.querySelector('[data-dues]');
+  if (dues) {
+    var form = dues.querySelector('[data-dues-form]');
+    var out = dues.querySelector('[data-dues-code]');
+    var purposeOut = dues.querySelector('[data-dues-purpose-out]');
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var name = form.name.value.trim().replace(/\s+/g, ' ').replace(/\|/g, ' ');
+      var sum = Number(String(form.sum.value).replace(/[^\d]/g, ''));
+      if (!name) { form.name.focus(); return; }
+      if (!(sum >= 10 && sum <= 1000000)) { form.sum.focus(); return; }
+      // «И.И.. НДС» — инициалы с точкой упираются в точку шаблона: двойную точку схлопываем.
+      var purpose = dues.getAttribute('data-dues-purpose').replace('{year}', dues.getAttribute('data-dues-year')).replace('{name}', name).replace(/\.\./g, '.').slice(0, 210);
+      var payload = dues.getAttribute('data-dues-prefix') + '|Purpose=' + purpose + '|Sum=' + Math.round(sum * 100);
+      if (!window.QRCode || !window.QRCode.toString) { out.hidden = false; out.textContent = 'Не удалось собрать код — переведите по реквизитам справа.'; return; }
+      window.QRCode.toString(payload, { type: 'svg', errorCorrectionLevel: 'M', margin: 1, color: { dark: '#0b1f18', light: '#ffffff' } }, function (err, svg) {
+        if (err) { out.hidden = false; out.textContent = 'Не удалось собрать код — переведите по реквизитам справа.'; return; }
+        out.innerHTML = svg; out.hidden = false;
+        purposeOut.textContent = 'Назначение в коде: ' + purpose + ' · ' + sum.toLocaleString('ru-RU') + ' ₽';
+        purposeOut.hidden = false;
+        out.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      });
+    });
+  }
 })();

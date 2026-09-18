@@ -26,7 +26,13 @@ export function donateConfig(env = process.env) {
   if (!bank) problems.push('DONATE_BANK: название банка');
   // Суммы-подсказки на странице, рубли. Пусто → без подсказок, только «своя сумма».
   const presets = String(env.DONATE_PRESETS || '300,500,1000,3000').split(',').map((x) => Number(x.trim())).filter((n) => Number.isInteger(n) && n > 0 && n <= 1000000).slice(0, 6);
-  return { enabled: problems.length === 0, problems, account, bic, corr, bank, purpose, presets };
+  // ЧЛЕНСКИЙ ВЗНОС (19.09.2026): отдельная вкладка с тем же счётом, но своим назначением
+  // и ФИО плательщика. Сумма — DUES_AMOUNT (рубли, пусто → вводит сам); шаблон назначения —
+  // DUES_PURPOSE с подстановками {year} и {name}. QR взноса собирается В БРАУЗЕРЕ: ФИО на
+  // сервер не уходит и не хранится.
+  const duesAmount = Number(String(env.DUES_AMOUNT || '').replace(/[^\d]/g, '')) || null;
+  const duesPurpose = String(env.DUES_PURPOSE || 'Членский взнос за {year} год, {name}. НДС не облагается').trim().slice(0, 210);
+  return { enabled: problems.length === 0, problems, account, bic, corr, bank, purpose, presets, duesAmount, duesPurpose };
 }
 
 /**
@@ -34,7 +40,7 @@ export function donateConfig(env = process.env) {
  * необязательна: без неё плательщик вводит сумму сам. Имя получателя — как в банке
  * (полное наименование из ЕГРЮЛ), ≤160 символов по стандарту.
  */
-export function gostPayload(cfg, sumRub = null) {
+export function gostPayload(cfg, sumRub = null, purpose = cfg.purpose) {
   const fields = [
     ['Name', OPERATOR.name],
     ['PersonalAcc', cfg.account],
@@ -43,11 +49,16 @@ export function gostPayload(cfg, sumRub = null) {
     ['CorrespAcc', cfg.corr],
     ['PayeeINN', OPERATOR.inn],
     ['KPP', OPERATOR.kpp],
-    ['Purpose', cfg.purpose],
+    ['Purpose', purpose],
   ];
   if (Number.isFinite(sumRub) && sumRub > 0) fields.push(['Sum', String(Math.round(sumRub * 100))]);
   // Разделитель — «|»; в значениях его быть не должно.
   return 'ST00012|' + fields.map(([k, v]) => `${k}=${String(v).replace(/\|/g, ' ')}`).join('|');
+}
+
+/** Заготовка строки для сборки QR в браузере: всё, кроме назначения и суммы. */
+export function gostPrefix(cfg) {
+  return gostPayload(cfg, null, '').replace(/\|Purpose=$/, '');
 }
 
 /** SVG платёжного QR (уровень коррекции M, как советует ГОСТ для печати и экрана). */
