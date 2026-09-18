@@ -406,7 +406,15 @@ tbody tr:hover{background:var(--surface-2);}
 /* Пластина при наведении НЕ сдвигается (14.09.2026): подъём на 10px уводил её
    из-под курсора, соседняя поднималась ему навстречу, и на границе двух пластин
    наведение прыгало туда-сюда — «дрожание». Выделение — тенью и полоской слева. */
-.rplate:hover, .rplate:focus-visible, .rplate:focus-within{z-index:3; box-shadow:-18px 24px 38px rgba(18,61,104,.18), inset 0 1px 0 var(--partner-inset);}
+/* Пластина при наведении идёт вперёд: чуть крупнее и выше, тень глубже (просьба владельца
+   19.09.2026). Только transform — соседи не двигаются, справка раскрывается как раньше. */
+.rplate{transition:box-shadow .32s ease, transform .28s cubic-bezier(.2,.8,.3,1.15);}
+.rplate:hover, .rplate:focus-visible, .rplate:focus-within{z-index:3; transform:translateY(-3px) scale(1.012); box-shadow:-18px 24px 38px rgba(18,61,104,.22), 0 6px 18px rgba(0,0,0,.14), inset 0 1px 0 var(--partner-inset);}
+/* Против «дрожания» (замер 14.09): поднятая пластина уходила из-под курсора на нижнем крае,
+   наведение снималось, пластина падала обратно — и так по кругу. Поднятая пластина
+   продлевает свою зону наведения вниз на сдвиг плюс промежуток до соседа. */
+.rplate:hover::after, .rplate:focus-within::after{content:''; position:absolute; left:0; right:0; top:100%; height:9px;}
+@media (prefers-reduced-motion:reduce){ .rplate, .rplate:hover{transform:none; transition:box-shadow .32s ease;} }
 .rplate::before{content:''; position:absolute; left:0; top:0; bottom:0; width:4px; border-radius:.65rem 0 0 .65rem; background:var(--primary); opacity:0; transition:opacity .26s ease;}
 .rplate:hover::before, .rplate:focus-visible::before, .rplate:focus-within::before{opacity:1;}
 .rplate__row{padding:.85rem 1.25rem;}
@@ -660,6 +668,7 @@ html[data-theme="warm"]{
 .footer-col a:hover{color:var(--primary);}
 .footer-col address{font-style:normal; color:var(--muted); font-size:.95rem; line-height:1.7;}
 .footer-bottom{margin-top:clamp(2rem,5vw,3rem); padding-top:1.5rem; border-top:1px solid var(--border); display:flex; flex-wrap:wrap; gap:1rem 1.5rem; align-items:center; justify-content:space-between; color:var(--muted); font-size:.9rem;}
+.footer-dev a{color:var(--muted); text-decoration:underline; text-underline-offset:3px; transition:color .2s;} .footer-dev a:hover{color:var(--primary);}
 .footer-legal{display:flex; gap:1.5rem; flex-wrap:wrap;}
 .footer-legal a{color:var(--muted);}
 .footer-legal a:hover{color:var(--primary);}
