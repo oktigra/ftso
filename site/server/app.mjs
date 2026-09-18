@@ -27,6 +27,7 @@ import {
 } from './lib/nav.mjs';
 import { OPERATOR } from './lib/legal.mjs';
 import { donateConfig, footerQrCached } from './lib/donate.mjs';
+import { moscowToday } from './lib/content.mjs';
 import { ValidationError } from './lib/validate.mjs';
 
 import mountPublic from './routes/public.mjs';
@@ -190,7 +191,8 @@ export function createApp(config) {
     res.locals.footerParticipants = donateEnabled ? [...FOOTER_PARTICIPANTS, { href: '/donate', title: 'Поддержать федерацию' }] : FOOTER_PARTICIPANTS;
     res.locals.donateEnabled = donateEnabled;
     // QR прямо в подвале (19.09.2026) — из кэша, генерируется один раз на реквизиты.
-    res.locals.footerQr = donateEnabled ? footerQrCached(donateCfg) : null;
+    res.locals.footerQr = donateEnabled ? footerQrCached(donateCfg, moscowToday().slice(0, 4)) : null;
+    res.locals.duesAmount = donateCfg.duesAmount;
     res.locals.footerLegal = FOOTER_LEGAL;
     // Реквизиты оператора — ОДИН источник на весь сайт (подвал, юр-страницы,
     // «Контакты»): расхождение контактов оператора между страницами читается

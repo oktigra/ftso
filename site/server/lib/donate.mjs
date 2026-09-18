@@ -78,14 +78,23 @@ export function parseSum(raw) {
  * подвал на каждой странице, генерировать заново не нужно.
  */
 const footerCache = new Map();
-export function footerQrCached(cfg) {
-  const key = gostPayload(cfg, null);
+const renderSync = (payload) => {
+  // Синхронный рендер: qrcode отдаёт SVG сразу, если передать колбэк — ловим результат.
+  let svg = '';
+  QRCode.toString(payload, { type: 'svg', errorCorrectionLevel: 'M', margin: 1, color: { dark: '#0b1f18', light: '#ffffff' } }, (err, out) => { if (!err) svg = out; });
+  return svg;
+};
+/** Назначение взноса для подвала — без фамилии: плательщика банк показывает в выписке сам. */
+export function duesPurposeGeneric(cfg, year) {
+  return cfg.duesPurpose.replace('{year}', year).replace(/,?\s*\{name\}/, '').replace(/\.\./g, '.').trim();
+}
+/** Два QR для подвала: пожертвование (без суммы) и взнос (сумма из настроек, если задана). */
+export function footerQrCached(cfg, year) {
+  const dues = duesPurposeGeneric(cfg, year);
+  const key = gostPayload(cfg, null) + '||' + dues + '||' + (cfg.duesAmount || '');
   if (!footerCache.has(key)) {
     footerCache.clear();
-    // Синхронный рендер: qrcode умеет отдать SVG без промиса, если передать колбэк — ловим результат.
-    let svg = '';
-    QRCode.toString(key, { type: 'svg', errorCorrectionLevel: 'M', margin: 1, color: { dark: '#0b1f18', light: '#ffffff' } }, (err, out) => { if (!err) svg = out; });
-    footerCache.set(key, svg);
+    footerCache.set(key, { donate: renderSync(gostPayload(cfg, null)), dues: renderSync(gostPayload(cfg, cfg.duesAmount, dues)), duesPurpose: dues });
   }
   return footerCache.get(key);
 }
