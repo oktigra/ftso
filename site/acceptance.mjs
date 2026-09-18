@@ -4153,22 +4153,38 @@ await check('пожертвования и членский взнос: QR по 
     const homeOn = await http('/');
     assert(/href="\/donate">Поддержать федерацию/.test(homeOn.text), 'ссылка в подвале появилась');
     // QR прямо в подвале (решение владельца 19.09): без суммы, на белой подложке, читается.
-    const fq = /<a class="footer-donate__qr"[^>]*>([\s\S]*?)<\/a>/.exec(homeOn.text);
-    assert(fq && /<svg/.test(fq[1]), 'в подвале нет QR пожертвования');
+    // Два QR в подвале с переключателем на radio (без JS): пожертвование без суммы и взнос без фамилии.
+    process.env.DUES_AMOUNT = '1500';
+    const homeOn2 = (await http('/tournaments')).text;
+    const fq = /<div class="footer-donate__qr footer-donate__qr--donate">([\s\S]*?)<\/div>/.exec(homeOn2);
+    const fq2 = /<div class="footer-donate__qr footer-donate__qr--dues">([\s\S]*?)<\/div>/.exec(homeOn2);
+    assert(fq && /<svg/.test(fq[1]) && fq2 && /<svg/.test(fq2[1]) && /id="fd-dues"/.test(homeOn2) && /label[^>]*for="fd-dues"[^>]*>Членский взнос · 1[\s\u00A0\u202F]500 ₽/.test(homeOn2), 'в подвале нет двух QR с переключателем');
     const dec0 = await sharpQ(Buffer.from(fq[1])).resize(500, 500).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     const c0 = jsQR(new Uint8ClampedArray(dec0.data.buffer), dec0.info.width, dec0.info.height);
-    assert(c0 && c0.data === payload.replace(/\|Sum=\d+$/, ''), 'QR подвала — те же реквизиты без суммы');
+    assert(c0 && c0.data === payload.replace(/\|Sum=\d+$/, ''), 'QR пожертвования в подвале — те же реквизиты без суммы');
+    const dec2 = await sharpQ(Buffer.from(fq2[1])).resize(500, 500).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const c2 = jsQR(new Uint8ClampedArray(dec2.data.buffer), dec2.info.width, dec2.info.height);
+    assert(c2 && /\|Purpose=Членский взнос за \d{4} год\. НДС не облагается\|Sum=150000$/.test(c2.data) && !/\{name\}/.test(c2.data), `QR взноса в подвале: год и сумма, без плейсхолдера фамилии: ${c2 ? c2.data.slice(-70) : 'не читается'}`);
+    delete process.env.DUES_AMOUNT;
     assert(!/footer-donate/.test((await http('/admin/login')).text) && !/footer-donate/.test((await http('/login')).text), 'на служебных страницах (админка, вход) QR подвала нет');
     // Со скриншота при штатных 184 px — как его увидит камера (меньше 160 px код по ГОСТу не читается).
     {
       const { chromium: chr0 } = await import('playwright'); const br0 = await chr0.launch({ executablePath: CHROMIUM, args: ['--no-sandbox'] });
       try {
         const fp = await br0.newPage({ viewport: { width: 1440, height: 1000 } }); await fp.goto(`${inst.base}/tournaments`, { waitUntil: 'networkidle' });
-        const w = await fp.locator('.footer-donate__qr').evaluate((x) => Math.round(x.getBoundingClientRect().width));
-        const shot = await fp.locator('.footer-donate__qr').screenshot();
+        const vis = () => fp.evaluate(() => ['donate', 'dues'].map((k) => getComputedStyle(document.querySelector('.footer-donate__qr--' + k)).display).join('/'));
+        eq(await vis(), 'block/none', 'при загрузке виден только QR пожертвования');
+        const w = await fp.locator('.footer-donate__qr--donate').evaluate((x) => Math.round(x.getBoundingClientRect().width));
+        const shot = await fp.locator('.footer-donate__qr--donate').screenshot();
         const d1 = await sharpQ(shot).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
         const c1 = jsQR(new Uint8ClampedArray(d1.data.buffer), d1.info.width, d1.info.height);
         assert(w >= 160 && c1 && c1.data === c0.data, `QR подвала при ${w}px должен читаться со скриншота 1:1`);
+        await fp.click('label[for="fd-dues"]'); await fp.waitForTimeout(150);
+        eq(await vis(), 'none/block', 'переключатель показывает QR взноса без JS');
+        const shot2 = await fp.locator('.footer-donate__qr--dues').screenshot();
+        const d2 = await sharpQ(shot2).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+        const c3 = jsQR(new Uint8ClampedArray(d2.data.buffer), d2.info.width, d2.info.height);
+        assert(c3 && /Членский взнос/.test(c3.data), 'QR взноса в подвале читается со скриншота');
       } finally { await br0.close(); }
     }
     // Читаем свой QR чужим декодером — так его прочитает приложение банка.

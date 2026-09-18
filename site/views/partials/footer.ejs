@@ -53,12 +53,24 @@
        Показывается только при заданных реквизитах (см. lib/donate.mjs). */
     %>
     <% if (typeof footerQr !== 'undefined' && footerQr && !['/admin', '/login', '/cabinet', '/judge'].some(function (p) { return currentPath.startsWith(p); })) { %>
-      <div class="footer-donate">
-        <a class="footer-donate__qr" href="/donate" aria-label="Открыть страницу пожертвований и взносов"><%- footerQr %></a>
+      <%
+      /* ПЕРЕКЛЮЧАТЕЛЬ БЕЗ JS (решение владельца 19.09: всё в подвале, без переходов):
+         два radio + CSS показывают один из двух QR. Взнос — без фамилии: плательщика банк
+         показывает в выписке сам; кто платит за другого — допишет фамилию в комментарии. */
+      %>
+      <div class="footer-donate" data-footer-donate>
+        <input class="footer-donate__radio" type="radio" name="fd-kind" id="fd-donate" checked>
+        <input class="footer-donate__radio" type="radio" name="fd-kind" id="fd-dues">
+        <div class="footer-donate__qr footer-donate__qr--donate"><%- footerQr.donate %></div>
+        <div class="footer-donate__qr footer-donate__qr--dues"><%- footerQr.dues %></div>
         <div class="footer-donate__text">
-          <h4>Поддержать федерацию</h4>
-          <p>Отсканируйте код в приложении своего банка — пожертвование уйдёт напрямую на расчётный счёт Федерации, сумму укажете сами.</p>
-          <p class="muted small"><a href="/donate?tab=dues">Членский взнос</a> · <a href="/donate">реквизиты и QR для афиши</a></p>
+          <div class="footer-donate__tabs" role="group" aria-label="Что оплатить">
+            <label class="btn btn--small" for="fd-donate">Пожертвование</label>
+            <label class="btn btn--small" for="fd-dues">Членский взнос<%= duesAmount ? ' · ' + duesAmount.toLocaleString('ru-RU') + ' ₽' : '' %></label>
+          </div>
+          <p class="footer-donate__p footer-donate__p--donate">Отсканируйте код в приложении своего банка — пожертвование уйдёт напрямую на расчётный счёт Федерации, сумму укажете сами.</p>
+          <p class="footer-donate__p footer-donate__p--dues">Отсканируйте код в приложении банка — <%= duesAmount ? 'сумма взноса уже в коде' : 'сумму взноса укажете сами' %>, назначение «<%= footerQr.duesPurpose %>». Платите за другого члена Федерации — допишите его фамилию в комментарии к переводу.</p>
+          <p class="muted small"><a href="/donate">Реквизиты текстом и QR для печати</a></p>
         </div>
       </div>
     <% } %>
