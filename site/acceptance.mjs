@@ -4094,10 +4094,21 @@ await check('зона файла: крупная площадка вместо �
     await mob.goto(`${inst.base}/tournament-request`, { waitUntil: 'networkidle' });
     assert(!/перетащите/.test(await mob.locator('.file-drop__zone').first().innerText()), 'на телефоне слов о перетаскивании нет');
     await mob.close();
+    // Админка: обёртка строится скриптом вокруг любого поля файла; в таблицах — компактная; multiple принимает пачку.
+    const adm = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await adm.goto(`${inst.base}/login`); await adm.fill('input[name="username"]', ADMIN.user); await adm.fill('input[name="password"]', ADMIN.pass); await adm.click('button[type="submit"]'); await adm.waitForLoadState('networkidle');
+    await adm.goto(`${inst.base}/admin/library`, { waitUntil: 'networkidle' });
+    const lib = await adm.evaluate(() => { const inputs = [...document.querySelectorAll('input[type="file"]')]; return { n: inputs.length, wrapped: inputs.filter((i) => i.closest('.file-drop')).length, labelled: inputs.every((i) => i.closest('.file-drop')?.querySelector('label[for="' + i.id + '"]')) }; });
+    assert(lib.n >= 3 && lib.wrapped === lib.n && lib.labelled, `в библиотеке все поля файлов обёрнуты (${lib.wrapped}/${lib.n}) и с меткой`);
+    await adm.evaluate(() => { const box = document.querySelector('#g-file').closest('.file-drop'); const dt = new DataTransfer(); ['a.jpg', 'b.jpg', 'c.jpg'].forEach((n) => dt.items.add(new File(['x'], n, { type: 'image/jpeg' }))); box.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); });
+    eq(await adm.locator('#g-file').evaluate((i) => i.files.length), 3, 'галерея (multiple) принимает пачку перетаскиванием');
+    await adm.evaluate(() => { const box = document.querySelector('#doc-file').closest('.file-drop'); const dt = new DataTransfer(); ['a.pdf', 'b.pdf'].forEach((n) => dt.items.add(new File(['x'], n, { type: 'application/pdf' }))); box.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); });
+    eq(await adm.locator('#doc-file').evaluate((i) => i.files.length), 1, 'одиночное поле берёт только первый файл из пачки');
+    await adm.close();
     const reg = await http('/register'); assert(!/[Рр]едакция от/.test(reg.text), 'на регистрации редакции нет');
     const priv = await http('/privacy'); assert(/Редакция от/.test(priv.text), 'на политике редакция остаётся');
   } finally { await browser.close(); }
-  return 'зона 600×74, текст не капсом, выбор по клику, имя и «убрать», перетаскивание кладёт файл в input; телефон без слов о перетаскивании; редакция только на /privacy';
+  return 'зона 600×74, текст не капсом, выбор по клику, имя и «убрать», перетаскивание кладёт файл в input; телефон без слов о перетаскивании; в админке все поля обёрнуты, галерея берёт пачку; редакция только на /privacy';
 });
 
 section('15. Личный кабинет и право на забвение (ст. 21)');

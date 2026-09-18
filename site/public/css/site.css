@@ -899,6 +899,12 @@ html[data-theme="dark"] .flash--error{color:#ff9b9b;}
 .file-drop__name::before{content:"✓"; color:var(--primary); font-weight:700;}
 .file-drop__clear{margin-left:auto; font-size:.78rem; color:var(--muted); background:none; border:0; cursor:pointer; text-decoration:underline; padding:0;}
 .file-drop.has-file .file-drop__zone{border-style:solid; border-color:color-mix(in srgb, var(--primary) 60%, var(--border));}
+/* Компактный вид — в строках таблиц админки (логотип партнёра, фото в справочнике): одна строка. */
+.file-drop--compact .file-drop__zone, .field label.file-drop--compact .file-drop__zone{min-height:2.3rem; padding:.3rem .6rem; gap:.5rem; border-radius:.5rem; font-size:.85rem;}
+.file-drop--compact .file-drop__icon{flex-basis:1.5rem; width:1.5rem; height:1.5rem; border-radius:.35rem;}
+.file-drop--compact .file-drop__icon::before{width:.55rem; height:.72rem;} .file-drop--compact .file-drop__icon::after{width:.25rem; height:.25rem;}
+.file-drop--compact .file-drop__name{font-size:.8rem; margin-top:.25rem;}
+.file-drop--compact{min-width:11rem;}
 /* Без мыши (телефон/планшет) слова про перетаскивание не нужны. */
 @media (hover:none), (max-width:720px){ .file-drop__or{display:none;} .file-drop__zone{min-height:3.6rem; padding:.7rem .9rem;} .file-drop__meta{display:none;} }
 @media (prefers-reduced-motion:reduce){ .file-drop__zone, .file-drop__icon{transition:none;} }

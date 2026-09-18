@@ -513,32 +513,61 @@
     if (today && lists && window.matchMedia('(max-width: 720px)').matches) open(today.getAttribute('data-day'));
   });
 
-  // ЗОНА ФАЙЛА: имя выбранного файла, кнопка «убрать», перетаскивание на десктопе (18.09.2026).
-  document.querySelectorAll('[data-file-drop]').forEach(function (box) {
+  // ЗОНА ФАЙЛА (18.09.2026). Публичные формы размечены на сервере (.file-drop готов), в
+  // админке обёртка строится здесь вокруг любого input[type=file] — «делай для всех».
+  // Без JS остаётся обычное поле. Файл кладётся в тот же input, формы не меняются.
+  var fmtSize = function (n) { return n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' КБ' : (n / 1048576).toFixed(1).replace('.', ',') + ' МБ'; };
+  var canDrag = window.matchMedia('(hover: hover)').matches && typeof DataTransfer !== 'undefined';
+  var initFileDrop = function (box) {
     var input = box.querySelector('input[type="file"]');
     var nameEl = box.querySelector('[data-file-name]');
     if (!input || !nameEl) return;
-    var fmt = function (n) { return n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' КБ' : (n / 1048576).toFixed(1).replace('.', ',') + ' МБ'; };
     var render = function () {
-      var f = input.files && input.files[0];
+      var files = input.files ? Array.prototype.slice.call(input.files) : [];
       nameEl.innerHTML = '';
-      if (!f) { nameEl.hidden = true; box.classList.remove('has-file'); return; }
-      nameEl.appendChild(document.createTextNode(f.name + ' · ' + fmt(f.size)));
+      if (!files.length) { nameEl.hidden = true; box.classList.remove('has-file'); return; }
+      var text = files.length === 1 ? files[0].name + ' · ' + fmtSize(files[0].size)
+        : files.length + ' ' + (files.length < 5 ? 'файла' : 'файлов') + ': ' + files.map(function (f) { return f.name; }).join(', ');
+      nameEl.appendChild(document.createTextNode(text));
       var clear = document.createElement('button'); clear.type = 'button'; clear.className = 'file-drop__clear'; clear.textContent = 'убрать';
       clear.addEventListener('click', function () { input.value = ''; render(); });
       nameEl.appendChild(clear); nameEl.hidden = false; box.classList.add('has-file');
     };
     input.addEventListener('change', render);
-    // Перетаскивание: только где есть мышь. Файл кладём в тот же input — форма уходит как обычно.
-    if (!window.matchMedia('(hover: hover)').matches || typeof DataTransfer === 'undefined') { render(); return; }
-    ['dragenter', 'dragover'].forEach(function (ev) { box.addEventListener(ev, function (e) { e.preventDefault(); box.classList.add('is-over'); }); });
-    ['dragleave', 'drop'].forEach(function (ev) { box.addEventListener(ev, function (e) { e.preventDefault(); box.classList.remove('is-over'); }); });
-    box.addEventListener('drop', function (e) {
-      var files = e.dataTransfer && e.dataTransfer.files;
-      if (!files || !files.length) return;
-      var dt = new DataTransfer(); dt.items.add(files[0]);
-      input.files = dt.files; render();
-    });
+    if (canDrag) {
+      ['dragenter', 'dragover'].forEach(function (ev) { box.addEventListener(ev, function (e) { e.preventDefault(); box.classList.add('is-over'); }); });
+      ['dragleave', 'drop'].forEach(function (ev) { box.addEventListener(ev, function (e) { e.preventDefault(); box.classList.remove('is-over'); }); });
+      box.addEventListener('drop', function (e) {
+        var files = e.dataTransfer && e.dataTransfer.files;
+        if (!files || !files.length) return;
+        var dt = new DataTransfer();
+        Array.prototype.slice.call(files, 0, input.multiple ? files.length : 1).forEach(function (f) { dt.items.add(f); });
+        input.files = dt.files; render();
+      });
+    }
     render();
+  };
+  document.querySelectorAll('[data-file-drop]').forEach(initFileDrop);
+  // Админка: обёртка вокруг голого поля. Компактный вид — если поле без своей подписи (стоит в таблице).
+  document.querySelectorAll('input[type="file"]').forEach(function (input) {
+    if (input.closest('[data-file-drop]')) return;
+    if (!input.id) input.id = 'file-' + Math.random().toString(36).slice(2, 8);
+    var hasLabel = !!document.querySelector('label[for="' + input.id + '"]');
+    var compact = !hasLabel || input.hasAttribute('data-file-compact');
+    var box = document.createElement('div'); box.className = 'file-drop' + (compact ? ' file-drop--compact' : ''); box.setAttribute('data-file-drop', '');
+    input.parentNode.insertBefore(box, input);
+    input.classList.add('file-drop__input'); box.appendChild(input);
+    var zone = document.createElement('label'); zone.className = 'file-drop__zone'; zone.htmlFor = input.id;
+    var icon = document.createElement('span'); icon.className = 'file-drop__icon'; icon.setAttribute('aria-hidden', 'true');
+    var text = document.createElement('span'); text.className = 'file-drop__text';
+    var isImage = input.accept && /image/.test(input.accept);
+    var b = document.createElement('b'); b.textContent = compact ? (isImage ? 'Изображение' : 'Файл') : (input.multiple ? 'Выберите файлы' : (isImage ? 'Выберите изображение' : 'Выберите файл'));
+    text.appendChild(b);
+    if (!compact) { var or = document.createElement('span'); or.className = 'file-drop__or'; or.textContent = ' или перетащите сюда'; text.appendChild(or); }
+    zone.appendChild(icon); zone.appendChild(text);
+    if (!compact && input.accept) { var meta = document.createElement('span'); meta.className = 'file-drop__meta'; meta.textContent = input.accept.replace(/application\/[^,]+/g, '').replace(/image\/\*/, 'изображение').replace(/text\/csv/, '').split(',').map(function (x) { return x.trim().replace(/^\./, '').toUpperCase(); }).filter(Boolean).join(', '); zone.appendChild(meta); }
+    var nameEl = document.createElement('span'); nameEl.className = 'file-drop__name'; nameEl.setAttribute('data-file-name', ''); nameEl.hidden = true;
+    box.appendChild(zone); box.appendChild(nameEl);
+    initFileDrop(box);
   });
 })();
