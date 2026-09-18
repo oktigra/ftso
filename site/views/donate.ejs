@@ -1,0 +1,70 @@
+<%- include('partials/head') %>
+<%- include('partials/header') %>
+<main id="top">
+<section class="page-head">
+  <div class="container">
+    <span class="eyebrow">Федерация</span>
+    <h1>Поддержать федерацию</h1>
+    <p class="muted">Пожертвование уходит напрямую на расчётный счёт РФСОО «Федерация тенниса Смоленской области» — без посредников и комиссий для федерации. Сайт не собирает данные плательщика: платёж целиком проходит в приложении вашего банка.</p>
+  </div>
+</section>
+<section class="section-pad section-pad--tight">
+  <div class="container donate">
+    <div class="donate__qr panel">
+      <%
+        /* QR по ГОСТ Р 56042-2014: в нём реквизиты, назначение и (если выбрана) сумма.
+           Читают приложения всех российских банков: Сбер, Т-Банк, ВТБ, Альфа и другие. */
+      %>
+      <div class="donate__code" aria-label="Платёжный QR-код">
+        <%- qr %>
+      </div>
+      <p class="donate__sum"><% if (sum) { %>Сумма в коде: <b><%= sum.toLocaleString('ru-RU') %> ₽</b><% } else { %>Сумму вы укажете в приложении банка<% } %></p>
+      <div class="donate__presets" aria-label="Выбрать сумму">
+        <a class="btn btn--small <%= !sum ? 'btn--primary' : 'btn--secondary' %>" href="/donate">любая</a>
+        <% donate.presets.forEach(function (n) { %>
+          <a class="btn btn--small <%= sum === n ? 'btn--primary' : 'btn--secondary' %>" href="/donate?sum=<%= n %>"><%= n.toLocaleString('ru-RU') %> ₽</a>
+        <% }); %>
+      </div>
+      <form class="donate__own" method="get" action="/donate">
+        <label for="d-sum">Своя сумма, ₽</label>
+        <input id="d-sum" name="sum" inputmode="numeric" pattern="[0-9]*" min="10" max="1000000" placeholder="например, 1500" value="<%= sum || '' %>">
+        <button class="btn btn--secondary btn--small" type="submit">Обновить код</button>
+      </form>
+      <p class="muted small"><a href="/donate/qr.svg<%= sum ? '?sum=' + sum : '' %>" download="ftso-donate<%= sum ? '-' + sum : '' %>.svg">Скачать QR-код файлом</a> — для афиши или стола секретаря.</p>
+    </div>
+
+    <div class="donate__how stack">
+      <div class="panel legal-body">
+        <h2>Как это работает</h2>
+        <ol>
+          <li>Откройте приложение своего банка и выберите «Оплата по QR-коду» (у Сбера — «Платежи → Сканировать QR», у Т-Банка — значок сканера на главной).</li>
+          <li>Наведите камеру на код. Приложение само заполнит получателя, реквизиты и назначение платежа — проверьте их.</li>
+          <li>Введите или подтвердите сумму и переведите.</li>
+        </ol>
+        <p class="muted">Если ваш банк не читает QR, переведите по реквизитам ниже: они те же, что зашиты в код.</p>
+      </div>
+
+      <div class="panel legal-body">
+        <h2>Реквизиты</h2>
+        <dl class="legal-dl">
+          <dt>Получатель</dt><dd><%= op.name %></dd>
+          <dt>ИНН / КПП</dt><dd><%= op.inn %> / <%= op.kpp %></dd>
+          <dt>Расчётный счёт</dt><dd><code><%= donate.account %></code></dd>
+          <dt>Банк</dt><dd><%= donate.bank %></dd>
+          <dt>БИК</dt><dd><code><%= donate.bic %></code></dd>
+          <dt>Корр. счёт</dt><dd><code><%= donate.corr %></code></dd>
+          <dt>Назначение платежа</dt><dd><%= donate.purpose %></dd>
+        </dl>
+      </div>
+
+      <div class="panel legal-body">
+        <h2>Условия пожертвования</h2>
+        <p>Перевод по этим реквизитам — добровольное пожертвование по статье 582 Гражданского кодекса РФ на уставную деятельность Федерации: проведение соревнований, детский и ветеранский теннис, судейство и развитие тенниса в Смоленской области. Перечисляя средства, вы соглашаетесь с этими условиями.</p>
+        <p>Пожертвование не является оплатой товаров или услуг и не даёт преимуществ в соревнованиях и рейтинге. Вернуть его можно только по письменному обращению в Федерацию: <a href="mailto:info@ftso67.ru">info@ftso67.ru</a>.</p>
+        <p class="muted">Отчёт об использовании пожертвований Федерация публикует в разделе «Документы».</p>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+<%- include('partials/footer') %>

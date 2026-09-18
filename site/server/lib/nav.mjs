@@ -47,6 +47,7 @@ export const FOOTER_SECTIONS = [
 // Заявка ИГРОКА на участие в конкретном турнире — по-прежнему отдельный пункт
 // бэклога, она подаётся через секретаря.
 export const FOOTER_PARTICIPANTS = [
+  // «Поддержать федерацию» подставляется в app.mjs, когда заданы реквизиты (lib/donate.mjs).
   { href: '/register', title: 'Регистрация игрока' },
   { href: '/cabinet', title: 'Личный кабинет' },
   { href: '/tournament-request', title: 'Заявка на турнир' },

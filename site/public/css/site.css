@@ -1261,3 +1261,15 @@ tbody tr:hover td.t-actions{background:var(--surface-2);}
    всего документа. Рабочий путь — обёртка с max-height и собственной вертикальной
    прокруткой, тогда шапка липнет к ней; это меняет поведение страницы и делается
    отдельной задачей, а не походя. Пока заголовок обычный. */
+
+/* ===== ПОЖЕРТВОВАНИЯ (19.09.2026) — страница /donate ===== */
+.donate{display:grid; grid-template-columns:minmax(260px,380px) 1fr; gap:1.5rem; align-items:start;}
+.donate__qr{text-align:center; position:sticky; top:1rem;}
+.donate__code{background:#fff; border-radius:.9rem; padding:.75rem; display:inline-block; box-shadow:0 8px 24px rgba(0,0,0,.12);}
+.donate__code svg{display:block; width:min(100%, 280px); height:auto;}
+.donate__sum{margin:.9rem 0 .5rem; font-size:1rem;}
+.donate__presets{display:flex; flex-wrap:wrap; justify-content:center; gap:.4rem; margin-bottom:.8rem;}
+.donate__own{display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:.5rem; margin-bottom:.6rem;}
+.donate__own label{font-size:.85rem; color:var(--muted);}
+.donate__own input{width:8.5rem;}
+@media (max-width:820px){ .donate{grid-template-columns:1fr;} .donate__qr{position:static;} }

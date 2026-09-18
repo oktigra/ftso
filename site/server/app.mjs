@@ -26,6 +26,7 @@ import {
   FOOTER_LEGAL,
 } from './lib/nav.mjs';
 import { OPERATOR } from './lib/legal.mjs';
+import { donateConfig } from './lib/donate.mjs';
 import { ValidationError } from './lib/validate.mjs';
 
 import mountPublic from './routes/public.mjs';
@@ -182,7 +183,11 @@ export function createApp(config) {
     res.locals.navPrimary = HEADER_PRIMARY;
     res.locals.navMore = HEADER_MORE;
     res.locals.footerSections = FOOTER_SECTIONS;
-    res.locals.footerParticipants = FOOTER_PARTICIPANTS;
+    // Ссылка на пожертвования появляется только при заданных реквизитах — иначе вела бы на 404.
+    // Считается на каждый запрос: приёмка меняет окружение на лету, а цена — четыре чтения env.
+    const donateEnabled = donateConfig().enabled;
+    res.locals.footerParticipants = donateEnabled ? [...FOOTER_PARTICIPANTS, { href: '/donate', title: 'Поддержать федерацию' }] : FOOTER_PARTICIPANTS;
+    res.locals.donateEnabled = donateEnabled;
     res.locals.footerLegal = FOOTER_LEGAL;
     // Реквизиты оператора — ОДИН источник на весь сайт (подвал, юр-страницы,
     // «Контакты»): расхождение контактов оператора между страницами читается

@@ -6,6 +6,7 @@ import {
   ERASED_LABEL,
 } from '../lib/rating-service.mjs';
 import { OPERATOR, LEGAL_VERSION, LEGAL_VERSION_LABEL, PUBLIC_DOCUMENTS } from '../lib/legal.mjs';
+import { donateConfig, donateQrSvg, parseSum } from '../lib/donate.mjs';
 import { feedbackInput, createFeedback } from '../lib/feedback.mjs';
 import { checkTicket, consumeTicket } from '../lib/form-guard.mjs';
 import { queueMail } from '../lib/mailer.mjs';
@@ -311,6 +312,33 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
     if (!row) return next();
     const upload = uploadById(db, row.upload_id);
     if (!upload || !sendUploadInline(req, res, upload, config.upload.dir)) return next();
+  });
+
+  /**
+   * ПОЖЕРТВОВАНИЯ (19.09.2026): платёжный QR по ГОСТ Р 56042-2014 на расчётный счёт.
+   * Страница живёт только при заданных реквизитах (см. lib/donate.mjs) — иначе 404,
+   * чтобы ни один QR с пустыми полями не ушёл наружу. Сумма — необязательный ?sum=.
+   */
+  app.get('/donate', async (req, res, next) => {
+    const cfg = donateConfig();
+    if (!cfg.enabled) return next();
+    try {
+      const sum = parseSum(req.query.sum);
+      res.render('donate', {
+        title: 'Поддержать федерацию — ФТСО',
+        section: { title: 'Поддержать федерацию', path: '/donate' },
+        op: OPERATOR, donate: cfg, sum,
+        qr: await donateQrSvg(cfg, sum),
+      });
+    } catch (err) { next(err); }
+  });
+  /** Тот же QR файлом — для афиш, буклетов и стола секретаря. */
+  app.get('/donate/qr.svg', async (req, res, next) => {
+    const cfg = donateConfig();
+    if (!cfg.enabled) return next();
+    try {
+      res.type('image/svg+xml').set('Cache-Control', 'public, max-age=3600').send(await donateQrSvg(cfg, parseSum(req.query.sum)));
+    } catch (err) { next(err); }
   });
 
   app.get('/contacts', (req, res) => {

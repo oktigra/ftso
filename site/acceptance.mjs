@@ -4131,6 +4131,35 @@ await check('подвал: подпись разработчика со ссыл
   return 'подвал: «Разработка сайта — ИП Коротков О.А.» → https://webguardreport.ru/, target=_blank, rel=noopener';
 });
 
+await check('пожертвования: QR по ГОСТ Р 56042-2014 читается сторонним декодером, без реквизитов страницы и ссылки нет', async () => {
+  // Просьба владельца 19.09.2026: деньги напрямую на расчётный счёт. Реквизиты — только из
+  // .env; пока их нет, /donate обязан быть 404: QR с пустыми полями уводит деньги не туда.
+  const { donateConfig, gostPayload } = await import('./server/lib/donate.mjs');
+  for (const k of ['DONATE_ACCOUNT', 'DONATE_BIC', 'DONATE_BANK', 'DONATE_CORR']) delete process.env[k];
+  eq((await http('/donate')).status, 404, 'без реквизитов /donate — 404');
+  eq((await http('/donate/qr.svg')).status, 404, 'без реквизитов qr.svg — 404');
+  assert(!/href="\/donate"/.test((await http('/')).text), 'без реквизитов ссылки «Поддержать федерацию» в подвале нет');
+  assert(donateConfig({ DONATE_ACCOUNT: '123', DONATE_BIC: '044525225', DONATE_BANK: 'Банк', DONATE_CORR: '30101810400000000225' }).problems.some((x) => /20 цифр/.test(x)), 'счёт не из 20 цифр — отбит');
+  Object.assign(process.env, { DONATE_ACCOUNT: '40703810838000012345', DONATE_BIC: '044525225', DONATE_BANK: 'ПАО СБЕРБАНК', DONATE_CORR: '30101810400000000225' });
+  try {
+    const cfg = donateConfig();
+    assert(cfg.enabled, 'с четырьмя реквизитами пожертвования включены');
+    const payload = gostPayload(cfg, 500);
+    assert(payload.startsWith('ST00012|Name=') && /\|PersonalAcc=40703810838000012345\|/.test(payload) && /\|PayeeINN=6732145252\|KPP=673201001\|/.test(payload) && /\|Sum=50000$/.test(payload), `строка ГОСТ: ${payload}`);
+    const page = await http('/donate?sum=500');
+    eq(page.status, 200, 'страница пожертвований'); assert(/<svg/.test(page.text) && /Сумма в коде: <b>500/.test(page.text) && /40703810838000012345/.test(page.text) && /статье 582/.test(page.text), 'на странице QR, сумма, реквизиты и условия');
+    assert(/href="\/donate">Поддержать федерацию/.test((await http('/')).text), 'ссылка в подвале появилась');
+    // Читаем свой QR чужим декодером — так его прочитает приложение банка.
+    const svg = await http('/donate/qr.svg?sum=500'); eq(svg.status, 200, 'qr.svg'); assert(/image\/svg\+xml/.test(svg.headers.get('content-type') || ''), 'тип svg');
+    const sharpQ = (await import('sharp')).default; const jsQR = (await import('jsqr')).default;
+    const { data, info } = await sharpQ(Buffer.from(svg.text)).resize(600, 600).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const code = jsQR(new Uint8ClampedArray(data.buffer), info.width, info.height);
+    assert(code && code.data === payload, `сторонний декодер должен прочитать ровно строку ГОСТ: ${code ? code.data.slice(0, 60) : 'не читается'}`);
+    eq((await http('/donate?sum=5')).text.includes('Сумму вы укажете'), true, 'сумма меньше 10 ₽ не зашивается — плательщик введёт сам');
+  } finally { for (const k of ['DONATE_ACCOUNT', 'DONATE_BIC', 'DONATE_BANK', 'DONATE_CORR']) delete process.env[k]; }
+  return 'без реквизитов 404 и без ссылки; с реквизитами страница, ссылка в подвале, строка ST00012 со всеми полями и Sum в копейках, QR прочитан jsQR';
+});
+
 section('15. Личный кабинет и право на забвение (ст. 21)');
 
 const accounts = await import('./server/lib/player-accounts.mjs');
