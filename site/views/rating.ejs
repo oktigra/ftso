@@ -134,8 +134,12 @@
                   <div class="rplate__chips">
                     <% if (b) { %><span>лучший результат: <%= placeRu(b.place) %> · <%= b.name %></span><% } %>
                     <span><%= sexRu[p.sex] || p.sex || 'пол не указан' %></span>
-                    <span>возраст: <%= p.ageLabel %></span>
-                    <span>группа: <%= p.ageGroup || '—' %></span>
+                    <%
+                      /* Возраст и возрастная группа считаются из даты рождения; без неё чип с
+                         прочерком не показываем (19.09.2026) — появится сам, когда дата будет. */
+                    %>
+                    <% if (p.ageLabel && p.ageLabel !== '—') { %><span>возраст: <%= p.ageLabel %></span><% } %>
+                    <% if (p.ageGroup) { %><span>возрастная группа: <%= p.ageGroup %></span><% } %>
                     <% if (Array.isArray(p.counted) && p.counted.length) { %><span>в зачёте турниров: <%= p.counted.length %><%= p.totalInWindow && p.totalInWindow > p.counted.length ? ' из ' + p.totalInWindow : '' %></span><% } %>
                   </div>
                 </div>

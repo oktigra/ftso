@@ -1030,9 +1030,20 @@ await check('рейтинг: пластины вместо таблицы, вс�
     ['очки', /rplate__pts">\d/],
     ['изменение', /class="chg chg--/],
     ['пол', /<span>(муж\.|жен\.|пол не указан)<\/span>/],
-    ['возраст', /<span>возраст: /],
-    ['группа', /<span>группа: /],
   ]) assert(re.test(first), `в пластине нет колонки «${label}»`);
+  // Возраст и группа показываются только когда есть дата рождения (19.09.2026): чип с
+  // прочерком — шум, а не информация. У первого в списке даты может не быть — проверяем логику:
+  // если у него есть birth_date, чипы обязаны быть; если нет — их быть не должно.
+  {
+    const firstId = Number((/href="\/player\/(\d+)"/.exec(first) || [])[1]);
+    const bd = firstId ? db.prepare('SELECT birth_date FROM players WHERE id = ?').get(firstId)?.birth_date : null;
+    const grp = firstId ? db.prepare('SELECT age_group FROM players WHERE id = ?').get(firstId)?.age_group : null;
+    const hasAge = /<span>возраст: /.test(first); const hasGroup = /<span>возрастная группа: /.test(first);
+    eq(hasAge, Boolean(bd), 'чип возраста — ровно когда есть дата рождения');
+    // Группа бывает и без даты: секретарь проставляет её руками в карточке.
+    eq(hasGroup, Boolean(bd || grp), 'чип возрастной группы — когда она известна (из даты или руками)');
+    assert(!/: —<\/span>/.test(first), 'прочерков в справке быть не должно');
+  }
   // Выгрузки не должны зависеть от витрины — состав тот же, что был у таблицы.
   const csv = await http('/rating.csv');
   eq(csv.status, 200, 'CSV после смены витрины');
@@ -6403,7 +6414,9 @@ try {
       await p3.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
       const pl3 = p3.locator('.rplates--full .rplate').nth(1); await pl3.scrollIntoViewIfNeeded();
       const idle = await pl3.evaluate((x) => getComputedStyle(x.querySelector('.rplate__name a')).color);
-      await pl3.hover(); await p3.waitForTimeout(350);
+      await pl3.hover();
+      // Цвета едут через transition .2s — ждём, пока доедут, а не фиксированную паузу.
+      await p3.waitForFunction((exp) => { const x = document.querySelectorAll('.rplates--full .rplate')[1]; return getComputedStyle(x.querySelector('.rplate__name a')).color === exp && [...x.querySelectorAll('.rplate__chips span')].every((s) => getComputedStyle(s).color === exp); }, expect, { timeout: 2000 }).catch(() => {});
       const c = await pl3.evaluate((x) => ({ name: getComputedStyle(x.querySelector('.rplate__name a')).color, chips: [...x.querySelectorAll('.rplate__chips span')].map((s) => getComputedStyle(s).color), other: getComputedStyle(x.parentElement.querySelectorAll('.rplate')[3].querySelector('.rplate__name a')).color }));
       assert(c.name === expect && idle !== expect, `${theme}: имя при наведении должно стать ${expect} (было ${idle}, стало ${c.name})`);
       assert(c.chips.length >= 2 && c.chips.every((v) => v === expect), `${theme}: вся справка игрока в цвете выделения`);
