@@ -162,10 +162,52 @@ export function calendarGrid(db, filters = {}, month) {
   for (let i = 0; i < lead; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push({ day: d, iso: month + '-' + String(d).padStart(2, '0'), items: byDay.get(d) || [] });
   while (cells.length % 7) cells.push(null);
+  // ДОРОЖКИ (решение владельца 18.09.2026): на десктопе многодневный турнир — одна
+  // полоса через все свои дни недели, пересекающиеся турниры ложатся на свои дорожки
+  // ниже; потолка нет. Полосы режутся по неделям, дорожка назначается жадно:
+  // первая свободная. «Сегодня» — по Москве, чтобы у секретаря в Смоленске и у
+  // подрядчика за границей дышал один и тот же турнир.
+  const today = moscowToday();
   const weeks = [];
-  for (let i = 0; i < cells.length; i += 7) weeks.push(cells.slice(i, i + 7));
+  for (let i = 0; i < cells.length; i += 7) {
+    const week = cells.slice(i, i + 7);
+    const days = week.map((c) => (c ? c.day : null));
+    const segs = [];
+    for (const t of rows) {
+      const from = (t.start_date || t.end_date) < monthStart ? monthStart : (t.start_date || t.end_date);
+      const to = t.end_date > monthEnd ? monthEnd : t.end_date;
+      const fd = Number(from.slice(8, 10)); const td = Number(to.slice(8, 10));
+      let col = -1; let colEnd = -1;
+      days.forEach((d, k) => { if (d !== null && d >= fd && d <= td) { if (col < 0) col = k; colEnd = k; } });
+      if (col < 0) continue;
+      const status = tournamentStatus(t, today);
+      segs.push({
+        id: t.id, name: t.name, city: t.city, category: t.category, col: col + 1, colEnd: colEnd + 1,
+        from: t.start_date || t.end_date, to: t.end_date,
+        live: status === 'ongoing', done: status === 'finished', entryOpen: status !== 'finished' && t.entry === 'open',
+        continuesLeft: days[col] > fd, continuesRight: days[colEnd] < td, lane: 0,
+      });
+    }
+    // Длинные и ранние — выше: так недельный турнир занимает первую дорожку, а короткие
+    // ложатся под ним, как в календарях РТТ.
+    segs.sort((a, b) => a.col - b.col || (b.colEnd - b.col) - (a.colEnd - a.col) || a.id - b.id);
+    const lanes = [];
+    for (const sg of segs) {
+      let l = 0;
+      while (lanes[l] && lanes[l].some((o) => !(sg.colEnd < o.col || sg.col > o.colEnd))) l++;
+      (lanes[l] = lanes[l] || []).push(sg); sg.lane = l;
+    }
+    weeks.push({ cells: week, bars: segs, lanes: lanes.length });
+  }
   const shift = (k) => { const dt = new Date(Date.UTC(y, m - 1 + k, 1)); return dt.toISOString().slice(0, 7); };
-  return { month, weeks, prev: shift(-1), next: shift(1), count: rows.length };
+  return { month, weeks, prev: shift(-1), next: shift(1), count: rows.length, today };
+}
+
+/** Сегодняшняя дата по Москве в виде ГГГГ-ММ-ДД — сервер может жить в UTC. */
+export function moscowToday(now = new Date()) {
+  const p = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now);
+  const g = (t) => p.find((x) => x.type === t).value;
+  return `${g('year')}-${g('month')}-${g('day')}`;
 }
 
 /** Картинка сайта по ключу (например, 'home-hero') → id загрузки либо null. */

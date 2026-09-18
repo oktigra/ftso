@@ -462,24 +462,107 @@ tbody tr:hover{background:var(--surface-2);}
 .cal{margin-top:1rem;}
 .cal__nav{display:flex; align-items:center; justify-content:space-between; gap:.6rem; margin-bottom:.6rem; flex-wrap:wrap;}
 .cal__title{margin:0; font-size:1.25rem; text-transform:capitalize;}
-/* min-width:0 — иначе общее правило table{min-width:520px} (для таблиц данных со своей
-   прокруткой) растягивало календарь на телефоне и вся страница уезжала вбок (замер 18.09.2026:
-   таблица 520 при окне 390). Календарь — не таблица данных, ему хватает 7 узких колонок. */
-.cal__table{width:100%; min-width:0; table-layout:fixed; border-collapse:separate; border-spacing:4px;}
-.cal__table th{font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); padding:.2rem 0;}
-/* ЯЧЕЙКА РАСТЁТ ПОД НАЗВАНИЯ (18.09.2026, просьба Олега): раньше высота была
-   зафиксирована, а название обрезалось многоточием — «Первенство Смолен…». Теперь
-   название переносится по словам целиком, высота строки берётся по самой высокой ячейке. */
-.cal__cell{vertical-align:top; height:5.5rem; padding:.35rem; border-radius:.6rem; background:var(--surface-2); border:1px solid transparent;}
-/* height у ячейки таблицы — это МИНИМУМ: строка с длинным названием растёт сама, пустые недели держат ровную высоту. */
+/* ===== КАЛЕНДАРЬ С ДОРОЖКАМИ (18.09.2026, макет утверждён владельцем в трёх темах) =====
+   Десктоп: неделя — CSS-сетка на 7 колонок; день занимает колонку на все строки,
+   полосы турниров лежат поверх на строках 2..N (дорожки), длинный турнир — одна
+   полоса на весь срок. Телефон (≤720px): полосы спрятаны, в клетке число турниров,
+   список дня раскрывается под сеткой (app.js). Все цвета — токены тем ниже.
+   ПРАВИЛО НАВЕДЕНИЯ: меняются только transform, box-shadow, opacity и цвет — ничего,
+   что влияет на размер: иначе строка сетки растёт и соседи «прыгают» (замер на макете). */
+:root{
+  --cal-a-bg:#e1f5ee; --cal-a-bd:#1d9e75; --cal-a-tx:#04342c; --cal-a-edge:#0f6e56;
+  --cal-b-bg:#e6f1fb; --cal-b-bd:#378add; --cal-b-tx:#042c53; --cal-b-edge:#185fa5;
+  --cal-c-bg:#f1efe8; --cal-c-bd:#b4b2a9; --cal-c-tx:#2c2c2a; --cal-c-edge:#5f5e5a;
+  --cal-done-bg:var(--surface); --cal-done-bd:#c9d3dc; --cal-done-tx:#8b98a3;
+  --cal-live:#5dcaa5; --cal-reg:#ef9f27; --cal-dot:#e8683a;
+  --cal-court:var(--primary); --cal-court-a:.16;
+  --cal-shadow:rgba(0,0,0,.12); --cal-hi:rgba(255,255,255,.55);
+}
+html[data-theme="dark"]{
+  --cal-a-bg:#12352a; --cal-a-bd:#1d9e75; --cal-a-tx:#dff7ec; --cal-a-edge:#27b377;
+  --cal-b-bg:#16293d; --cal-b-bd:#378add; --cal-b-tx:#dbeafe; --cal-b-edge:#69a7e4;
+  --cal-c-bg:#1c232a; --cal-c-bd:#5f5e5a; --cal-c-tx:#d3d1c7; --cal-c-edge:#888780;
+  --cal-done-bg:#111c25; --cal-done-bd:#263644; --cal-done-tx:#6b7d8c;
+  --cal-live:#1f8f60; --cal-dot:#f0997b;
+  --cal-court:#27b377; --cal-court-a:.2;
+  --cal-shadow:rgba(0,0,0,.45); --cal-hi:rgba(255,255,255,.06);
+}
+html[data-theme="warm"]{
+  --cal-a-bg:#e3f2e6; --cal-a-bd:#1d9e75; --cal-a-tx:#0a3d2b; --cal-a-edge:#0e7a52;
+  --cal-b-bg:#e9eef6; --cal-b-bd:#6f8fb8; --cal-b-tx:#1f3350; --cal-b-edge:#3b5f8f;
+  --cal-c-bg:#efe8db; --cal-c-bd:#b8ad97; --cal-c-tx:#3f3a30; --cal-c-edge:#8a6a1e;
+  --cal-done-bg:#f4efe4; --cal-done-bd:#e0d5bf; --cal-done-tx:#9a9284;
+  --cal-live:#8fd9b3;
+  --cal-court:#8a6a1e; --cal-court-a:.18;
+  --cal-shadow:rgba(80,60,20,.18); --cal-hi:rgba(255,255,255,.7);
+}
+.cal__legend{list-style:none; display:flex; flex-wrap:wrap; gap:.35rem 1.1rem; margin:0 0 .6rem; padding:0; font-size:.8rem; color:var(--muted);}
+.cal__swatch{display:inline-block; width:12px; height:12px; border-radius:3px; border:1px solid; vertical-align:-2px; margin-right:.35rem;}
+.cal__swatch--A{background:var(--cal-a-bg); border-color:var(--cal-a-bd);} .cal__swatch--B{background:var(--cal-b-bg); border-color:var(--cal-b-bd);} .cal__swatch--C{background:var(--cal-c-bg); border-color:var(--cal-c-bd);}
+.cal__swatch--done{background:var(--cal-done-bg); border-color:var(--cal-done-bd);} .cal__swatch--reg{width:3px; border:0; background:var(--cal-reg);}
+.cal__swatch--live{width:8px; height:8px; border-radius:50%; border:0; background:var(--cal-dot); animation:cal-dot 3.6s cubic-bezier(.45,0,.55,1) infinite;}
+.cal__grid{display:grid; gap:4px;}
+.cal__head{display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px;}
+.cal__head span{font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); padding:.2rem 0;}
+/* Первая строка — под число дня и счётчик (сама ячейка тянется на все строки и в
+   первой ничего не кладёт, без явной высоты строка была бы нулевой и полосы легли бы на числа). */
+.cal__week{display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); grid-template-rows:2.2rem; grid-auto-rows:auto; gap:0 4px; position:relative;}
+.cal__cell{position:relative; overflow:hidden; grid-row:1 / span 17; min-height:5.5rem; padding:.35rem; border-radius:.6rem; background:var(--surface-2); border:1px solid transparent; transition:border-color .2s;}
+/* Колонки и дорожки — классами (CSP запрещает style=""). Дорожек до 16 на неделю; больше у федерации не бывает. */
+.cal__cell.col-1, .cal__bar.col-1{grid-column-start:1;} .cal__cell.col-2, .cal__bar.col-2{grid-column-start:2;} .cal__cell.col-3, .cal__bar.col-3{grid-column-start:3;} .cal__cell.col-4, .cal__bar.col-4{grid-column-start:4;} .cal__cell.col-5, .cal__bar.col-5{grid-column-start:5;} .cal__cell.col-6, .cal__bar.col-6{grid-column-start:6;} .cal__cell.col-7, .cal__bar.col-7{grid-column-start:7;}
+.cal__bar.end-1{grid-column-end:2;} .cal__bar.end-2{grid-column-end:3;} .cal__bar.end-3{grid-column-end:4;} .cal__bar.end-4{grid-column-end:5;} .cal__bar.end-5{grid-column-end:6;} .cal__bar.end-6{grid-column-end:7;} .cal__bar.end-7{grid-column-end:8;}
+.cal__bar.lane-0{grid-row:2;} .cal__bar.lane-1{grid-row:3;} .cal__bar.lane-2{grid-row:4;} .cal__bar.lane-3{grid-row:5;} .cal__bar.lane-4{grid-row:6;} .cal__bar.lane-5{grid-row:7;} .cal__bar.lane-6{grid-row:8;} .cal__bar.lane-7{grid-row:9;} .cal__bar.lane-8{grid-row:10;} .cal__bar.lane-9{grid-row:11;} .cal__bar.lane-10{grid-row:12;} .cal__bar.lane-11{grid-row:13;} .cal__bar.lane-12{grid-row:14;} .cal__bar.lane-13{grid-row:15;} .cal__bar.lane-14{grid-row:16;} .cal__bar.lane-15{grid-row:17;}
+/* День занимает строку дней и все 16 дорожек (пустые строки схлопываются в ноль);
+   «1 / -1» тут не годится — отрицательный счёт видит только явные строки. */
 .cal__cell--empty{background:transparent;}
 .cal__cell.has-items{border-color:var(--primary);}
-.cal__day{display:block; font-family:'Manrope',sans-serif; font-weight:700; font-size:.85rem; color:var(--muted); margin-bottom:.2rem;}
-.cal__item{display:block; font-size:.74rem; line-height:1.25; padding:.2rem .4rem; margin-top:.2rem; border-radius:.35rem; background:var(--primary); color:#fff; text-decoration:none; white-space:normal; overflow-wrap:anywhere; hyphens:auto;}
-.cal__item:hover{filter:brightness(1.08);}
-.cal__item--finished{background:var(--muted);}
-.cal__item--ongoing{background:#b45309;}
-@media (max-width:720px){ .cal__table{border-spacing:2px;} .cal__cell{height:4.2rem; padding:.2rem;} .cal__item{font-size:.62rem; padding:.15rem .25rem;} }
+.cal__cell.is-today{border-color:var(--primary); box-shadow:inset 0 0 0 1px var(--primary);}
+.cal__day{position:relative; z-index:1; display:inline-block; font-family:'Manrope',sans-serif; font-weight:700; font-size:.85rem; color:var(--muted);}
+.cal__cell.is-today .cal__day{color:var(--primary);}
+.cal__count{position:relative; z-index:1; display:inline-block; margin-left:.3rem; padding:0 .4rem; border-radius:999px; font-size:.72rem; line-height:1.3rem; background:var(--surface); border:1px solid var(--border); color:var(--muted);}
+.cal__court{position:absolute; inset:0; width:100%; height:100%; z-index:0; pointer-events:none; color:var(--cal-court); opacity:var(--cal-court-a);}
+/* Полоса турнира: объём — цветное ребро слева, тень снизу, светлая кромка сверху. */
+.cal__bar{position:relative; z-index:2; display:block; margin:.45rem .3rem 0; padding:.35rem .5rem .35rem .55rem; border-radius:.45rem; font-size:.78rem; line-height:1.25; color:inherit; text-decoration:none; border:1px solid; border-left:4px solid; box-shadow:0 1px 2px var(--cal-shadow), inset 0 1px 0 var(--cal-hi); transition:transform .2s, box-shadow .2s, opacity .25s; transform-origin:left center; animation:cal-grow .55s ease-out both;}
+.cal__bar:hover, .cal__bar:focus-visible{z-index:3; transform:translateY(-2px); box-shadow:0 4px 12px var(--cal-shadow), inset 0 1px 0 var(--cal-hi), 0 0 0 2px var(--bg), 0 0 0 3px currentColor; outline:none; text-decoration:none;}
+.cal__bar--A{background:var(--cal-a-bg); color:var(--cal-a-tx); border-color:var(--cal-a-bd); border-left-color:var(--cal-a-edge);}
+.cal__bar--B{background:var(--cal-b-bg); color:var(--cal-b-tx); border-color:var(--cal-b-bd); border-left-color:var(--cal-b-edge);}
+.cal__bar--C{background:var(--cal-c-bg); color:var(--cal-c-tx); border-color:var(--cal-c-bd); border-left-color:var(--cal-c-edge);}
+.cal__bar.is-done, .cal__li.is-done{background:var(--cal-done-bg); color:var(--cal-done-tx); border-color:var(--cal-done-bd); border-left-color:var(--cal-done-bd); box-shadow:none;}
+.cal__bar.is-reg, .cal__li.is-reg{border-left-color:var(--cal-reg);}
+.cal__bar.is-cont-l{border-top-left-radius:0; border-bottom-left-radius:0; margin-left:0;} .cal__bar.is-cont-r{border-top-right-radius:0; border-bottom-right-radius:0; margin-right:0;}
+.cal__bar.is-dim{opacity:.22;}
+/* Идущий турнир дышит заливкой: 3,6 с на цикл, плавно; у категории C — от своего серого. */
+.cal__bar.is-live, .cal__li.is-live{animation:cal-grow .55s ease-out both, cal-breathe 3.6s cubic-bezier(.45,0,.55,1) .6s infinite;}
+.cal__bar--C.is-live{animation-name:cal-grow, cal-breathe-c;}
+@keyframes cal-grow{from{transform:scaleX(0); opacity:0;} to{transform:scaleX(1); opacity:1;}}
+@keyframes cal-breathe{0%,100%{background-color:var(--cal-a-bg); box-shadow:0 1px 2px var(--cal-shadow), inset 0 1px 0 var(--cal-hi);} 50%{background-color:var(--cal-live); box-shadow:0 3px 12px rgba(39,179,119,.5), inset 0 1px 0 var(--cal-hi);}}
+@keyframes cal-breathe-c{0%,100%{background-color:var(--cal-c-bg); box-shadow:0 1px 2px var(--cal-shadow), inset 0 1px 0 var(--cal-hi);} 50%{background-color:var(--cal-live); box-shadow:0 3px 12px rgba(39,179,119,.5), inset 0 1px 0 var(--cal-hi);}}
+@keyframes cal-dot{0%,100%{opacity:1; transform:scale(1);} 50%{opacity:.5; transform:scale(1.35);}}
+.cal__cat{display:inline-block; min-width:14px; height:14px; line-height:14px; text-align:center; font-size:.62rem; font-weight:700; border-radius:3px; margin-right:.3rem; vertical-align:top; color:#fff; background:var(--cal-a-edge);}
+.cal__bar--B .cal__cat, .cal__li.cal__bar--B .cal__cat{background:var(--cal-b-edge);} .cal__bar--C .cal__cat, .cal__li.cal__bar--C .cal__cat{background:var(--cal-c-edge);} .is-done .cal__cat{background:var(--cal-done-bd);}
+.cal__name{display:inline-block; max-width:calc(100% - 20px); vertical-align:top; font-weight:600; white-space:normal; overflow-wrap:anywhere; hyphens:auto; transform-origin:left center; transition:transform .22s cubic-bezier(.2,.8,.3,1.2), text-shadow .22s; will-change:transform;}
+.cal__bar:hover .cal__name, .cal__bar:focus-visible .cal__name{transform:translate(2px,-1px) scale(1.07); text-shadow:0 2px 3px var(--cal-shadow);}
+.is-live .cal__name::before{content:""; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--cal-dot); margin-right:.35rem; vertical-align:1px; animation:cal-dot 3.6s cubic-bezier(.45,0,.55,1) .6s infinite;}
+/* Списки дня — только на телефоне. */
+.cal__lists{display:none;}
+.cal__daylist-title{font-size:.95rem; margin:.8rem 0 .4rem;}
+.cal__li{position:relative; display:block; margin:.35rem 0; padding:.45rem .6rem; border-radius:.45rem; border:1px solid var(--border); border-left:4px solid var(--cal-a-edge); background:var(--surface-2); color:var(--text); text-decoration:none; font-size:.85rem; box-shadow:0 1px 2px var(--cal-shadow);}
+.cal__li.cal__bar--B{border-left-color:var(--cal-b-edge);} .cal__li.cal__bar--C{border-left-color:var(--cal-c-edge);}
+.cal__li small{display:block; color:var(--muted); font-size:.75rem; margin-top:.15rem;}
+@media (max-width:720px){
+  .cal__grid, .cal__head, .cal__week{gap:2px;}
+  .cal__cell{min-height:3.4rem; padding:.2rem; cursor:pointer;}
+  .cal__cell.is-selected{background:var(--cal-a-bg); border-color:var(--cal-a-edge);}
+  .cal__count{display:block; margin:.15rem 0 0; padding:0; background:none; border:0; font-weight:700; color:var(--primary); font-size:.8rem; line-height:1.1;}
+  .cal__bar{display:none;}
+  /* Первая строка — дни, остальные — дорожки: на телефоне дорожки схлопываем в ноль,
+     дни оставляем авто. grid-auto-rows:0 без template-rows обнулял и первую строку. */
+  .cal__week{grid-template-rows:auto; grid-auto-rows:0;}
+  .cal__cell{grid-row:1 / span 17;}
+  .cal__lists{display:block;}
+  .cal__legend{font-size:.72rem; gap:.3rem .7rem;}
+}
+@media (prefers-reduced-motion:reduce){ .cal__bar, .cal__bar.is-live, .cal__li.is-live, .is-live .cal__name::before, .cal__swatch--live{animation:none;} }
 /* ПРИГЛАШЕНИЕ «ПРОВЕСТИ СВОЙ ТУРНИР» под календарём — заметный блок вместо строчки-ссылки
    (18.09.2026). Тот же градиент, что у призыва на главной, но компактнее. */
 .cal-cta{display:flex; align-items:center; justify-content:space-between; gap:1.25rem; flex-wrap:wrap; margin-top:1.5rem; padding:clamp(1.25rem,3vw,2rem) clamp(1.25rem,4vw,2.5rem); border-radius:1.25rem; background:var(--cta-grad); color:#fff; box-shadow:var(--shadow-lg);}

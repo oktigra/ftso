@@ -454,4 +454,41 @@
       });
     }
   });
+
+  // КАЛЕНДАРЬ ТУРНИРОВ С ДОРОЖКАМИ (18.09.2026).
+  // Десктоп: навёл на день — полосы, не проходящие через него, гаснут.
+  // Телефон: нажал на день — под сеткой раскрывается его список; полосы там скрыты CSS.
+  document.querySelectorAll('.cal__grid').forEach(function (grid) {
+    var bars = Array.prototype.slice.call(grid.querySelectorAll('.cal__bar'));
+    var lists = document.querySelector('[data-cal-lists]');
+    var covers = function (bar, iso) { return bar.getAttribute('data-from') <= iso && iso <= bar.getAttribute('data-to'); };
+    grid.addEventListener('mouseover', function (e) {
+      var cell = e.target.closest('.cal__cell[data-day]');
+      if (!cell) return;
+      var iso = cell.getAttribute('data-day');
+      bars.forEach(function (b) { b.classList.toggle('is-dim', !covers(b, iso)); });
+    });
+    grid.addEventListener('mouseout', function (e) {
+      if (e.target.closest('.cal__cell[data-day]')) bars.forEach(function (b) { b.classList.remove('is-dim'); });
+    });
+    var open = function (iso) {
+      if (!lists) return;
+      var any = false;
+      lists.querySelectorAll('.cal__daylist').forEach(function (l) { var on = l.getAttribute('data-day') === iso; l.hidden = !on; any = any || on; });
+      grid.querySelectorAll('.cal__cell').forEach(function (c) { c.classList.toggle('is-selected', c.getAttribute('data-day') === iso && any); });
+    };
+    grid.addEventListener('click', function (e) {
+      if (e.target.closest('.cal__bar')) return; // по полосе — переход на турнир
+      var cell = e.target.closest('.cal__cell.has-items');
+      if (cell) open(cell.getAttribute('data-day'));
+    });
+    grid.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var cell = e.target.closest('.cal__cell.has-items');
+      if (cell) { e.preventDefault(); open(cell.getAttribute('data-day')); }
+    });
+    // На телефоне сразу показываем сегодняшний день, если в нём что-то есть, иначе первый непустой.
+    var today = grid.querySelector('.cal__cell.is-today.has-items') || grid.querySelector('.cal__cell.has-items');
+    if (today && lists && window.matchMedia('(max-width: 720px)').matches) open(today.getAttribute('data-day'));
+  });
 })();

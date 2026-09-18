@@ -3410,19 +3410,23 @@ await check('календарь: вид «сетка месяца» — неде
   const g = await http('/tournaments?view=grid&gm=2031-05');
   eq(g.status, 200, 'сетка');
   assert(/ftso\.calendar=grid/.test(g.headers.get('set-cookie') || ''), 'выбор вида не запомнен cookie');
-  assert(/<th scope="col">Пн<\/th>[\s\S]*<th scope="col">Вс<\/th>/.test(g.text) && /cal__title">май 2031/i.test(g.text), 'заголовок/дни недели');
-  const chips = (id) => (g.text.match(new RegExp(`class="cal__item[^"]*" href="/tournaments/${id}"`, 'g')) || []).length;
-  eq([chips(two), chips(one), chips(span)].join(','), '2,1,2', 'турнир должен стоять в каждом дне своего интервала в пределах месяца');
-  assert(/cal__item--upcoming is-first" href="\/tournaments\/${''}/.test('') || new RegExp(`is-first" href="/tournaments/${two}"`).test(g.text), 'первый день интервала помечен');
+  // Разметка с дорожками (18.09.2026): шапка дней — span[role=columnheader], турнир в каждом
+  // дне — строка списка дня (.cal__li), а на неделю — одна полоса (.cal__bar).
+  assert(/<span role="columnheader">Пн<\/span>[\s\S]*<span role="columnheader">Вс<\/span>/.test(g.text) && /cal__title">май 2031/i.test(g.text), 'заголовок/дни недели');
+  const chips = (id) => (g.text.match(new RegExp(`class="cal__li[^"]*" href="/tournaments/${id}"`, 'g')) || []).length;
+  eq([chips(two), chips(one), chips(span)].join(','), '2,1,2', 'турнир должен стоять в каждом дне своего интервала в пределах месяца (список дня)');
+  const bars = (id) => (g.text.match(new RegExp(`class="cal__bar[^"]*"\\s+href="/tournaments/${id}"`, 'g')) || []).length;
+  eq([bars(two), bars(one), bars(span)].join(','), '1,1,1', 'на неделю — одна полоса на турнир, а не по полосе на день');
+  assert(new RegExp(`href="/tournaments/${span}"[^>]*data-to="2031-06-02"`).test(g.text), 'полоса через границу месяца знает свой настоящий конец');
   // 1 мая 2031 — четверг: перед ним три пустых ячейки (Пн, Вт, Ср).
-  assert(/<tr>\s*(<td class="cal__cell cal__cell--empty"><\/td>\s*){3}<td class="cal__cell/.test(g.text), 'недели должны начинаться с понедельника (1 мая 2031 — четверг)');
+  assert(/cal__week[^>]*>\s*(<div class="cal__cell cal__cell--empty col-\d" role="cell"><\/div>\s*){3}<div class="cal__cell col-4/.test(g.text), 'недели должны начинаться с понедельника (1 мая 2031 — четверг)');
   assert(g.text.includes('gm=2031-04') && g.text.includes('gm=2031-06'), 'нет ссылок на соседние месяцы');
   const remembered = await http('/tournaments', { headers: { cookie: 'ftso.calendar=grid' } });
-  assert(/cal__table/.test(remembered.text), 'cookie=grid без ?view должен открывать сетку');
+  assert(/cal__grid/.test(remembered.text), 'cookie=grid без ?view должен открывать сетку');
   const back = await http('/tournaments?view=list', { headers: { cookie: 'ftso.calendar=grid' } });
-  assert(/ftso\.calendar=list/.test(back.headers.get('set-cookie') || '') && /tdrawers--calendar/.test(back.text) && !/cal__table/.test(back.text), 'возврат к списку с перезаписью cookie');
+  assert(/ftso\.calendar=list/.test(back.headers.get('set-cookie') || '') && /tdrawers--calendar/.test(back.text) && !/cal__grid/.test(back.text), 'возврат к списку с перезаписью cookie');
   const plain = await http('/tournaments');
-  assert(!/cal__table/.test(plain.text) && !/ftso\.calendar=/.test(plain.headers.get('set-cookie') || ''), 'без cookie и без ?view — список, cookie вида не ставится');
+  assert(!/cal__grid/.test(plain.text) && !/ftso\.calendar=/.test(plain.headers.get('set-cookie') || ''), 'без cookie и без ?view — список, cookie вида не ставится');
   db.prepare('DELETE FROM tournaments WHERE id IN (?, ?, ?)').run(two, one, span);
   return 'май 2031: Пн-первый, 2+1+2 фишки, листание, cookie grid/list';
 });
@@ -6428,37 +6432,78 @@ try {
     return `${A11Y_PAGES.length} страниц: lang, один h1, main, skip-link, метки у всех полей, alt у картинок, видимый фокус с клавиатуры`;
   });
 
-  await check('календарь турниров: названия целиком, ячейки растут, на телефоне не уезжает вбок, под сеткой блок «Провести свой турнир»', async () => {
-  // 18.09.2026, просьба Олега: «Первенство Смолен…» с многоточием не читалось; ссылка
-  // «Провести свой турнир» терялась. Заодно замером найдено: общее table{min-width:520px}
-  // растягивало календарь на телефоне и вся страница уезжала вбок.
-  const tid = db.prepare("INSERT INTO tournaments (name, start_date, end_date, category, city, is_published) VALUES ('Первенство Смоленской области по теннису среди юношей и девушек до 13 и до 17 лет', '2026-08-24', '2026-08-29', 'A', 'Смоленск', 1)").run().lastInsertRowid;
-  const out = {};
-  for (const [w, h, label] of [[1280, 900, 'desktop'], [390, 844, 'mobile']]) {
-    const page = await browser.newPage({ viewport: { width: w, height: h } });
-    await page.goto(inst.base + '/tournaments?view=grid&gm=2026-08', { waitUntil: 'domcontentloaded' });
-    out[label] = await page.evaluate(() => {
-      // Считаем только наш турнир: в базе приёмки в этом месяце могут лежать чужие.
-      const items = [...document.querySelectorAll('.cal__item')].filter((el) => /до 13 и до 17 лет/.test(el.textContent));
-      const cut = items.filter((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1).length;
-      const cta = document.querySelector('.cal-cta');
-      const ours = items.filter((el) => /^Первенство Смоленской области по теннису среди юношей/.test(el.textContent.trim()));
-      return { items: ours.length, cut, full: ours.length >= 6 && ours.every((el) => /до 17 лет$/.test(el.textContent.trim())), sideways: document.documentElement.scrollWidth > innerWidth,
-               ctaH: cta ? Math.round(cta.getBoundingClientRect().height) : 0, ctaLink: cta ? cta.querySelector('a[href="/tournament-request"]') !== null : false };
-    });
-    await page.close();
-  }
-  db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
-  for (const label of ['desktop', 'mobile']) {
-    const m = out[label];
-    // В полном прогоне в августе могут стоять и турниры других разделов — считаем свои.
-    assert(m.items >= 6, `${label}: в сетке должно быть не меньше шести дней турнира (${m.items})`);
-    eq(m.cut, 0, `${label}: названия не должны обрезаться`);
-    assert(m.full, `${label}: каждое название должно выводиться целиком (наше кончается на «до 17 лет»)`);
-    assert(!m.sideways, `${label}: страница не должна уезжать вбок`);
-    assert(m.ctaH >= 120 && m.ctaLink, `${label}: под календарём нужен заметный блок с ссылкой на заявку (высота ${m.ctaH})`);
-  }
-  return `названия целиком на 1280 и 390, обрезано 0, вбок не уезжает; блок «Провести свой турнир» ${out.desktop.ctaH}/${out.mobile.ctaH} px со ссылкой на /tournament-request`;
+  await check('календарь с дорожками: полосы по дням, статусы по датам, корт под сегодня, телефон со счётчиком и списком, ссылки ведут на турнир, наведение не двигает соседей', async () => {
+  // Решение владельца 18.09.2026: гибрид — на десктопе полосы через дни на дорожках без
+  // потолка, на телефоне число в клетке и список дня под сеткой. Замер, не память.
+  const { moscowToday } = await import('./server/lib/content.mjs');
+  const today = moscowToday();
+  const iso = (off) => { const d = new Date(today + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + off); return d.toISOString().slice(0, 10); };
+  const gm = today.slice(0, 7);
+  const mk = (name, from, to, cat, deadline) => db.prepare('INSERT INTO tournaments (name, start_date, end_date, category, city, is_published, entry_deadline) VALUES (?, ?, ?, ?, ?, 1, ?)').run(name, from, to, cat, 'Смоленск', deadline || null).lastInsertRowid;
+  // Неделя вокруг сегодня: недельный (идёт), завершённый, короткий через сегодня (идёт), два впереди с приёмом заявок — на одном дне.
+  const ids = [mk('Дорожка недельный турнир', iso(-3), iso(3), 'A'), mk('Дорожка завершённый', iso(-3), iso(-2), 'B'), mk('Дорожка идёт через сегодня', iso(-1), iso(0), 'C'), mk('Дорожка впереди пары', iso(2), iso(3), 'B', iso(2)), mk('Дорожка впереди детский', iso(2), iso(2), 'A', iso(2))];
+  // Отбираем ТОЛЬКО свои полосы: в базе приёмки бывают чужие турниры того же месяца.
+  const mine = (sel) => `${sel}[title^="Дорожка"]`;
+  const desk = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await desk.goto(`${inst.base}/tournaments?view=grid&gm=${gm}`, { waitUntil: 'networkidle' });
+  await desk.evaluate(() => { document.querySelector('[data-cookie-bar]')?.remove(); document.querySelector('.dev-notice')?.remove(); });
+  const d = await desk.evaluate(({ today, mine }) => {
+    const bars = [...document.querySelectorAll(mine)];
+    const byName = (re) => bars.filter((b) => re.test(b.title));
+    const lane = (b) => getComputedStyle(b).gridRowStart;
+    const cell = document.querySelector(`.cal__cell[data-day="${today}"]`);
+    return {
+      bars: bars.length,
+      // Недельный турнир может резаться границей недели: хотя бы один его кусок — полоса на 3+ дня.
+      weeklyOnePiece: byName(/недельный/).some((b) => Number(getComputedStyle(b).gridColumnEnd) - Number(getComputedStyle(b).gridColumnStart) >= 3),
+      lanesDiffer: new Set(byName(/недельный|завершённый|идёт через/).map(lane)).size >= 2,
+      live: byName(/недельный|идёт через/).every((b) => b.classList.contains('is-live')), notLive: byName(/завершённый|впереди/).every((b) => !b.classList.contains('is-live')),
+      done: byName(/завершённый/).every((b) => b.classList.contains('is-done')), reg: byName(/впереди/).every((b) => b.classList.contains('is-reg')),
+      sameDayTwoLanes: new Set(byName(/впереди/).map(lane)).size === 2,
+      court: !!cell?.querySelector('.cal__court') && getComputedStyle(cell.querySelector('.cal__court')).zIndex === '0', todayMarked: cell?.classList.contains('is-today'),
+      count: cell?.querySelector('.cal__count')?.textContent, overflow: bars.filter((b) => b.scrollHeight > b.clientHeight + 1).length,
+      legend: document.querySelectorAll('.cal__legend li').length, sideways: document.documentElement.scrollWidth > innerWidth,
+      inlineStyle: bars.filter((b) => b.getAttribute('style')).length,
+    };
+  }, { today, mine: mine('.cal__bar') });
+  assert(d.bars >= 5, `полос своих турниров: ${d.bars}`);
+  assert(d.weeklyOnePiece, 'недельный турнир должен быть одной полосой через несколько дней');
+  assert(d.lanesDiffer, 'пересекающиеся турниры должны лечь на разные дорожки');
+  assert(d.sameDayTwoLanes, 'два турнира в один день — две дорожки');
+  assert(d.live && d.notLive, '«идёт» считается по датам: дышат ровно те, что покрывают сегодня');
+  assert(d.done && d.reg, 'завершённый серый, приём заявок отмечен');
+  assert(d.court && d.todayMarked, 'под сегодняшним днём нужна разметка корта на заднем плане');
+  eq(d.count, '2', 'счётчик сегодняшнего дня считается из тех же данных, что и полосы');
+  eq(d.overflow, 0, 'названия не должны вылезать из полос'); eq(d.legend, 6, 'легенда'); assert(!d.sideways, 'десктоп не уезжает вбок');
+  eq(d.inlineStyle, 0, 'позиции — классами: style="" режется CSP');
+  // Наведение меняет только transform: соседи не двигаются.
+  const before = await desk.evaluate(() => [...document.querySelectorAll('.cal__cell[data-day]')].map((c) => Math.round(c.getBoundingClientRect().height)).join(','));
+  await desk.locator(mine('.cal__bar'), { hasText: 'детский' }).hover(); await desk.waitForTimeout(350);
+  const after = await desk.evaluate(() => [...document.querySelectorAll('.cal__cell[data-day]')].map((c) => Math.round(c.getBoundingClientRect().height)).join(','));
+  eq(after, before, 'наведение на полосу не должно менять высоту соседних ячеек');
+  // Наводим на число дня, а не в центр: центр занят полосами, они поверх ячейки по замыслу.
+  await desk.waitForTimeout(800); // полосы дорисовались (анимация появления 0,55 с)
+  await desk.hover(`.cal__cell[data-day="${iso(-2)}"]`, { position: { x: 12, y: 12 } }); await desk.waitForTimeout(100);
+  const dim = await desk.evaluate((m) => [...document.querySelectorAll(m)].map((b) => `${/недельный|завершённый/.test(b.title) ? 'on' : 'off'}:${b.classList.contains('is-dim') ? 'dim' : 'lit'}`).join(','), mine('.cal__bar'));
+  assert(!/on:dim/.test(dim) && !/off:lit/.test(dim), `наведение на день должно гасить чужие полосы: ${dim}`);
+  // Клик по полосе — на страницу турнира.
+  await desk.locator(mine('.cal__bar'), { hasText: 'детский' }).click(); await desk.waitForLoadState('domcontentloaded');
+  eq(new URL(desk.url()).pathname, `/tournaments/${ids[4]}`, 'полоса ведёт на свой турнир');
+  await desk.close();
+  // ТЕЛЕФОН: полосы спрятаны, число в клетке, список дня по нажатию, ссылка ведёт на турнир.
+  const mob = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  await mob.goto(`${inst.base}/tournaments?view=grid&gm=${gm}`, { waitUntil: 'networkidle' });
+  await mob.evaluate(() => { document.querySelector('[data-cookie-bar]')?.remove(); document.querySelector('.dev-notice')?.remove(); });
+  const m1 = await mob.evaluate(({ today }) => ({ barsVisible: [...document.querySelectorAll('.cal__bar')].filter((b) => b.offsetParent !== null).length, count: document.querySelector(`.cal__cell[data-day="${today}"] .cal__count`)?.textContent, opened: [...document.querySelectorAll('.cal__daylist')].filter((l) => !l.hidden).map((l) => l.getAttribute('data-day')), sideways: document.documentElement.scrollWidth > innerWidth, weekH: Math.min(...[...document.querySelectorAll('.cal__week')].map((w) => w.getBoundingClientRect().height)) }), { today });
+  eq(m1.barsVisible, 0, 'на телефоне полос не видно'); eq(m1.count, '2', 'на телефоне в клетке число турниров'); assert(m1.opened.includes(today), 'на телефоне сразу раскрыт сегодняшний день'); assert(!m1.sideways, 'телефон не уезжает вбок'); assert(m1.weekH > 30, 'недели не схлопнулись');
+  await mob.click(`.cal__cell[data-day="${iso(2)}"]`); await mob.waitForTimeout(120);
+  const m2 = await mob.evaluate(({ d }) => ({ opened: [...document.querySelectorAll('.cal__daylist')].filter((l) => !l.hidden).map((l) => l.getAttribute('data-day')), items: document.querySelector(`.cal__daylist[data-day="${d}"]`)?.querySelectorAll('.cal__li').length, selected: document.querySelector('.cal__cell.is-selected')?.getAttribute('data-day') }), { d: iso(2) });
+  eq(m2.opened.join(','), iso(2), 'нажатие открывает ровно один день'); assert(m2.items >= 3, 'в списке дня — все турниры дня'); eq(m2.selected, iso(2), 'нажатая клетка подсвечена');
+  await mob.locator('.cal__daylist:not([hidden]) .cal__li', { hasText: 'детский' }).click(); await mob.waitForLoadState('domcontentloaded');
+  eq(new URL(mob.url()).pathname, `/tournaments/${ids[4]}`, 'строка списка ведёт на свой турнир');
+  await mob.close();
+  db.prepare("DELETE FROM tournaments WHERE name LIKE 'Дорожка %'").run();
+  return 'десктоп: 5 полос, недельный одной полосой, пересечения на разных дорожках, «идёт» по датам, серый завершённый, корт под сегодня, счётчик 2; наведение не двигает соседей, день гасит чужие полосы, клик ведёт на турнир; телефон: полосы скрыты, счётчики, список дня, ссылка на турнир';
 });
 
 await check('адаптив: бургер-меню, одна колонка, таблицы со скроллом', async () => {
