@@ -4245,12 +4245,21 @@ await check('дубль карточки: заявка без отчества �
   // 2) сторож двойников видит совпадение по «фамилия + имя», даже без отчества
   const m = findNameMatches(db, 'Дублёв Олег');
   assert(m.some((x) => x.id === real && x.exact === false), 'двойник по фамилии и имени должен находиться');
-  // 3) секретарь всё же завёл дубль с кабинетом и согласием — объединяем кнопкой
-  const dup = db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Дублёв Олег', 'Смоленск', 'M')").run().lastInsertRowid;
+  // 3) ручное добавление в админке (так и появился #111 на бою): без даты при живом похожем — стоп с
+  //    подсказкой; с отметкой «это другой человек, тёзка» — создаётся.
+  const { jar: aj } = await login(ADMIN.user, ADMIN.pass);
+  const ac = tokenFrom((await http('/admin/players', { jar: aj })).text);
+  const stop = await http('/admin/players', { method: 'POST', jar: aj, form: { _csrf: ac, last_name: 'дублёв', first_name: 'олег', middle_name: '', city: 'смоленск', sex: 'M' } });
+  assert(/Похожий игрок уже есть/.test(stop.text) || stop.status === 302, 'ответ на ручное добавление');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM players WHERE full_name LIKE 'Дублёв Олег%'").get().n, 1, 'ручное добавление похожего без отметки «тёзка» — стоп');
+  await http('/admin/players', { method: 'POST', jar: aj, form: { _csrf: ac, last_name: 'дублёв', first_name: 'олег', middle_name: '', city: 'смоленск', sex: 'M', namesake: '1' } });
+  const dupRow = db.prepare("SELECT id, full_name, city FROM players WHERE full_name = 'Дублёв Олег'").get();
+  assert(dupRow && dupRow.city === 'Смоленск', 'с отметкой «тёзка» создаётся, регистр выправлен');
+  const dup = dupRow.id;
   db.prepare("INSERT INTO player_accounts (player_id, email) VALUES (?, 'dublev@example.com')").run(dup);
   db.prepare("INSERT INTO consents (player_id, kind, event, legal_version, source, basis) VALUES (?, 'distribution', 'granted', '2026-09-05', 'web', 'форма')").run(dup);
   db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, 9, 'double')").run(t, dup);
-  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const jar = aj;
   const page = await http('/admin/players', { jar });
   assert(new RegExp(`action="/admin/players/${dup}/merge"`).test(page.text) && /Объединить…/.test(page.text), 'в строке игрока нет кнопки «Объединить…»');
   const _csrf = tokenFrom(page.text);
@@ -4270,7 +4279,7 @@ await check('дубль карточки: заявка без отчества �
   // Уборка — как штатное удаление игрока: журнал согласий закрыт триггером, ворота открываем явно.
   const { withConsentErasure } = await import('./server/lib/consent-journal.mjs');
   withConsentErasure(db, () => db.prepare("DELETE FROM players WHERE full_name LIKE 'Дублёв%'").run()); db.prepare('DELETE FROM write_attempts').run();
-  return 'регистр выправлен, двойник по «фамилия имя» найден, кнопка «Объединить…»: результаты 1+1=2 на настоящей, кабинет и согласие переехали, дубль удалён, журнал записан';
+  return 'регистр выправлен, двойник по «фамилия имя» найден, ручное добавление похожего — стоп без отметки «тёзка»; «Объединить…»: результаты 1+1=2 на настоящей, кабинет и согласие переехали, дубль удалён, журнал записан';
 });
 
 section('15. Личный кабинет и право на забвение (ст. 21)');

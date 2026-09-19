@@ -189,7 +189,7 @@ export function guardianInput(body) {
 export function playerInput(body, { requireFirst = true } = {}) {
   return {
     full_name: personName(body, { requireFirst }),
-    city: str(body.city, 'Город', { max: 80 }),
+    city: str(body.city, 'Город', { max: 80 }).split(/\s+/).map(titleCase).join(' '),
     sex: oneOf(body.sex, 'Пол', SEXES),
     // Возрастная группа не вводится нигде: считается от даты рождения (решение 23.08).
     // Дата рождения правится ТОЛЬКО секретарём и ТОЛЬКО в админке. Пустое поле
