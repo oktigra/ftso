@@ -214,6 +214,15 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // ДУБЛИ: ФИО + дата рождения и РНИ — стоп; тёзка с другой датой — можно.
       const dup = findDuplicate(db, { full_name: data.full_name, birth_date: data.birth_date });
       if (dup) throw new ValidationError(dup.replace(/ Если у вас.*$/, ''));
+      // ПОХОЖИЙ ИГРОК (19.09.2026, бой: #111 «коротков олег» создан руками при живом #2
+      // «Коротков Олег Александрович»): совпали фамилия и имя — стоп с подсказкой; тёзку
+      // добавляют осознанно, отметкой «это другой человек».
+      if (req.body.namesake !== '1') {
+        const alike = findNameMatches(db, data.full_name, data.birth_date);
+        if (alike.length) {
+          throw new ValidationError(`Похожий игрок уже есть: ${alike.slice(0, 3).map((p) => `#${p.id} ${p.full_name} (${p.city || '—'})`).join(', ')}. Если это тот же человек — не добавляйте, а поправьте его карточку; если другой — поставьте отметку «Это другой человек, тёзка» и добавьте снова.`);
+        }
+      }
       if (data.rni && db.prepare('SELECT id FROM players WHERE rni = ?').get(data.rni)) {
         throw new ValidationError(`РНИ ${data.rni} уже у игрока #${db.prepare('SELECT id FROM players WHERE rni = ?').get(data.rni).id}`);
       }
