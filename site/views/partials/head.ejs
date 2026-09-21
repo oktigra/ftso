@@ -53,11 +53,13 @@ const seoDesc = (typeof seo !== 'undefined' && seo && seo.description) ? seo.des
 }) %></script>
 <% } %>
 <%
-/* Анти-FOUC: data-theme ставится на <html> ДО первого рендера. Инлайн переживает
+/* ТЕМА ПО УМОЛЧАНИЮ — ТЁМНАЯ (решение владельца 21.09.2026): первый визит всегда тёмный,
+   настройка системы посетителя не учитывается; свой выбор в переключателе сохраняется.
+   Анти-FOUC: data-theme ставится на <html> ДО первого рендера. Инлайн переживает
    строгий CSP за счёт nonce — см. script-src в server/app.mjs. */
 %>
 <script nonce="<%= cspNonce %>">
-(function(){try{var t=localStorage.getItem('ftso-theme');if(t!=='light'&&t!=='dark'&&t!=='warm'){t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();
+(function(){try{var t=localStorage.getItem('ftso-theme');if(t!=='light'&&t!=='dark'&&t!=='warm'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();
 </script>
 <link rel="stylesheet" href="/static/css/fonts.css">
 <link rel="stylesheet" href="/static/css/site.css?v=<%= assetVersion %>">

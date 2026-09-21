@@ -6537,6 +6537,12 @@ try {
     await page.goto(inst.base + '/', { waitUntil: 'networkidle' });
 
     const before = await page.getAttribute('html', 'data-theme');
+    // Первый визит — всегда тёмная (решение владельца 21.09.2026), даже у посетителя со светлой системой.
+    eq(before, 'dark', 'тема по умолчанию для нового посетителя');
+    const lightSys = await browser.newContext({ colorScheme: 'light' }); const lp = await lightSys.newPage();
+    await lp.goto(inst.base + '/', { waitUntil: 'domcontentloaded' });
+    eq(await lp.getAttribute('html', 'data-theme'), 'dark', 'светлая система посетителя не переопределяет тёмную по умолчанию');
+    await lightSys.close();
     // Фон каждой темы: атрибут мог бы поменяться и без применения CSS. Ждём
     // ИМЕННО цвет, а не факт клика: смена темы едет переходом .45s, а «волна»
     // добавляет каждому блоку задержку до 2.6 с — мгновенный замер поймал бы старый.
@@ -7234,6 +7240,8 @@ await check('адаптив: бургер-меню, одна колонка, т�
     try {
       await page.goto(inst.base + '/register', { waitUntil: 'networkidle' });
       await page.evaluate(() => { document.documentElement.setAttribute('data-theme', 'light'); });
+      // Сайт теперь открывается тёмным, смена темы едет переходом .45s — ждём цвет, а не момент.
+      await page.waitForFunction(() => getComputedStyle(document.querySelector('#r-last')).backgroundColor === 'rgb(255, 255, 255)', null, { timeout: 3000 }).catch(() => {});
       const inputBg = await page.evaluate(() => getComputedStyle(document.querySelector('#r-last')).backgroundColor);
       eq(inputBg, 'rgb(255, 255, 255)', 'поле ввода в светлой теме не белое');
       db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
