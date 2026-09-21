@@ -4271,6 +4271,11 @@ await check('дубль карточки: заявка без отчества �
   const jar = aj;
   const page = await http('/admin/players', { jar });
   assert(new RegExp(`action="/admin/players/${dup}/merge"`).test(page.text) && /Объединить…/.test(page.text), 'в строке игрока нет кнопки «Объединить…»');
+  // Поиск игрока (21.09.2026): серверный ?q= по фамилии, городу, РНИ и #id; строки размечены для мгновенного фильтра.
+  const found = await http('/admin/players?q=' + encodeURIComponent('дублёв'), { jar });
+  assert(/Список \(2 из \d+\)/.test(found.text) && (found.text.match(/data-player-row/g) || []).length === 2, 'поиск «дублёв» должен дать ровно две строки');
+  assert((await http(`/admin/players?q=%23${real}`, { jar })).text.match(/data-player-row/g).length === 1, 'поиск по #id — одна строка');
+  assert(/data-player-search/.test(page.text) && /id="players-q"/.test(page.text), 'поле поиска над списком');
   const _csrf = tokenFrom(page.text);
   await http(`/admin/players/${dup}/merge`, { method: 'POST', jar, form: { _csrf, into: `#${dup}` } });
   assert(db.prepare('SELECT 1 FROM players WHERE id = ?').get(dup), 'объединение с самим собой не должно ничего удалять');
@@ -4378,8 +4383,12 @@ await check('политика паролей и одноразовость сс�
   eq(mismatch.status, 400, 'несовпадение повтора должно отклоняться');
 
   const ok = await http(cabSetUrl, { method: 'POST', form: { _csrf, password: CAB_PASSWORD, password2: CAB_PASSWORD }, jar });
-  eq(ok.status, 200, 'установка пароля');
-  assert(/Пароль установлен/.test(ok.text), 'нет подтверждения установки пароля');
+  // 21.09.2026: после установки пароля игрок сразу в кабинете, с подсказкой логина (владелец не мог
+  // войти, потому что не знал почту). Одноразовая ссылка уже доказала владение.
+  eq(ok.status + ' ' + ok.location, '302 /cabinet', 'после пароля — сразу в кабинет');
+  const cab = await http('/cabinet', { jar });
+  eq(cab.status, 200, 'кабинет открыт без отдельного входа');
+  assert(/Пароль сохранён, вы вошли\. Ваш логин для входа — /.test(cab.text), 'в кабинете подсказка с логином');
 
   // Ссылка одноразовая: письмо из ящика не должно быть вечным ключом.
   const again = await http(cabSetUrl, { jar });

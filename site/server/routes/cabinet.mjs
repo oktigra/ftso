@@ -594,7 +594,17 @@ export default function mountCabinet(app, { db, config, limitWrites, limitCabine
       // Смена пароля по ссылке — тоже повод выкинуть все прежние сессии.
       revokePlayerSessions(db, account.player_id, null);
       logAction(db, null, 'cabinet.password.reset', account.player_id, null);
-      return res.render('cabinet/reset-done', { title: 'Пароль установлен — ФТСО' });
+      // СРАЗУ В КАБИНЕТ (21.09.2026): одноразовая ссылка уже доказала владение, а экран
+      // «Войти» спотыкал на вопросе «под какой почтой?» — владелец так и не смог войти.
+      // Ссылка без почты (кабинет ещё не привязан к адресу) — по-старому, через вход.
+      if (!account.email || isAwaitingSelf(account) || isFrozen(account)) return res.render('cabinet/reset-done', { title: 'Пароль установлен — ФТСО', email: account.email });
+      return req.session.regenerate((err2) => {
+        if (err2) return next(err2);
+        req.session.player = { accountId: account.id, playerId: account.player_id };
+        req.session.cabinetMode = 'player';
+        req.session.cabinetFlash = { kind: 'ok', text: `Пароль сохранён, вы вошли. Ваш логин для входа — ${account.email}.` };
+        req.session.save(() => res.redirect('/cabinet'));
+      });
     } catch (err) {
       if (err instanceof ValidationError) return render(err.message);
       return next(err);

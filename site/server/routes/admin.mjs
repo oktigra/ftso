@@ -193,9 +193,19 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
 
   // --- игроки -------------------------------------------------------------
   app.get('/admin/players', requireRole(...DATA_ROLES), (req, res) => {
-    const players = db.prepare('SELECT * FROM players ORDER BY full_name').all();
+    // ПОИСК (21.09.2026): ?q= — фамилия/имя, город, РНИ или #id; без JS работает так же.
+    const q = String(req.query.q || '').trim().slice(0, 80);
+    const total = db.prepare('SELECT COUNT(*) AS n FROM players').get().n;
+    let players = db.prepare('SELECT * FROM players ORDER BY full_name').all();
+    if (q) {
+      const needle = q.toLowerCase().replace(/ё/g, 'е');
+      const norm = (v) => String(v || '').toLowerCase().replace(/ё/g, 'е');
+      const idQ = /^#?(\d+)$/.exec(q);
+      players = players.filter((p) => (idQ && p.id === Number(idQ[1])) || norm(p.full_name).includes(needle) || norm(p.city).includes(needle) || norm(p.rni).includes(needle));
+    }
     res.render('admin/players', {
       title: 'Игроки — админка ФТСО',
+      q, total,
       // Состояние согласий рядом с игроком: секретарь должен видеть, ПОЧЕМУ
       // игрок не публикуется, а не гадать по флагу.
       players: players.map((p) => ({
@@ -1543,7 +1553,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const token = issueResetToken(db, account.id, { hours: 72 });
       const url = `${req.protocol}://${req.get('host')}/cabinet/reset/${token}`;
       logAction(db, actorId(req), 'player.cabinet.link', id, null);
-      flash(req, res, 'ok', 'Ссылка для входа в кабинет — действует 72 часа, один раз; передайте игроку лично.', '/admin/players', url);
+      // Логин рядом со ссылкой (21.09.2026): по ссылке игрок входит сразу, но на будущее ему нужна почта.
+      flash(req, res, 'ok', `Ссылка для входа в кабинет — действует 72 часа, один раз; передайте игроку лично. Его логин${account.email ? `: ${account.email}` : ' пока не задан'} — по ссылке он попадёт в кабинет сразу и задаст пароль.`, '/admin/players', url);
     }),
   );
 

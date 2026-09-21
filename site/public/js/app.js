@@ -635,4 +635,19 @@
       });
     });
   }
+
+  // ПОИСК ИГРОКА В АДМИНКЕ (21.09.2026): строки прячутся по мере ввода; Enter — серверный поиск.
+  var ps = document.querySelector('[data-player-search]');
+  if (ps) {
+    var input = ps.querySelector('input[name="q"]'); var count = ps.querySelector('[data-player-search-count]');
+    var rows = Array.prototype.slice.call(document.querySelectorAll('[data-player-row]'));
+    var apply = function () {
+      var v = input.value.trim().toLowerCase().replace(/ё/g, 'е').replace(/^#/, '');
+      var shown = 0;
+      rows.forEach(function (r) { var ok = !v || r.getAttribute('data-search').indexOf(v) !== -1; r.hidden = !ok; if (ok) shown++; });
+      count.hidden = !v; count.textContent = v ? 'показано ' + shown + ' из ' + rows.length : '';
+    };
+    input.addEventListener('input', apply);
+    if (input.value) apply();
+  }
 })();
