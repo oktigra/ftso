@@ -650,4 +650,9 @@
     input.addEventListener('input', apply);
     if (input.value) apply();
   }
+
+  // Слияние карточек: «Отмена» сворачивает форму (21.09.2026).
+  document.querySelectorAll('[data-merge-cancel]').forEach(function (b) {
+    b.addEventListener('click', function () { var d = b.closest('details'); if (d) d.removeAttribute('open'); });
+  });
 })();

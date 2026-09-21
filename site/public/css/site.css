@@ -1324,9 +1324,16 @@ tbody tr:hover td.t-actions{background:var(--surface-2);}
 .merge-box{display:inline-block; vertical-align:middle;}
 .merge-box summary{list-style:none; cursor:pointer; display:inline-flex;}
 .merge-box summary::-webkit-details-marker{display:none;}
-.merge-box[open] summary{display:none;}
-.merge-box .inline-form{display:inline-flex; gap:.35rem; align-items:center; flex-wrap:wrap;}
-.merge-box input{min-width:16rem;}
+.merge-box[open] summary{background:var(--surface-2); border-color:var(--danger);}
+/* Раскрывается ВЛЕВО поверх таблицы: колонка «Действия» у правого края, вправо места нет.
+   Липкие ячейки соседних строк — свои слои; ячейка с открытой формой поднимается над ними. */
+.merge-box{position:relative;}
+.admin-table td:has(.merge-box[open]){z-index:20;}
+.merge-form{position:absolute; right:0; top:calc(100% + .3rem); z-index:6; width:24rem; box-shadow:0 10px 28px rgba(0,0,0,.28); display:flex; flex-direction:column; gap:.4rem; padding:.7rem .8rem; border:1px solid color-mix(in srgb, var(--danger) 45%, var(--border)); border-radius:.6rem; background:color-mix(in srgb, var(--danger) 6%, var(--surface)); text-align:left;}
+.merge-form__hint{margin:0; font-size:.8rem; line-height:1.35; color:var(--muted);}
+.merge-form label{font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);}
+.merge-form input{width:100%;}
+.merge-form__actions{display:flex; gap:.4rem; flex-wrap:wrap;}
 
 /* Поиск игрока в админке (21.09.2026). */
 .player-search{display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; margin:.5rem 0 .9rem;}
