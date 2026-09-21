@@ -1327,3 +1327,7 @@ tbody tr:hover td.t-actions{background:var(--surface-2);}
 .merge-box[open] summary{display:none;}
 .merge-box .inline-form{display:inline-flex; gap:.35rem; align-items:center; flex-wrap:wrap;}
 .merge-box input{min-width:16rem;}
+
+/* Поиск игрока в админке (21.09.2026). */
+.player-search{display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; margin:.5rem 0 .9rem;}
+.player-search input{flex:1 1 20rem; min-width:14rem; max-width:34rem;}

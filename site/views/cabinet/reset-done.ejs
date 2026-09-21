@@ -6,6 +6,7 @@
   <div class="container">
     <div class="panel">
       <p class="lead">Пароль сохранён. Прежние входы в кабинет прекращены.</p>
+      <% if (typeof email !== 'undefined' && email) { %><p>Ваш логин для входа — <b><%= email %></b>.</p><% } %>
       <p><a class="btn btn--primary" href="/cabinet/login">Войти</a></p>
     </div>
   </div>
