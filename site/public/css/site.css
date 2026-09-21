@@ -883,6 +883,13 @@ html[data-theme="dark"] .form-error{color:#ff9b9b;}
 .admin-shell{padding:clamp(1.5rem,4vw,2.5rem) 0 4rem;}
 .admin-bar{display:flex; flex-wrap:wrap; gap:.5rem; align-items:center; margin-bottom:1.5rem;}
 .admin-bar a{font-family:'Manrope',sans-serif; font-weight:600; color:var(--text); background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:.45rem .95rem; font-size:.92rem;}
+/* Счётчик нового в меню админки (21.09.2026): заметный кружок вместо «(N)» в скобках. */
+.admin-badge{display:inline-flex; align-items:center; justify-content:center; min-width:1.35rem; height:1.35rem; padding:0 .4rem; margin-left:.2rem; border-radius:999px; background:#d9480f; color:#fff; font-size:.74rem; font-weight:700; line-height:1; vertical-align:middle; box-shadow:0 0 0 2px var(--surface);}
+.admin-bar a[aria-current="page"] .admin-badge{box-shadow:0 0 0 2px var(--primary);}
+.admin-attention{display:flex; flex-wrap:wrap; align-items:center; gap:.5rem; margin:-.6rem 0 1.25rem; padding:.6rem .9rem; border-radius:.7rem; border:1px solid color-mix(in srgb, #d9480f 45%, var(--border)); background:color-mix(in srgb, #d9480f 9%, var(--surface)); font-size:.92rem;}
+.admin-attention a{font-weight:600; text-decoration:underline; text-underline-offset:3px;}
+.admin-attention__dot{width:.6rem; height:.6rem; border-radius:50%; background:#d9480f; animation:cal-dot 1.6s ease-in-out infinite;}
+@media (prefers-reduced-motion:reduce){ .admin-attention__dot{animation:none;} }
 .admin-bar a:hover, .admin-bar a[aria-current="page"]{color:var(--primary); border-color:var(--primary);}
 .admin-bar form{margin-left:auto;}
 .admin-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem; margin-bottom:1.5rem;}
