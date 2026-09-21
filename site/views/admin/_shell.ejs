@@ -3,34 +3,45 @@
    Их дизайн — отдельным шагом. */
 %>
 <div class="admin-bar">
-  <a href="/admin"<%= currentPath === '/admin' ? ' aria-current="page"' : '' %>>Сводка</a>
+  <a href="/admin"<%- currentPath === '/admin' ? ' aria-current="page"' : '' %>>Сводка</a>
   <% if (sections.includes('players')) { %>
-  <a href="/admin/players"<%= currentPath === '/admin/players' ? ' aria-current="page"' : '' %>>Игроки</a>
-  <a href="/admin/registrations"<%= currentPath.indexOf('/admin/registrations') === 0 ? ' aria-current="page"' : '' %>>Заявки<%= typeof pendingCount !== 'undefined' && pendingCount ? ` (${pendingCount})` : '' %></a>
-  <a href="/admin/tournaments"<%= currentPath === '/admin/tournaments' ? ' aria-current="page"' : '' %>>Турниры</a>
-  <a href="/admin/tournament-requests"<%= currentPath.indexOf('/admin/tournament-requests') === 0 ? ' aria-current="page"' : '' %>>Заявки на турниры<%= typeof pendingTournamentCount !== 'undefined' && pendingTournamentCount ? ` (${pendingTournamentCount})` : '' %></a>
+  <a href="/admin/players"<%- currentPath === '/admin/players' ? ' aria-current="page"' : '' %>>Игроки</a>
+  <a href="/admin/registrations"<%- currentPath.indexOf('/admin/registrations') === 0 ? ' aria-current="page"' : '' %>>Заявки<%- typeof pendingCount !== 'undefined' && pendingCount ? ` <span class="admin-badge" aria-label="новых: ${pendingCount}">${pendingCount}</span>` : '' %></a>
+  <a href="/admin/tournaments"<%- currentPath === '/admin/tournaments' ? ' aria-current="page"' : '' %>>Турниры</a>
+  <a href="/admin/tournament-requests"<%- currentPath.indexOf('/admin/tournament-requests') === 0 ? ' aria-current="page"' : '' %>>Заявки на турниры<%- typeof pendingTournamentCount !== 'undefined' && pendingTournamentCount ? ` <span class="admin-badge" aria-label="новых: ${pendingTournamentCount}">${pendingTournamentCount}</span>` : '' %></a>
   <% } %>
-  <% if (sections.includes('news')) { %><a href="/admin/news"<%= currentPath.indexOf('/admin/news') === 0 ? ' aria-current="page"' : '' %>>Новости</a><% } %>
-  <% if (sections.includes('directories')) { %><a href="/admin/directories/coaches"<%= currentPath.indexOf('/admin/directories') === 0 ? ' aria-current="page"' : '' %>>Справочники</a><% } %>
-  <% if (sections.includes('directories')) { %><a href="/admin/coach-applications"<%= currentPath.indexOf('/admin/coach-applications') === 0 ? ' aria-current="page"' : '' %>>Анкеты тренеров<%= typeof pendingCoachCount !== 'undefined' && pendingCoachCount ? ` (${pendingCoachCount})` : '' %></a><% } %>
-  <% if (sections.includes('directories')) { %><a href="/admin/referee-applications"<%= currentPath.indexOf('/admin/referee-applications') === 0 ? ' aria-current="page"' : '' %>>Анкеты судей<%= typeof pendingRefereeCount !== 'undefined' && pendingRefereeCount ? ` (${pendingRefereeCount})` : '' %></a><% } %>
-  <% if (sections.includes('library')) { %><a href="/admin/partners"<%= currentPath === '/admin/partners' ? ' aria-current="page"' : '' %>>Партнёры</a><% } %>
-  <% if (sections.includes('library')) { %><a href="/admin/texts"<%= currentPath === '/admin/texts' ? ' aria-current="page"' : '' %>>Тексты</a><% } %>
-  <% if (sections.includes('library')) { %><a href="/admin/seo"<%= currentPath === '/admin/seo' ? ' aria-current="page"' : '' %>>SEO</a><% } %>
-  <% if (sections.includes('library')) { %><a href="/admin/library"<%= currentPath.indexOf('/admin/library') === 0 ? ' aria-current="page"' : '' %>>Документы и галерея</a><% } %>
-  <% if (sections.includes('feedback')) { %><a href="/admin/feedback"<%= currentPath.indexOf('/admin/feedback') === 0 ? ' aria-current="page"' : '' %>>Обращения</a><% } %>
-  <a href="/admin/guide"<%= currentPath === '/admin/guide' ? ' aria-current="page"' : '' %>>Инструкция</a>
-  <a href="/admin/account"<%= currentPath === '/admin/account' ? ' aria-current="page"' : '' %>>Мой аккаунт</a>
+  <% if (sections.includes('news')) { %><a href="/admin/news"<%- currentPath.indexOf('/admin/news') === 0 ? ' aria-current="page"' : '' %>>Новости</a><% } %>
+  <% if (sections.includes('directories')) { %><a href="/admin/directories/coaches"<%- currentPath.indexOf('/admin/directories') === 0 ? ' aria-current="page"' : '' %>>Справочники</a><% } %>
+  <% if (sections.includes('directories')) { %><a href="/admin/coach-applications"<%- currentPath.indexOf('/admin/coach-applications') === 0 ? ' aria-current="page"' : '' %>>Анкеты тренеров<%- typeof pendingCoachCount !== 'undefined' && pendingCoachCount ? ` <span class="admin-badge" aria-label="новых: ${pendingCoachCount}">${pendingCoachCount}</span>` : '' %></a><% } %>
+  <% if (sections.includes('directories')) { %><a href="/admin/referee-applications"<%- currentPath.indexOf('/admin/referee-applications') === 0 ? ' aria-current="page"' : '' %>>Анкеты судей<%- typeof pendingRefereeCount !== 'undefined' && pendingRefereeCount ? ` <span class="admin-badge" aria-label="новых: ${pendingRefereeCount}">${pendingRefereeCount}</span>` : '' %></a><% } %>
+  <% if (sections.includes('library')) { %><a href="/admin/partners"<%- currentPath === '/admin/partners' ? ' aria-current="page"' : '' %>>Партнёры</a><% } %>
+  <% if (sections.includes('library')) { %><a href="/admin/texts"<%- currentPath === '/admin/texts' ? ' aria-current="page"' : '' %>>Тексты</a><% } %>
+  <% if (sections.includes('library')) { %><a href="/admin/seo"<%- currentPath === '/admin/seo' ? ' aria-current="page"' : '' %>>SEO</a><% } %>
+  <% if (sections.includes('library')) { %><a href="/admin/library"<%- currentPath.indexOf('/admin/library') === 0 ? ' aria-current="page"' : '' %>>Документы и галерея</a><% } %>
+  <% if (sections.includes('feedback')) { %><a href="/admin/feedback"<%- currentPath.indexOf('/admin/feedback') === 0 ? ' aria-current="page"' : '' %>>Обращения<%- typeof pendingFeedbackCount !== 'undefined' && pendingFeedbackCount ? ` <span class="admin-badge" aria-label="новых: ${pendingFeedbackCount}">${pendingFeedbackCount}</span>` : '' %></a><% } %>
+  <a href="/admin/guide"<%- currentPath === '/admin/guide' ? ' aria-current="page"' : '' %>>Инструкция</a>
+  <a href="/admin/account"<%- currentPath === '/admin/account' ? ' aria-current="page"' : '' %>>Мой аккаунт</a>
   <% if (sections.includes('vault')) { %>
-    <a href="/admin/vault"<%= currentPath.indexOf('/admin/vault') === 0 ? ' aria-current="page"' : '' %>>Закрытые документы</a>
-    <a href="/admin/users"<%= currentPath === '/admin/users' ? ' aria-current="page"' : '' %>>Пользователи</a>
-    <a href="/admin/max"<%= currentPath === '/admin/max' ? ' aria-current="page"' : '' %>>MAX</a>
+    <a href="/admin/vault"<%- currentPath.indexOf('/admin/vault') === 0 ? ' aria-current="page"' : '' %>>Закрытые документы</a>
+    <a href="/admin/users"<%- currentPath === '/admin/users' ? ' aria-current="page"' : '' %>>Пользователи</a>
+    <a href="/admin/max"<%- currentPath === '/admin/max' ? ' aria-current="page"' : '' %>>MAX</a>
   <% } %>
   <form method="post" action="/logout">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
     <button class="btn btn--secondary btn--small" type="submit">Выйти (<%= user.username %> · <%= user.role %>)</button>
   </form>
 </div>
+<% if (typeof attention !== 'undefined' && attention.length && !attention.some(function (a) { return currentPath.indexOf(a.href) === 0; })) { %>
+  <%
+  /* ТРЕБУЕТ ВНИМАНИЯ (21.09.2026): на входе в админку видно всё новое одним взглядом. На самом
+     разделе очереди плашка не повторяется — там и так список. */
+  %>
+  <div class="admin-attention" role="status">
+    <span class="admin-attention__dot" aria-hidden="true"></span>
+    <strong>Требует внимания:</strong>
+    <% attention.forEach(function (a, i) { %><a href="<%= a.href %>"><%= a.title %> — <%= a.n %></a><%= i < attention.length - 1 ? ' · ' : '' %><% }); %>
+  </div>
+<% } %>
 <% if (typeof flash !== 'undefined' && flash) { %>
   <div class="flash flash--<%= flash.kind %>"><%= flash.text %></div>
   <% if (flash.secret) { %>

@@ -2768,6 +2768,15 @@ await check('форма обратной связи внизу каждой пу
   const r = await http('/contacts/feedback', { method: 'POST', form: { _csrf: tokenFrom(page.text), name: 'Подвальный', email: 'footer@example.com', message: 'Сообщение из подвала сайта', consent_processing: '1' }, jar: jar2 });
   eq(r.status + ' ' + r.location, '302 /contacts?sent=1', 'отправка из подвала');
   eq(db.prepare('SELECT COUNT(*) AS n FROM feedback_messages').get().n, before + 1, 'обращение не записано');
+  // Новое обращение видно на входе в админку (21.09.2026): бейдж на пункте и плашка «Требует внимания».
+  {
+    const newCount = db.prepare("SELECT COUNT(*) AS n FROM feedback_messages WHERE status = 'new'").get().n;
+    const adm = (await http('/admin', { jar })).text;
+    assert(new RegExp(`href="/admin/feedback"[^>]*>Обращения <span class="admin-badge"[^>]*>${newCount}<`).test(adm), 'на пункте «Обращения» нет бейджа с числом новых');
+    assert(/class="admin-attention"[\s\S]*href="\/admin\/feedback">обращения — \d+</.test(adm), 'на Сводке нет плашки «Требует внимания» с обращениями');
+    assert(!/class="admin-attention"/.test((await http('/admin/feedback', { jar })).text), 'на самом разделе обращений плашка не повторяется');
+    assert(/href="\/admin\/feedback" aria-current="page"/.test((await http('/admin/feedback', { jar })).text), 'активный пункт меню помечен aria-current без экранированных кавычек');
+  }
   db.prepare("DELETE FROM feedback_messages WHERE email = 'footer@example.com'").run();
   assert(!/footer-feedback/.test((await http('/register')).text), 'на /register подвальная форма мешает форме регистрации');
   return 'форма в подвале на публичных страницах, не в админке, одна на /contacts; отправка записывает обращение';

@@ -136,6 +136,18 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     res.locals.pendingRefereeCount = db
       .prepare("SELECT COUNT(*) AS n FROM referee_applications WHERE status = 'pending'")
       .get().n;
+    // Обращения с формы обратной связи (21.09.2026: владелец не нашёл своё — счётчика не было).
+    res.locals.pendingFeedbackCount = db
+      .prepare("SELECT COUNT(*) AS n FROM feedback_messages WHERE status = 'new'")
+      .get().n;
+    // Сводка «требует внимания» — на входе в админку видно всё новое одним взглядом.
+    res.locals.attention = [
+      ['/admin/registrations', 'заявки игроков', res.locals.pendingCount],
+      ['/admin/tournament-requests', 'заявки на турниры', res.locals.pendingTournamentCount],
+      ['/admin/coach-applications', 'анкеты тренеров', res.locals.pendingCoachCount],
+      ['/admin/referee-applications', 'анкеты судей', res.locals.pendingRefereeCount],
+      ['/admin/feedback', 'обращения', res.locals.pendingFeedbackCount],
+    ].filter(([, , n]) => n > 0).map(([href, title, n]) => ({ href, title, n }));
     next();
   });
 
