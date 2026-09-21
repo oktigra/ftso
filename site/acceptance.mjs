@@ -4270,7 +4270,9 @@ await check('дубль карточки: заявка без отчества �
   db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, 9, 'double')").run(t, dup);
   const jar = aj;
   const page = await http('/admin/players', { jar });
-  assert(new RegExp(`action="/admin/players/${dup}/merge"`).test(page.text) && /Объединить…/.test(page.text), 'в строке игрока нет кнопки «Объединить…»');
+  assert(new RegExp(`action="/admin/players/${dup}/merge"`).test(page.text) && /Это дубль…/.test(page.text), 'в строке игрока нет кнопки «Это дубль…»');
+  // Форма объясняет направление (21.09.2026): кто дубль, что с ним будет, куда влить.
+  assert(new RegExp(`Карточка <b>#${dup} Дублёв Олег</b> — дубль`).test(page.text) && new RegExp(`Влить #${dup} в указанную`).test(page.text) && /Оставить карточку/.test(page.text), 'форма слияния должна называть дубль и направление');
   // Поиск игрока (21.09.2026): серверный ?q= по фамилии, городу, РНИ и #id; строки размечены для мгновенного фильтра.
   const found = await http('/admin/players?q=' + encodeURIComponent('дублёв'), { jar });
   assert(/Список \(2 из \d+\)/.test(found.text) && (found.text.match(/data-player-row/g) || []).length === 2, 'поиск «дублёв» должен дать ровно две строки');

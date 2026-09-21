@@ -194,12 +194,16 @@
                      эта карточка удалится. Раньше это делали командой в терминале и теряли кабинет. */
                 %>
                 <details class="merge-box">
-                  <summary class="btn btn--secondary btn--small" title="Слить эту карточку-дубль с настоящей">Объединить…</summary>
-                  <form class="inline-form" method="post" action="/admin/players/<%= p.id %>/merge">
+                  <summary class="btn btn--secondary btn--small" title="Эта карточка — дубль? Влить её в настоящую">Это дубль…</summary>
+                  <form class="merge-form" method="post" action="/admin/players/<%= p.id %>/merge">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <label class="visually-hidden" for="merge-<%= p.id %>">В какую карточку объединить</label>
-                    <input id="merge-<%= p.id %>" name="into" list="players-list" autocomplete="off" maxlength="140" placeholder="#2 или Фамилия Имя (Город)" required>
-                    <button class="btn btn--danger btn--small" type="submit" data-confirm="Объединить #<%= p.id %> «<%= p.full_name %>» с указанной карточкой? Всё — результаты, матчи, кабинет, согласия, фото — переедет туда, а #<%= p.id %> будет удалена. Отменить нельзя.">Объединить</button>
+                    <p class="merge-form__hint">Карточка <b>#<%= p.id %> <%= p.full_name %></b> — дубль. Всё с неё (результаты, матчи, кабинет, согласия, фото) переедет в карточку, которую укажете, а <b>#<%= p.id %> будет удалена</b>.</p>
+                    <label for="merge-<%= p.id %>">Оставить карточку</label>
+                    <input id="merge-<%= p.id %>" name="into" list="players-list" autocomplete="off" maxlength="140" placeholder="#12 или начните вводить фамилию" required>
+                    <div class="merge-form__actions">
+                      <button class="btn btn--danger btn--small" type="submit" data-confirm="Влить #<%= p.id %> «<%= p.full_name %>» в указанную карточку? #<%= p.id %> будет удалена, всё с неё переедет. Отменить нельзя.">Влить #<%= p.id %> в указанную</button>
+                      <button class="btn btn--secondary btn--small" type="button" data-merge-cancel>Отмена</button>
+                    </div>
                   </form>
                 </details>
               </td>
