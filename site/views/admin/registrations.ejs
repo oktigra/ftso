@@ -110,13 +110,23 @@
     </p>
     <% if (mail.queued || mail.failed) { %>
       <div class="reg-warn" role="alert">
-        <p><strong>Письма не доставлены.</strong> Заявители не получили уведомление — сообщите им иначе
-           (телефон, почта вручную), пока отправка не налажена.</p>
+        <p><strong>Письма не доставлены.</strong> Причина — в строке лога ниже. Если адрес верный
+           и сбой был на стороне почты, отправьте снова; если письмо устарело (ссылка в нём действует
+           24 часа) или адрес мёртвый — снимите с очереди и сообщите человеку иначе.</p>
       </div>
-      <form method="post" action="/admin/registrations/mail/retry" class="inline-form">
-        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-        <button class="btn btn--secondary btn--small" type="submit">Попробовать отправить снова</button>
-      </form>
+      <div class="inline-form">
+        <form method="post" action="/admin/registrations/mail/retry" class="inline-form">
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+          <button class="btn btn--secondary btn--small" type="submit">Попробовать отправить снова</button>
+        </form>
+        <% if (mail.failed) { %>
+          <form method="post" action="/admin/registrations/mail/discard" class="inline-form">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button class="btn btn--danger btn--small" type="submit"
+                    data-confirm="Снять с очереди все неотправленные письма (<%= mail.failed %>)? Они будут удалены без отправки.">Снять с очереди (<%= mail.failed %>)</button>
+          </form>
+        <% } %>
+      </div>
     <% } %>
     <% if (mailLog.length) { %>
       <ul class="log-list">
