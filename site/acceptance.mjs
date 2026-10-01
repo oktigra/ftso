@@ -3696,6 +3696,36 @@ await check('сбой SMTP не теряет заявку: письмо ждёт
   }
 });
 
+await check('«Снять с очереди» удаляет только неотправленные и пишет в журнал', async () => {
+  const mailer = await import('./server/lib/mailer.mjs');
+  // Два мёртвых письма и одно живое в очереди: кнопка должна убрать ровно мёртвые.
+  const ins = db.prepare("INSERT INTO mail_outbox (to_email, subject, body, kind, status, attempts, last_error) VALUES (?, ?, ?, ?, ?, ?, ?)");
+  ins.run('dead1@example.com', 'т', 'т', 'cabinet.invite', 'failed', 8, '535 authentication failed');
+  ins.run('dead2@example.com', 'т', 'т', 'registration.approved', 'failed', 8, '535 authentication failed');
+  ins.run('alive@example.com', 'т', 'т', 'cabinet.invite', 'queued', 0, null);
+  const sentBefore = db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE status = 'sent'").get().n;
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const page = await http('/admin/registrations', { jar });
+  assert(page.text.includes('/admin/registrations/mail/discard'), 'при failed>0 кнопки «Снять с очереди» нет на странице');
+  assert(page.text.includes('btn--danger') && page.text.includes('data-confirm="Снять с очереди'), 'кнопка снятия должна быть красной и с подтверждением');
+  const _csrf = tokenFrom(page.text);
+  const res = await http('/admin/registrations/mail/discard', { method: 'POST', form: { _csrf }, jar });
+  eq(res.status, 302, 'снятие с очереди');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE status = 'failed'").get().n, 0, 'failed должны исчезнуть');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE to_email = 'alive@example.com' AND status = 'queued'").get().n, 1, 'queued трогать нельзя');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE status = 'sent'").get().n, sentBefore, 'sent трогать нельзя');
+  const log = db.prepare("SELECT action FROM action_log ORDER BY id DESC LIMIT 5").all().map((r) => JSON.parse(r.action));
+  const rec = log.find((a) => a.type === 'mail.discard');
+  assert(rec, 'в журнале действий нет mail.discard');
+  assert(rec.diff && rec.diff.deleted >= 2, 'журнал должен хранить число удалённых');
+  const after = await http('/admin/registrations', { jar });
+  assert(!after.text.includes('/admin/registrations/mail/discard'), 'без failed кнопка снятия не должна показываться');
+  const summary = mailer.outboxSummary(db);
+  eq(summary.failed, 0, 'сводка после снятия');
+  db.prepare("DELETE FROM mail_outbox WHERE to_email = 'alive@example.com'").run();
+  return `удалено ${rec.diff.deleted} неотправленных, живое и отправленные целы, запись в журнале есть`;
+});
+
 await check('пароль SMTP не утекает в лог и не лежит в git', async () => {
   const { createSmtpTransport, smtpConfigured } = await import('./server/lib/smtp.mjs');
   eq(smtpConfigured({ host: 'smtp.yandex.ru', user: '', pass: '' }), false, 'пустые реквизиты — не настроено');
@@ -6716,7 +6746,9 @@ try {
   const gm = today.slice(0, 7);
   const mk = (name, from, to, cat, deadline) => db.prepare('INSERT INTO tournaments (name, start_date, end_date, category, city, is_published, entry_deadline) VALUES (?, ?, ?, ?, ?, 1, ?)').run(name, from, to, cat, 'Смоленск', deadline || null).lastInsertRowid;
   // Неделя вокруг сегодня: недельный (идёт), завершённый, короткий через сегодня (идёт), два впереди с приёмом заявок — на одном дне.
-  const ids = [mk('Дорожка недельный турнир', iso(-3), iso(3), 'A'), mk('Дорожка завершённый', iso(-3), iso(-2), 'B'), mk('Дорожка идёт через сегодня', iso(-1), iso(0), 'C'), mk('Дорожка впереди пары', iso(2), iso(3), 'B', iso(2)), mk('Дорожка впереди детский', iso(2), iso(2), 'A', iso(2))];
+  // «Недельный» — 8 дней, не 7: семидневный с четверга ложится ровно Пн–Вс, стык недель
+  // исчезает и проверка стыка краснела по четвергам (01.10.2026). Восемь дней режутся границей всегда.
+  const ids = [mk('Дорожка недельный турнир', iso(-4), iso(3), 'A'), mk('Дорожка завершённый', iso(-3), iso(-2), 'B'), mk('Дорожка идёт через сегодня', iso(-1), iso(0), 'C'), mk('Дорожка впереди пары', iso(2), iso(3), 'B', iso(2)), mk('Дорожка впереди детский', iso(2), iso(2), 'A', iso(2))];
   // Отбираем ТОЛЬКО свои полосы: в базе приёмки бывают чужие турниры того же месяца.
   const mine = (sel) => `${sel}[title^="Дорожка"]`;
   const desk = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -6786,7 +6818,11 @@ try {
   assert(!/on:dim/.test(dim) && !/off:lit/.test(dim), `наведение на день должно гасить чужие полосы: ${dim}`);
   // Над ПУСТЫМ днём гасить нечего — полосы остаются яркими (скрин владельца 18.09: единственный
   // турнир месяца блек от любого движения мыши по сетке).
-  await desk.hover(`.cal__cell[data-day="${iso(-10)}"]`, { position: { x: 12, y: 12 } }); await desk.waitForTimeout(100);
+  // Пустой день берём ИЗ СЕТКИ (клетка без счётчика), а не арифметикой от сегодня: iso(-10) в
+  // начале месяца выпадал за первую неделю сетки и локатор ждал 30 с (замер 01.10.2026).
+  const emptyDay = await desk.evaluate(() => { const c = [...document.querySelectorAll('.cal__cell[data-day]')].find((x) => !x.querySelector('.cal__count')); return c ? c.dataset.day : null; });
+  assert(emptyDay, 'в сетке месяца нет ни одного пустого дня для проверки');
+  await desk.hover(`.cal__cell[data-day="${emptyDay}"]`, { position: { x: 12, y: 12 } }); await desk.waitForTimeout(100);
   eq(await desk.locator(mine('.cal__bar') + '.is-dim').count(), 0, 'над пустым днём ни одна полоса не гаснет');
   // Клик по полосе — на страницу турнира.
   await desk.locator(mine('.cal__bar'), { hasText: 'детский' }).click(); await desk.waitForLoadState('domcontentloaded');

@@ -612,6 +612,21 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     },
   );
 
+  // Снять с очереди неотправленные. Досылать их обычно нельзя: одноразовые
+  // ссылки прожили 24 часа, адреса бывают мёртвыми, а письма о статусе давно
+  // устарели. Удаляются ТОЛЬКО failed — queued ещё в работе, sent — история.
+  // Факт и число — в журнал действий, чтобы «куда делись письма» имело ответ.
+  app.post(
+    '/admin/registrations/mail/discard',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    (req, res) => {
+      const info = db.prepare("DELETE FROM mail_outbox WHERE status = 'failed'").run();
+      logAction(db, actorId(req), 'mail.discard', null, { deleted: info.changes });
+      flash(req, res, 'ok', `Снято с очереди неотправленных писем: ${info.changes}.`, '/admin/registrations');
+    },
+  );
+
   // --- заявки «провести турнир» -------------------------------------------
   const requestStatusUrl = (req, token) =>
     `${req.protocol}://${req.get('host')}/tournament-request/status/${token}`;
