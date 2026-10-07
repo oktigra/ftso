@@ -293,12 +293,15 @@ export function createApp(config) {
   // Счётчик СВОЙ (ключ «t»): поток заявок на турниры не должен съедать лимит
   // регистрации игроков и наоборот.
   const limitTournamentRequest = publicFormLimiter(db, { ...config.tournamentRequest, key: 't' });
-  // Анкета тренера — тот же публичный лимит, что и заявка на турнир.
-  const limitCoachApplication = publicFormLimiter(db, { ...config.tournamentRequest, key: 'c' });
+  // Анкета тренера/судьи — тот же публичный лимит, что и заявка на турнир,
+  // но СВОЙ ключ «ca»: до 07.10.2026 она делила ключ «c» с кабинетом, и три
+  // POST в кабинет (вход, «забыл пароль», сброс) закрывали анкету на 429.
+  const limitCoachApplication = publicFormLimiter(db, { ...config.tournamentRequest, key: 'ca' });
   // Форма обратной связи — те же лимиты, что у регистрации, свой ключ.
   const limitFeedback = publicFormLimiter(db, { ...config.register, key: 'f' });
   // И у кабинета свой (ключ «c»): подбор пароля не должен закрывать приём заявок.
-  const limitCabinet = publicFormLimiter(db, { ...config.cabinet, key: 'c' });
+  // countAll: в кабинете считается КАЖДЫЙ POST — неудачный вход и есть то, что режем.
+  const limitCabinet = publicFormLimiter(db, { ...config.cabinet, key: 'c', countAll: true });
 
   const ctx = {
     db, config, attempts, limitWrites, limitRegister, limitTournamentRequest, limitCoachApplication, limitFeedback, limitCabinet, store,

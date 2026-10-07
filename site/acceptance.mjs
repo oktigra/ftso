@@ -3581,15 +3581,15 @@ await check('вопросы и ответы: блок в подвале публ
 
 await check('rate-limit на /register срабатывает', async () => {
   const jar = new Jar();
-  const page = await http('/register', { jar });
-  const _csrf = tokenFrom(page.text);
   let limited = 0;
   let ok = 0;
   // Счётчик обнуляем ПЕРЕД замером: иначе он уже израсходован прошлыми
   // проверками и «всё отбито» прошло бы даже у лимитера, который режет всегда.
   db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
-  // Лимит 5 в час на адрес; шлём заведомо больше.
+  // Лимит 5 в час на адрес; шлём заведомо больше. Билет формы одноразовый —
+  // страницу перед каждой подачей открываем заново, как человек.
   for (let i = 0; i < 8; i++) {
+    const _csrf = tokenFrom((await http('/register', { jar })).text);
     const r = await http('/register', {
       method: 'POST',
       form: {
@@ -4025,12 +4025,13 @@ await check('rate-limit формы турнира срабатывает и не
   db.prepare("DELETE FROM write_attempts WHERE key LIKE 't:%'").run();
   db.prepare("DELETE FROM write_attempts WHERE key LIKE 'r:%'").run();
   const jar = new Jar();
-  const page = await http('/tournament-request', { jar });
-  const _csrf = tokenFrom(page.text);
   let ok = 0;
   let limited = 0;
   const total = config.tournamentRequest.maxPerWindow + 2;
   for (let i = 0; i < total; i++) {
+    // Билет формы одноразовый: перед каждой подачей страницу открываем заново,
+    // как сделал бы человек; иначе вторая подача падает на «Форма устарела».
+    const _csrf = tokenFrom((await http('/tournament-request', { jar })).text);
     const r = await http('/tournament-request', {
       method: 'POST',
       multipart: { fields: { _csrf, ...BASE_FIELDS, name: `Поток ${i}`, email: `flood${i}@example.com` }, files: [] },
@@ -4039,8 +4040,8 @@ await check('rate-limit формы турнира срабатывает и не
     if (r.status === 429) limited += 1;
     else if (r.status === 302) ok += 1;
   }
-  assert(ok > 0, `лимитер режет всё подряд: принято ${ok}`);
-  assert(limited > 0, `лимит не сработал: принято ${ok}, отказов ${limited}`);
+  eq(ok, config.tournamentRequest.maxPerWindow, `принято должно быть ровно ${config.tournamentRequest.maxPerWindow}`);
+  eq(limited, 2, `сверх лимита должны быть отбиты ровно 2 заявки, отбито ${limited}`);
   // Счётчики РАЗНЫЕ: поток заявок на турниры не должен закрывать регистрацию игроков.
   const reg = await http('/register');
   eq(reg.status, 200, 'форма регистрации должна остаться доступной');
@@ -4062,6 +4063,74 @@ await check('rate-limit формы турнира срабатывает и не
   journal.withConsentErasure(db, () =>
     db.prepare("DELETE FROM registrations WHERE email = 'notblocked@example.com'").run());
   return `принято ${ok}, отбито ${limited}; регистрация игроков при этом работает (счётчики раздельные)`;
+});
+
+await check('отказы валидации лимит не тратят: после потока отбитых заявок нормальная проходит; потолок от флуда остаётся', async () => {
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 't:%'").run();
+  const jar = new Jar();
+  const _csrf = tokenFrom((await http('/tournament-request', { jar })).text);
+  const max = config.tournamentRequest.maxPerWindow;
+  // Больше, чем лимит принятых: без согласия и с подделкой под PDF — всё отбито валидацией.
+  let rejected = 0;
+  for (let i = 0; i < max + 2; i++) {
+    const r = await http('/tournament-request', {
+      method: 'POST',
+      multipart: {
+        fields: { _csrf, ...BASE_FIELDS, name: `Отбитая ${i}`, email: `bad${i}@example.com`, consent_processing: i % 2 ? '1' : '0' },
+        files: i % 2 ? [{ field: 'docs', filename: 'fake.pdf', type: 'application/pdf', buffer: Buffer.from('MZ\x90\x00 not a pdf') }] : [],
+      },
+      jar,
+    });
+    assert(r.status !== 429, `отказ валидации №${i + 1} упёрся в лимит (429) — отбитые заявки не должны тратить лимит`);
+    if (r.status === 400) rejected += 1;
+  }
+  eq(rejected, max + 2, 'все заведомо плохие заявки должны быть отбиты валидацией (400)');
+  const good = await http('/tournament-request', {
+    method: 'POST',
+    multipart: { fields: { _csrf, ...BASE_FIELDS, name: 'После отказов', email: 'after-rejects@example.com' }, files: [] },
+    jar,
+  });
+  eq(good.status, 302, 'после потока отбитых заявок нормальная должна пройти');
+  const acceptedRows = db.prepare("SELECT key, count FROM write_attempts WHERE key LIKE 't:%' AND key NOT LIKE '%:all'").all();
+  eq(acceptedRows.reduce((n, r) => n + r.count, 0), 1, 'в счётчике ПРИНЯТЫХ должна быть ровно одна заявка');
+  // Потолок от флуда: невалидными POST тоже нельзя долбить бесконечно.
+  let flooded = 0;
+  for (let i = 0; i < max * 5 + 2; i++) {
+    const r = await http('/tournament-request', {
+      method: 'POST',
+      multipart: { fields: { _csrf, ...BASE_FIELDS, consent_processing: '0', email: `flood-bad${i}@example.com` }, files: [] },
+      jar,
+    });
+    if (r.status === 429) { flooded += 1; break; }
+  }
+  eq(flooded, 1, 'потолок от флуда невалидными POST не сработал');
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 't:%'").run();
+  db.prepare("DELETE FROM tournament_requests WHERE email = 'after-rejects@example.com'").run();
+  return `${max + 2} отказов валидации не тратят лимит, следующая заявка принята; потолок от флуда (${max * 5}) держится`;
+});
+
+await check('анкета тренера и кабинет не делят счётчик: блок кабинета не закрывает анкету', async () => {
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'c:%' OR key LIKE 'ca:%'").run();
+  const jar = new Jar();
+  const _csrf = tokenFrom((await http('/cabinet/login', { jar })).text);
+  let blocked = 0;
+  for (let i = 0; i < config.cabinet.maxPerWindow + 1; i++) {
+    const r = await http('/cabinet/login', { method: 'POST', form: { _csrf, email: 'nobody@example.com', password: 'wrong-pass' }, jar });
+    if (r.status === 429) { blocked += 1; break; }
+  }
+  eq(blocked, 1, 'кабинет после потока неудачных входов должен отдать 429');
+  const jarPub = new Jar();
+  const sent = await http('/coaches/apply', {
+    method: 'POST', jar: jarPub,
+    form: {
+      _csrf: tokenFrom((await http('/coaches/apply', { jar: jarPub })).text),
+      full_name: 'Небл Окированный Тренер', email: 'coach-free@example.com', city: 'Смоленск', allow_city: 'on', consent_10_1: 'on',
+    },
+  });
+  eq(sent.status, 303, 'блок кабинета перекрыл анкету тренера — ключи счётчиков должны быть разными');
+  db.prepare("DELETE FROM coach_applications WHERE email = 'coach-free@example.com'").run();
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 'c:%' OR key LIKE 'ca:%'").run();
+  return `кабинет заблокирован после ${config.cabinet.maxPerWindow} неудач, анкета тренера при этом принята`;
 });
 
 await check('retention заявок уносит и приложенные файлы', async () => {
@@ -8153,7 +8222,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const feedbackCount = () => db.prepare('select count(*) c from feedback_messages').get().c;
 // Лимит на запись общий с разделами выше (ключи f: обращения, c: анкеты) — к этому
 // моменту он выбран их отправками, и все POST ловили бы 429 вместо проверки билета.
-const resetFormLimits = () => db.prepare("DELETE FROM write_attempts WHERE key LIKE 'f:%' OR key LIKE 'c:%'").run();
+const resetFormLimits = () => db.prepare("DELETE FROM write_attempts WHERE key LIKE 'f:%' OR key LIKE 'c:%' OR key LIKE 'ca:%'").run();
 
 await check('вопрос показан во всех публичных формах, когда включён', async () => {
   const paths = ['/contacts', '/register', '/tournament-request', '/coaches/apply', '/referees/apply', '/cabinet/forgot'];
