@@ -52,6 +52,7 @@ export default function mountCoachApplication(app, { db, config, limitCoachAppli
         const data = applicationInput(req.body, OPERATOR, kind.registry.fields, kind.purpose);
         const { token } = createApplication(db, data, req.ip, kind.registry);
         consumeTicket(req);
+        req.formAccepted?.(); // лимит тратит только принятая анкета
         req.session[kind.session] = token;
         return res.redirect(303, `${kind.path}/apply/sent`);
       } catch (err) {

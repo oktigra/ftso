@@ -3,8 +3,21 @@
  * админский: за формой регистрации нет входа, а каждая заявка порождает
  * запись с ПДн и письмо. Ключ свой (`r:`), чтобы поток заявок не съедал лимит
  * админки и наоборот.
+ *
+ * ДВА СЧЁТЧИКА НА IP (07.10.2026, по живой проверке форм):
+ *  - `<key>:<ip>`     — ПРИНЯТЫЕ заявки. Пополняется только когда маршрут
+ *    дошёл до записи в базу и позвал `req.formAccepted()`. Отказ валидации
+ *    (файл больше лимита, исполняемый файл, пустое поле) лимит НЕ тратит —
+ *    иначе человек, у которого дважды не прошёл файл, третьей попыткой
+ *    упирался в 429 и не мог подать нормальную заявку.
+ *  - `<key>:<ip>:all` — ВСЕ POST, включая отбитые. Потолок от флуда
+ *    невалидными запросами: по умолчанию впятеро выше лимита принятых.
+ * `countAll: true` — прежнее поведение (каждый POST тратит лимит): для
+ * кабинета неудачные входы и должны считаться.
  */
-export function publicFormLimiter(db, { maxPerWindow, windowMinutes, key = 'r' }) {
+export function publicFormLimiter(db, {
+  maxPerWindow, windowMinutes, key = 'r', countAll = false, maxAttemptsPerWindow = maxPerWindow * 5,
+}) {
   const ensure = db.prepare(
     "INSERT INTO write_attempts (key, count, window_at) VALUES (?, 0, datetime('now')) " +
       'ON CONFLICT(key) DO NOTHING',
@@ -15,22 +28,40 @@ export function publicFormLimiter(db, { maxPerWindow, windowMinutes, key = 'r' }
   );
   const bump = db.prepare('UPDATE write_attempts SET count = count + 1 WHERE key = ?');
   const read = db.prepare('SELECT count FROM write_attempts WHERE key = ?');
+  const count = (k) => {
+    ensure.run(k);
+    rollWindow.run(k, `-${windowMinutes} minutes`);
+    return read.get(k).count;
+  };
+  const limited = (next) => {
+    const err = new Error('Слишком много заявок');
+    err.status = 429;
+    err.publicMessage =
+      `Слишком много заявок с одного адреса. Подождите ${windowMinutes} мин. ` +
+      'Если это ошибка — напишите нам, заявку примут вручную.';
+    return next(err);
+  };
 
   return (req, res, next) => {
     if (req.method !== 'POST') return next();
-    const k = `${key}:${req.ip}`;
-    ensure.run(k);
-    rollWindow.run(k, `-${windowMinutes} minutes`);
-    bump.run(k);
-    const row = read.get(k);
-    if (row && row.count > maxPerWindow) {
-      const err = new Error('Слишком много заявок');
-      err.status = 429;
-      err.publicMessage =
-        `Слишком много заявок с одного адреса. Подождите ${windowMinutes} мин. ` +
-        'Если это ошибка — напишите нам, заявку примут вручную.';
-      return next(err);
+    const accepted = `${key}:${req.ip}`;
+    if (countAll) {
+      count(accepted);
+      bump.run(accepted);
+      if (read.get(accepted).count > maxPerWindow) return limited(next);
+      return next();
     }
+    const attempts = `${key}:${req.ip}:all`;
+    count(attempts);
+    bump.run(attempts);
+    if (read.get(attempts).count > maxAttemptsPerWindow) return limited(next);
+    if (count(accepted) >= maxPerWindow) return limited(next);
+    let counted = false;
+    req.formAccepted = () => {
+      if (counted) return;
+      counted = true;
+      bump.run(accepted);
+    };
     return next();
   };
 }

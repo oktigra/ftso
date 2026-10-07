@@ -372,6 +372,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       const data = feedbackInput(req.body);
       const id = createFeedback(db, { ...data, legalVersion: LEGAL_VERSION });
       consumeTicket(req);
+      req.formAccepted?.(); // лимит тратит только принятое обращение
       queueMail(db, {
         to: OPERATOR.email,
         kind: 'feedback.new',

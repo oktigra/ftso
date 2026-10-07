@@ -103,6 +103,7 @@ export default function mountTournamentRequest(app, { db, config, limitTournamen
 
       const { token } = createRequest(db, { fields: data, uploads: stored, ip: req.ip });
       consumeTicket(req);
+      req.formAccepted?.(); // лимит тратит только принятая заявка: отбитый файл — нет
 
       const statusUrl = `${req.protocol}://${req.get('host')}/tournament-request/status/${token}`;
       const letter = mailTournamentSubmitted({ organizer: data.organizer, name: data.name, statusUrl });

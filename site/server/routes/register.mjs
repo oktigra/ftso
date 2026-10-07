@@ -104,6 +104,7 @@ export default function mountRegister(app, { db, config, limitRegister }) {
         ip: req.ip,
       });
       consumeTicket(req);
+      req.formAccepted?.(); // лимит тратит только принятая заявка
 
       const statusUrl = `${req.protocol}://${req.get('host')}/register/status/${token}`;
       const letter = mailSubmitted({ fullName: data.full_name, statusUrl });

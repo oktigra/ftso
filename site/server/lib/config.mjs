@@ -124,7 +124,9 @@ export function loadConfig({ requireSecrets = true } = {}) {
     tournamentRequest: {
       // Публичная форма с ФАЙЛАМИ: лимит строже, чем у регистрации, — каждая
       // заявка пишет на диск. Счётчик отдельный от регистрации и от админки.
-      maxPerWindow: Number(process.env.TOURNAMENT_REQUEST_MAX_PER_WINDOW || 3),
+      // 10 (с 07.10.2026, было 3): секретарь подаёт несколько турниров подряд из одного
+      // офиса, а у мобильных операторов десятки людей сидят за одним IP.
+      maxPerWindow: Number(process.env.TOURNAMENT_REQUEST_MAX_PER_WINDOW || 10),
       windowMinutes: Number(process.env.TOURNAMENT_REQUEST_WINDOW_MINUTES || 60),
       retentionDays: Number(process.env.TOURNAMENT_REQUEST_RETENTION_DAYS || 365),
       maxFiles: Number(process.env.TOURNAMENT_REQUEST_MAX_FILES || 3),
