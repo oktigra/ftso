@@ -43,8 +43,15 @@
         </div>
 
         <div class="field">
+          <label for="t-start">Дата начала <span class="req" aria-hidden="true">*</span></label>
+          <input id="t-start" name="start_date" type="date" required
+                 aria-describedby="t-start-hint" value="<%= values.start_date || '' %>">
+          <p class="field-hint" id="t-start-hint">Первый игровой день.</p>
+        </div>
+
+        <div class="field">
           <label for="t-date">Дата завершения <span class="req" aria-hidden="true">*</span></label>
-          <input id="t-date" name="end_date" placeholder="ГГГГ-ММ-ДД" required
+          <input id="t-date" name="end_date" type="date" required
                  aria-describedby="t-date-hint" value="<%= values.end_date || '' %>">
           <p class="field-hint" id="t-date-hint">Дата последнего игрового дня — по ней турнир попадает в рейтинговое окно.</p>
         </div>

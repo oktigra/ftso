@@ -38,7 +38,7 @@ process.env.SITE_MAIL = 'on';
 process.env.FORM_MIN_SECONDS = '0';
 process.env.FORM_QUESTION = '0';
 
-const CHROMIUM = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+const CHROMIUM = process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
 // ---------------------------------------------------------------------------
 // Мини-раннер
@@ -3864,7 +3864,7 @@ async function submitTournament(fields, files = [], jar = new Jar()) {
 }
 
 const BASE_FIELDS = {
-  name: 'Кубок приёмки', city: 'Смоленск', end_date: '2026-09-01', category: 'A',
+  name: 'Кубок приёмки', city: 'Смоленск', start_date: '2026-08-30', end_date: '2026-09-01', category: 'A',
   organizer: 'Иван Организаторов', email: 'org@example.com', consent_processing: '1',
 };
 
@@ -3892,6 +3892,22 @@ await check('exe под именем .pdf отбит, файл на диске �
   eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE name = 'Кубок приёмки'").get().n, 0,
     'заявка с отклонённым файлом записана');
   return 'HTTP 400 с причиной, текстовые поля сохранены, осиротевших файлов нет';
+});
+
+await check('даты заявки: два календаря, начало не позже конца', async () => {
+  const page = await http('/tournament-request');
+  assert(/<input id="t-start" name="start_date" type="date" required/.test(page.text), 'нет календаря «Дата начала»');
+  assert(/<input id="t-date" name="end_date" type="date" required/.test(page.text), '«Дата завершения» не календарь');
+  assert(page.text.indexOf('name="start_date"') < page.text.indexOf('name="end_date"'), 'начало должно стоять перед завершением');
+  const { res } = await submitTournament({ ...BASE_FIELDS, name: 'Кубок задом наперёд', start_date: '2026-09-05' });
+  eq(res.status, 400, 'начало позже конца должно отклоняться');
+  assert(res.text.includes('Дата начала позже даты завершения'), 'причина отказа не названа');
+  assert(res.text.includes('value="2026-09-05"'), 'введённая дата начала потеряна');
+  const { res: noStart } = await submitTournament({ ...BASE_FIELDS, name: 'Кубок без начала', start_date: '' });
+  eq(noStart.status, 400, 'заявка без даты начала должна отклоняться');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE name IN ('Кубок задом наперёд', 'Кубок без начала')").get().n, 0,
+    'заявка с неверными датами записана');
+  return 'оба поля type="date", начало перед концом; начало позже конца и пустое начало -> 400, ввод сохранён';
 });
 
 await check('заявка с документом уходит на модерацию, а не в календарь', async () => {
@@ -3996,8 +4012,9 @@ await check('согласование создаёт турнир, отказ о
   const made = db.prepare('SELECT organizer, organizer_contact FROM tournaments WHERE id = ?').get(after.tournament_id);
   assert(made.organizer && made.organizer_contact, 'при одобрении заявки организатор и контакт должны перейти в турнир');
   eq(db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n, before + 1, 'турнир не создан');
-  const created = db.prepare('SELECT name, end_date, category FROM tournaments WHERE id = ?').get(after.tournament_id);
+  const created = db.prepare('SELECT name, start_date, end_date, category FROM tournaments WHERE id = ?').get(after.tournament_id);
   eq(created.name, r.name, 'название турнира');
+  eq(created.start_date, r.start_date, 'дата начала турнира');
   eq(created.end_date, r.end_date, 'дата турнира');
   eq(created.category, r.category, 'категория турнира');
   // Результаты файлом не принимаются: матчей у нового турнира нет.

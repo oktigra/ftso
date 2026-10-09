@@ -346,6 +346,7 @@ export function migrate() {
   // ВОЗРАСТНОЕ ОГРАНИЧЕНИЕ турнира (17.09.2026): до этого возраст был только подписью.
   for (const c of ['age_min', 'age_max']) addColumnIfMissing(db, 'tournaments', c, 'INTEGER');
   for (const c of ['age_min', 'age_max']) addColumnIfMissing(db, 'tournament_requests', c, 'INTEGER');
+  addColumnIfMissing(db, 'tournament_requests', 'start_date', 'TEXT'); // дата начала в заявке (09.10.2026); у старых заявок пусто
   for (const c of ['venue', 'organizer', 'organizer_contact', 'fee', 'entry_deadline']) addColumnIfMissing(db, 'tournaments', c, 'TEXT'); // ТЗ 4.3 место/организатор; взнос/дедлайн
   entryDeadlineToDate(db);
   addColumnIfMissing(db, 'tournaments', 'format', 'TEXT'); // система проведения (задача 2, 12.09.2026)

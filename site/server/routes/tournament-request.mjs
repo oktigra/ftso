@@ -69,6 +69,7 @@ export default function mountTournamentRequest(app, { db, config, limitTournamen
       req.session.tournamentDraft = {
         name: fields.name,
         city: fields.city,
+        start_date: fields.start_date,
         end_date: fields.end_date,
         category: fields.category,
         organizer: fields.organizer,

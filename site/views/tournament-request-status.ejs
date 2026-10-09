@@ -25,7 +25,7 @@
           Заявка на турнир «<%= request.name %>» — <strong><%= statusText %></strong>.
         </p>
         <p class="muted">
-          <%= request.city %> · дата завершения <%= request.end_date %> · заявленная категория <%= request.category %>
+          <%= request.city %> · <%= request.start_date ? 'даты проведения ' + request.start_date + ' — ' + request.end_date : 'дата завершения ' + request.end_date %> · заявленная категория <%= request.category %>
         </p>
 
         <% if (request.status === 'pending') { %>
