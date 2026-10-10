@@ -4,6 +4,7 @@ import { loadConfig, ConfigError } from './lib/config.mjs';
 import { createApp } from './app.mjs';
 import { getDb, dbPath } from '../db/connect.mjs';
 import { scheduleDailyPurge } from './lib/retention.mjs';
+import { runRefereeReminders } from './lib/referee-reminders.mjs';
 import { purgeExpired } from './lib/consent-journal.mjs';
 import { purgeRegistrations } from './lib/registrations.mjs';
 import { purgeRequests } from './lib/tournament-requests.mjs';
@@ -88,6 +89,9 @@ scheduleDailyPurge('переход участников в 18 лет', () => {
   }
   return report.promoted + report.reminded + report.frozen;
 });
+
+// СРОК ДОКУМЕНТА СУДЬИ: за месяц до окончания — письмо судье (раз на каждый срок).
+scheduleDailyPurge('напоминания судьям о сроке документа', () => runRefereeReminders(db));
 
 const app = createApp(config);
 const server = app.listen(config.port, config.host, () => {

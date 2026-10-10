@@ -132,6 +132,21 @@ export function mailApproved({ fullName, statusUrl }) {
   };
 }
 
+export function mailRefereeExpiry({ fullName, category, expires, expired }) {
+  const date = expires.split('-').reverse().join('.');
+  return {
+    subject: expired ? 'Срок документа на судейскую категорию истёк — ФТСО' : 'Заканчивается срок документа на судейскую категорию — ФТСО',
+    body:
+      `Здравствуйте, ${fullName}.\n\n` +
+      (expired
+        ? `Срок действия документа на судейскую категорию${category ? ` (${category})` : ''} истёк ${date}.\n\n`
+        : `Срок действия документа на судейскую категорию${category ? ` (${category})` : ''} заканчивается ${date}.\n\n`) +
+      'Пожалуйста, оформите документы о подтверждении категории заново и сообщите новую дату ' +
+      'секретарю Федерации — ответьте на это письмо.' +
+      SIGN,
+  };
+}
+
 export function mailTournamentSubmitted({ organizer, name, statusUrl }) {
   return {
     subject: 'Заявка на проведение турнира принята — ФТСО',

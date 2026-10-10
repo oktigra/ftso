@@ -3123,25 +3123,39 @@ await check('анкета судьи: поля по требованиям к с
   }
   assert(/href="\/referees\/apply"/.test((await http('/referees')).text), 'в разделе судей нет ссылки на анкету');
 
+  // 10.10.2026: дата — календарь, срок документа 1/2 года (служебный), роли — выбор из трёх.
+  assert(/name="category_date" type="date"/.test(page.text), 'дата категории должна быть календарём');
+  assert(/<select id="f-category_valid_years" name="category_valid_years"/.test(page.text) && !page.text.includes('name="allow_category_valid_years"'), 'срок документа — список без отметки «публиковать»');
+  for (const role of ['судья', 'судья на вышке', 'главный судья']) {
+    assert(page.text.includes(`name="roles" value="${role}"`), `в списке ролей нет «${role}»`);
+  }
   const jarPub = new Jar();
-  const sent = await http('/referees/apply', {
-    method: 'POST', jar: jarPub,
-    form: {
-      _csrf: tokenFrom((await http('/referees/apply', { jar: jarPub })).text),
-      full_name: 'Судейкин Тест Тестович', email: 'sud@example.com',
-      city: 'Смоленск', allow_city: 'on',
-      category: '1К, белый значок ITF', allow_category: 'on',
-      category_date: '03.2024', allow_category_date: 'on',
-      roles: 'главный судья, судья на вышке', allow_roles: 'on',
-      contact: '+7 900 555-44-33',
-      consent_10_1: 'on',
-    },
-  });
+  const csrfPub = tokenFrom((await http('/referees/apply', { jar: jarPub })).text);
+  const base = [
+    ['_csrf', csrfPub], ['full_name', 'Судейкин Тест Тестович'], ['email', 'sud@example.com'],
+    ['city', 'Смоленск'], ['allow_city', 'on'],
+    ['category', '1К, белый значок ITF'], ['allow_category', 'on'],
+    ['category_valid_years', '2'],
+    ['roles', 'главный судья'], ['roles', 'судья на вышке'], ['allow_roles', 'on'],
+    ['contact', '+7 900 555-44-33'],
+    ['consent_10_1', 'on'],
+  ];
+  // Текстом вместо даты и чужая роль — отказ с причиной, ввод возвращается в форму.
+  const badDate = await http('/referees/apply', { method: 'POST', jar: jarPub, form: [...base, ['category_date', 'приказ о присвоении']] });
+  eq(badDate.status, 400, 'дата текстом должна отбиваться');
+  assert(/ожидался формат/.test(badDate.text) && badDate.text.includes('value="1К, белый значок ITF"'), 'нет причины или ввод потерян');
+  assert(/name="roles" value="главный судья" checked/.test(badDate.text), 'отмеченные роли не вернулись в форму');
+  const badRole = await http('/referees/apply', { method: 'POST', jar: jarPub, form: [...base, ['category_date', '2024-03-15'], ['roles', 'судья-наблюдатель']] });
+  eq(badRole.status, 400, 'роль не из списка должна отбиваться');
+  // Дата без отметки «публиковать» всё равно хранится: по ней напоминание о сроке.
+  const sent = await http('/referees/apply', { method: 'POST', jar: jarPub, form: [...base, ['category_date', '2024-03-15']] });
   eq(sent.status, 303, 'отправка анкеты судьи');
   const row = db.prepare("SELECT * FROM referee_applications WHERE full_name = 'Судейкин Тест Тестович'").get();
   assert(row, 'заявка судьи не сохранилась');
   eq(row.category, '1К, белый значок ITF', 'категория должна сохраниться');
   eq(row.contact, null, 'неотмеченный контакт не должен сохраняться');
+  eq([row.category_date, row.allow_category_date, row.category_valid_years].join('|'), '2024-03-15|0|2', 'дата хранится без отметки, срок — 2 года');
+  eq(row.roles, 'судья на вышке, главный судья', 'роли — в порядке списка');
 
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const adminPage = await http('/admin/referee-applications', { jar });
@@ -3152,12 +3166,14 @@ await check('анкета судьи: поля по требованиям к с
   eq(ok.status, 302, 'одобрение заявки судьи');
   const ref = db.prepare("SELECT * FROM referees WHERE full_name = 'Судейкин Тест Тестович'").get();
   assert(ref, 'карточка судьи не создана');
-  eq(ref.category_date, '03.2024', 'дата присвоения категории должна попасть в карточку');
+  eq([ref.category_date, ref.category_date_public, ref.category_valid_years, ref.email].join('|'), '2024-03-15|0|2|sud@example.com', 'дата, её показ, срок и почта для напоминания — в карточке');
   eq(ref.contact, null, 'неотмеченный контакт не должен попасть в карточку');
   assert(/^согласие через сайт от \d{4}-\d{2}-\d{2}$/.test(ref.basis), `основание: ${ref.basis}`);
   const pub = await http('/referees');
   assert(/Судейкин Тест Тестович/.test(pub.text), 'судьи нет на витрине');
   assert(!/900 555-44-33/.test(pub.text), 'неотмеченный контакт попал на витрину');
+  assert(!/15\.03\.2024|2024-03-15/.test(pub.text) && !pub.text.includes('sud@example.com') && !/Срок документа/.test(pub.text), 'дата без отметки, почта или срок попали на витрину');
+  assert(pub.text.includes('судья на вышке, главный судья'), 'роли не видны на витрине');
 
   db.prepare('DELETE FROM referees WHERE id = ?').run(ref.id);
   db.prepare('DELETE FROM referee_applications').run();
@@ -3401,6 +3417,55 @@ await check('приём заявок: открыт до дедлайна вкл�
   assert(/tag--entry-closed">Приём закрыт/.test(cardDone), 'карточка завершённого: приём закрыт');
   db.prepare('DELETE FROM tournaments WHERE id IN (' + Object.values(ids).map(() => '?').join(',') + ')').run(...Object.values(ids));
   return 'open/edge/late/без-срока/канун/закрыт/завершён — метки и фильтр сошлись; карточка пишет дату и статус';
+});
+
+await check('открытие приёма заявок: категория A — за месяц до начала, B и C — за две недели; до этого «Приём ещё не открыт» с датой', async () => {
+  const { entryOpens, entryStatus } = await import('./server/lib/content.mjs');
+  // Месяц — календарный: 31 марта → 28 февраля (не 3 марта), 15 января → 15 декабря прошлого года.
+  eq([entryOpens({ category: 'A', start_date: '2027-03-31', end_date: '2027-04-02' }), entryOpens({ category: 'A', start_date: '2027-01-15', end_date: '2027-01-16' }), entryOpens({ category: 'B', start_date: '2027-03-01', end_date: '2027-03-02' }), entryOpens({ category: 'C', end_date: '2027-03-01' })].join(','),
+    '2027-02-28,2026-12-15,2027-02-15,2027-02-15', 'даты открытия приёма');
+  eq([entryStatus({ category: 'A', start_date: '2027-03-31', end_date: '2027-03-31' }, '2027-02-27'), entryStatus({ category: 'A', start_date: '2027-03-31', end_date: '2027-03-31' }, '2027-02-28')].join(','), 'soon,open', 'граница: в день открытия приём уже открыт');
+  const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  const ins = db.prepare('INSERT INTO tournaments (name, start_date, end_date, category, city, kind, is_published) VALUES (?, ?, ?, ?, ?, ?, 1)');
+  const mk = (name, start, cat) => Number(ins.run(name, start, start, cat, 'Вязьма', 'other').lastInsertRowid);
+  const ids = { a40: mk('Откр-A-40', day(40), 'A'), a20: mk('Откр-A-20', day(20), 'A'), b20: mk('Откр-B-20', day(20), 'B'), c10: mk('Откр-C-10', day(10), 'C') };
+  const tag = (html, id) => { const i = html.indexOf(`href="/tournaments/${id}"`); if (i < 0) return null; const box = html.slice(i, html.indexOf('</li>', i)); const m = /tag--entry-(soon|open|late|closed)/.exec(box); return m ? m[1] : null; };
+  const all = (await http('/tournaments')).text;
+  eq([tag(all, ids.a40), tag(all, ids.a20), tag(all, ids.b20), tag(all, ids.c10)].join(','), 'soon,open,soon,open', 'метки в календаре');
+  const opensB = entryOpens({ category: 'B', start_date: day(20) }).split('-').reverse().join('.');
+  assert(all.includes(`Приём с ${opensB}`), 'в календаре не видна дата открытия приёма');
+  const card = (await http(`/tournaments/${ids.a40}`)).text;
+  const opensA = entryOpens({ category: 'A', start_date: day(40) }).split('-').reverse().join('.');
+  assert(card.includes(`Приём заявок откроется: ${opensA}`) && /tag--entry-soon">Приём ещё не открыт/.test(card), 'карточка: дата открытия и статус');
+  const soonList = (await http('/tournaments?entry=soon')).text;
+  assert(soonList.includes(`href="/tournaments/${ids.a40}"`) && !soonList.includes(`href="/tournaments/${ids.c10}"`), 'фильтр entry=soon');
+  db.prepare(`DELETE FROM tournaments WHERE id IN (${Object.values(ids).join(',')})`).run();
+  return 'A за месяц (календарный, 31.03 → 28.02), B/C за 14 дней; метки, дата в календаре и карточке, фильтр ?entry=soon';
+});
+
+await check('судьи: срок документа на категорию — дата окончания, «истекает/истёк» в админке, письмо за месяц один раз на срок', async () => {
+  const { runRefereeReminders, categoryExpires, categoryState } = await import('./server/lib/referee-reminders.mjs');
+  eq([categoryExpires({ category_date: '2024-02-29', category_valid_years: 1 }), categoryExpires({ category_date: '2025-11-05', category_valid_years: 2 }), categoryExpires({ category_date: '2025-11-05' })].join(','), '2025-02-28,2027-11-05,', 'дата окончания');
+  eq([categoryState({ category_date: '2025-11-05', category_valid_years: 1 }, '2026-10-05'), categoryState({ category_date: '2025-11-05', category_valid_years: 1 }, '2026-10-06'), categoryState({ category_date: '2025-11-05', category_valid_years: 1 }, '2026-11-06')].join(','), 'ok,soon,expired', 'состояние: за 30 дней — истекает');
+  const ins = db.prepare("INSERT INTO referees (full_name, category, category_date, category_valid_years, email, basis, document_date) VALUES (?, '2К', ?, ?, ?, 'согласие', '2025-01-01')");
+  const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  const soon = Number(ins.run('Срокин Скоро', day(20 - 365), 1, 'soon@example.com').lastInsertRowid);
+  const far = Number(ins.run('Срокин Нескоро', day(200 - 365), 1, 'far@example.com').lastInsertRowid);
+  const noMail = Number(ins.run('Срокин Безпочты', day(10 - 365), 1, null).lastInsertRowid);
+  const mails = () => db.prepare("SELECT to_email FROM mail_outbox WHERE kind = 'referee.category.expiry' ORDER BY id").all().map((r) => r.to_email);
+  const before = mails().length;
+  runRefereeReminders(db);
+  eq(mails().slice(before).join(','), 'soon@example.com', 'письмо только тому, у кого срок в ближайшие 30 дней и есть почта');
+  runRefereeReminders(db);
+  eq(mails().length, before + 1, 'повторного письма о том же сроке быть не должно');
+  const body = db.prepare("SELECT body FROM mail_outbox WHERE kind = 'referee.category.expiry' ORDER BY id DESC LIMIT 1").get().body;
+  assert(body.includes(categoryExpires({ category_date: day(20 - 365), category_valid_years: 1 }).split('-').reverse().join('.')) && /оформите документы/.test(body), 'в письме нет даты или просьбы');
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const admin = (await http('/admin/directories/referees', { jar })).text;
+  assert(/expiry--soon">до [\d.]+ — истекает/.test(admin), 'в админке нет отметки «истекает»');
+  assert(/name="roles" value="главный судья"/.test(admin) && /name="category_date"[^>]*type="date"|type="date" name="category_date"/.test(admin), 'в админке роли не списком или дата не календарём');
+  db.prepare(`DELETE FROM referees WHERE id IN (${[soon, far, noMail].join(',')})`).run();
+  return 'окончание = дата + срок (29.02 → 28.02); за 30 дней «истекает», после — «истёк»; письмо один раз, без почты — никому';
 });
 
 await check('система проведения турнира: сохраняется из админки, чужое значение отбивается, видна на карточке и в календаре, фильтр ?format=', async () => {

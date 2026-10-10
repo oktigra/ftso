@@ -1,0 +1,23 @@
+<%
+/* Одно поле справочника по его описанию (lib/directories.mjs): форма добавления и
+   строка правки рисуют поле одинаково. form — id формы для полей в таблице. */
+const fa = typeof form !== 'undefined' && form ? ' form="' + form + '"' : '';
+const v = value == null ? '' : value;
+%>
+<% if (f.type === 'date') { %>
+  <input id="<%= id %>" type="date" name="<%= f.name %>"<%- fa %> value="<%= v %>">
+  <% if (f.publicFlag) { %>
+    <label class="check check--inline"><input type="checkbox" name="<%= f.publicFlag %>"<%- fa %><%= flagOn ? ' checked' : '' %>> <span>показывать на сайте</span></label>
+  <% } %>
+<% } else if (f.type === 'select') { %>
+  <select id="<%= id %>" name="<%= f.name %>"<%- fa %>>
+    <option value="">—</option>
+    <% Object.keys(f.options).forEach(function (k) { %><option value="<%= k %>"<%= String(v) === k ? ' selected' : '' %>><%= f.options[k] %></option><% }); %>
+  </select>
+<% } else if (f.type === 'multi') { %>
+  <%- include('multi-select', { id: id, name: f.name, options: f.options, selected: v, form: typeof form !== 'undefined' ? form : '', placeholder: 'не выбрано' }) %>
+<% } else if (f.type === 'email') { %>
+  <input id="<%= id %>" type="email" name="<%= f.name %>"<%- fa %> maxlength="<%= f.max %>" value="<%= v %>">
+<% } else { %>
+  <input id="<%= id %>" name="<%= f.name %>"<%- fa %> maxlength="<%= f.max %>"<%= f.required ? ' required' : '' %><%= f.player ? ' list="players-list"' + (fa ? '' : ' placeholder="если тренер сам играет — фамилия"') : '' %> value="<%= v %>">
+<% } %>
