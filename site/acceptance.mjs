@@ -8357,6 +8357,30 @@ await check('заявка на турнир и анкета тренера то�
   return 'анкета тренера с ответом 0 — 400 и текст «Не подтверждено, что вы не робот»';
 });
 
+await check('заявка на турнир: непройденная проверка «не робот» не стирает введённое', async () => {
+  // 09.10.2026: билет проверялся раньше, чем сохранялся черновик, — форма писала
+  // «Текстовые поля сохранены» и возвращалась пустой.
+  const submit = async (extra, wait) => {
+    db.prepare("DELETE FROM write_attempts WHERE key LIKE 't:%'").run();
+    const jar = new Jar();
+    const page = await guardHttp('/tournament-request', { jar });
+    if (wait) await sleep(1100);
+    return guardHttp('/tournament-request', {
+      method: 'POST', jar,
+      multipart: { fields: { _csrf: tokenFrom(page.text), ...BASE_FIELDS, name: 'Кубок черновика', ...extra }, files: [] },
+    });
+  };
+  for (const [label, res] of [['неверный ответ', await submit({ form_answer: '0' }, true)], ['слишком быстро', await submit({}, false)]]) {
+    eq(res.status, 400, `${label}: ждали 400`);
+    assert(/вы не робот|слишком быстро/.test(res.text), `${label}: нет причины отказа`);
+    for (const v of ['Кубок черновика', 'Смоленск', BASE_FIELDS.start_date, BASE_FIELDS.end_date, 'Иван Организаторов', 'org@example.com']) {
+      assert(res.text.includes(`value="${v}"`), `${label}: поле «${v}» не вернулось в форму`);
+    }
+  }
+  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE name = 'Кубок черновика'").get().n, 0, 'заявка записана без проверки');
+  return 'неверный ответ и мгновенная отправка — 400, все поля на месте, в базе ничего';
+});
+
 await check('приманка website по-прежнему молча отбивает бота', async () => {
   const before = feedbackCount();
   resetFormLimits();

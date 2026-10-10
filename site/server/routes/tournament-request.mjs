@@ -62,10 +62,9 @@ export default function mountTournamentRequest(app, { db, config, limitTournamen
 
       // АНТИСПАМ: приманка. Заполнена — отвечаем как при успехе и ничего не пишем.
       if (String(fields.website || '').trim() !== '') return res.redirect('/tournament-request/sent');
-      // Билет формы: поля пришли из multipart, поэтому передаём их явно.
-      checkTicket(req, config, fields);
 
-      // ЧЕРНОВИК кладём ДО валидации: упавшая проверка не должна стирать ввод.
+      // ЧЕРНОВИК кладём ДО билета и валидации: человек, ошибившийся в вопросе
+      // «вы не робот» или отправивший слишком быстро, не должен терять ввод.
       req.session.tournamentDraft = {
         name: fields.name,
         city: fields.city,
@@ -81,6 +80,9 @@ export default function mountTournamentRequest(app, { db, config, limitTournamen
         age_max: fields.age_max,
         consent_processing: fields.consent_processing === '1',
       };
+
+      // Билет формы: поля пришли из multipart, поэтому передаём их явно.
+      checkTicket(req, config, fields);
 
       const data = tournamentRequestInput(fields);
       if (fields.consent_processing !== '1') {
