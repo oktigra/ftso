@@ -288,12 +288,16 @@ export function registrationInput(body) {
  */
 export function tournamentRequestInput(body) {
   const ageLimit = parseAgeLimit(body);
+  const start_date = isoDate(body.start_date, 'Дата начала');
+  const end_date = isoDate(body.end_date, 'Дата завершения');
+  if (start_date > end_date) throw new ValidationError('Дата начала позже даты завершения');
   return {
     age_min: ageLimit.min,
     age_max: ageLimit.max,
     name: str(body.name, 'Название турнира', { max: 160 }),
     city: str(body.city, 'Город', { max: 80 }),
-    end_date: isoDate(body.end_date, 'Дата завершения'),
+    start_date,
+    end_date,
     category: oneOf(body.category, 'Категория', CATEGORIES),
     organizer: str(body.organizer, 'Организатор', { max: 160 }),
     email: email(body.email),

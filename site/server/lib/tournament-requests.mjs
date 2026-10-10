@@ -55,12 +55,13 @@ export function createRequest(db, { fields, uploads, ip }) {
     const info = db
       .prepare(
         `INSERT INTO tournament_requests
-           (name, city, end_date, category, organizer, email, phone, comment, age_min, age_max, status_token, ip)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (name, city, start_date, end_date, category, organizer, email, phone, comment, age_min, age_max, status_token, ip)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         fields.name,
         fields.city,
+        fields.start_date,
         fields.end_date,
         fields.category,
         fields.organizer,
@@ -105,8 +106,8 @@ export function approveRequest(db, requestId, { userId = null } = {}) {
         // Организатор и контакт из заявки — в карточку турнира (ТЗ 4.3 «контакт организатора»).
         // Возрастное ограничение заявки переезжает в турнир вместе с подписью: с этого
         // момента оно не пожелание организатора, а проверка при вводе участников.
-        .prepare('INSERT INTO tournaments (name, end_date, category, city, organizer, organizer_contact, age_min, age_max, age_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(req.name, req.end_date, req.category, req.city, req.organizer, [req.email, req.phone].filter(Boolean).join(', '), req.age_min ?? null, req.age_max ?? null, ageRangeLabel(req.age_min, req.age_max)).lastInsertRowid,
+        .prepare('INSERT INTO tournaments (name, start_date, end_date, category, city, organizer, organizer_contact, age_min, age_max, age_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(req.name, req.start_date ?? null, req.end_date, req.category, req.city, req.organizer, [req.email, req.phone].filter(Boolean).join(', '), req.age_min ?? null, req.age_max ?? null, ageRangeLabel(req.age_min, req.age_max)).lastInsertRowid,
     );
     db.prepare(
       "UPDATE tournament_requests SET status = 'approved', tournament_id = ?, decided_by = ?, decided_at = datetime('now') WHERE id = ?",
