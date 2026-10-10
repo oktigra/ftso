@@ -125,7 +125,7 @@
           // список дня под сеткой. Одни и те же данные кормят и то, и другое.
           const catRu = { A: 'кат. A ×2', B: 'кат. B ×1', C: 'кат. C ×0,5' };
           const fmtD = (iso) => iso ? iso.slice(8, 10).replace(/^0/, '') + '.' + iso.slice(5, 7) : '';
-          const tournamentStatusOf = (t) => (t.end_date < grid.today ? 'finished' : ((t.start_date || t.end_date) <= grid.today ? 'ongoing' : 'upcoming'));
+          const tournamentStatusOf = (t) => (t.held_status === 'not_held' ? 'not_held' : t.end_date < grid.today ? 'finished' : ((t.start_date || t.end_date) <= grid.today ? 'ongoing' : 'upcoming'));
           const barTitle = (b) => [b.name, b.from === b.to ? fmtD(b.to) : fmtD(b.from) + '–' + fmtD(b.to), b.city, catRu[b.category] || ('кат. ' + b.category), b.live ? 'идёт сейчас' : b.done ? 'завершён' : b.entryOpen ? 'приём заявок открыт' : ''].filter(Boolean).join(' · ');
         %>
         <ul class="cal__legend" aria-label="Обозначения">

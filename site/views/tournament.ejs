@@ -33,7 +33,9 @@
     <% if (tournament.fee) { %>
       <p class="muted">Взнос: <%= tournament.fee %></p>
     <% } %>
-    <% if (entry === 'soon') { %>
+    <% if (tournament.held_status === 'not_held') { %>
+      <p class="muted"><span class="tag tag--not_held">Не состоялся</span> Ко дню начала не был загружен ни один документ турнира — приём заявок так и не был открыт.</p>
+    <% } else if (entry === 'soon') { %>
       <p class="muted">Приём заявок откроется: <%= entryOpens.split('-').reverse().join('.') %> (<%= tournament.category === 'A' ? 'категория A — за месяц до начала' : 'за две недели до начала' %>) · <span class="tag tag--entry-soon"><%= entryRu.soon %></span></p>
     <% } else if (entryDeadline && entry !== 'closed') { %>
       <p class="muted">Заявки до: <%= entryDeadline.split('-').reverse().join('.') %><%= tournament.entry_deadline ? '' : ' (накануне старта)' %> · <span class="tag tag--entry-<%= entry %>"><%= entryRu[entry] %></span></p>

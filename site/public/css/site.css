@@ -623,6 +623,7 @@ html[data-theme="warm"]{
 .cal-cta h2{margin:0 0 .35rem; font-size:clamp(1.2rem,1rem + 1.2vw,1.6rem); color:#fff; text-wrap:balance;}
 .cal-cta p{margin:0; color:rgba(255,255,255,.85); max-width:52ch;}
 .cal-cta .btn{white-space:nowrap;}
+.tag--not_held{color:#b91c1c; border-color:#b91c1c;}
 .tag--entry-soon{color:#2563eb; border-color:#2563eb;}
 .tag--entry-open{color:#15803d; border-color:#15803d;}
 .tag--entry-late{color:#b45309; border-color:#b45309;}

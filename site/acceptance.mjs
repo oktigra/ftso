@@ -3468,6 +3468,21 @@ await check('судьи: срок документа на категорию —
   return 'окончание = дата + срок (29.02 → 28.02); за 30 дней «истекает», после — «истёк»; письмо один раз, без почты — никому';
 });
 
+await check('день открытия приёма: Федерации — информационное письмо, один раз; до открытия и после старта — ничего', async () => {
+  const { runEntryOpenStaffNotices } = await import('./server/lib/tournament-day.mjs');
+  const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  const ins = db.prepare("INSERT INTO tournaments (name, start_date, end_date, category, city, kind, is_published) VALUES (?, ?, ?, ?, 'Ярцево', 'other', 1)");
+  const ids = [ins.run('День-открыт', day(10), day(11), 'B'), ins.run('День-рано', day(40), day(41), 'A'), ins.run('День-идёт', day(0), day(2), 'C')].map((r) => Number(r.lastInsertRowid));
+  const { OPERATOR } = await import('./server/lib/legal.mjs');
+  const staff = (name) => db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE kind = 'tournament.entry.open.staff' AND to_email = ? AND subject LIKE ?").get(OPERATOR.email, `%${name}%`).n;
+  runEntryOpenStaffNotices(db);
+  eq(`${staff('День-открыт')}:${staff('День-рано')}:${staff('День-идёт')}`, '1:0:0', 'письмо Федерации только по турниру, где приём открыт и старт впереди');
+  runEntryOpenStaffNotices(db);
+  eq(staff('День-открыт'), 1, 'повторного письма быть не должно');
+  db.prepare(`DELETE FROM tournaments WHERE id IN (${ids.join(',')})`).run();
+  return 'приём открыт — одно письмо на почту Федерации; ещё не открыт или турнир уже идёт — ничего';
+});
+
 await check('система проведения турнира: сохраняется из админки, чужое значение отбивается, видна на карточке и в календаре, фильтр ?format=', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const c = tokenFrom((await http('/admin/tournaments', { jar })).text);
@@ -4067,6 +4082,44 @@ await check('письмо организатору в день открытия 
   db.prepare('DELETE FROM tournament_requests WHERE status_token IN (?, ?)').run(soon.token, now.token);
   db.prepare('DELETE FROM tournaments WHERE id IN (?, ?)').run(soon.tid, now.tid);
   return 'приём открыт — одно письмо со ссылкой на загрузку; ещё не открыт — ничего; повтор не шлётся';
+});
+
+await check('«не состоялся»: без документов ко дню начала — метка, письма Федерации и организатору; с документом или результатами — нет; секретарь снимает метку', async () => {
+  const { runNotHeldCheck, NOT_HELD_FROM } = await import('./server/lib/tournament-day.mjs');
+  const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  const ins = db.prepare("INSERT INTO tournaments (name, start_date, end_date, category, city, kind, is_published) VALUES (?, ?, ?, 'B', 'Гагарин', 'other', 1)");
+  const mk = (name, start, end) => Number(ins.run(name, start, end).lastInsertRowid);
+  const bare = mk('НС-пустой', day(0), day(1));
+  const withDoc = mk('НС-с-документом', day(0), day(1));
+  const withRes = mk('НС-с-результатами', day(0), day(1));
+  const old = mk('НС-старый', '2026-09-01', '2026-09-02');
+  const future = mk('НС-будущий', day(3), day(4));
+  const doc = await up.storeUpload(db, { buffer: PDF, filename: 'polozhenie.pdf', profile: 'tournament-doc', dir: UPLOAD_DIR });
+  db.prepare('INSERT INTO tournament_files (tournament_id, upload_id) VALUES (?, ?)').run(withDoc, doc.id);
+  const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Несостоявшийся Игрок', 'Гагарин', 'M')").run().lastInsertRowid);
+  db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, 1)').run(withRes, pid);
+  db.prepare("INSERT INTO tournament_requests (name, city, start_date, end_date, category, organizer, email, status, status_token, tournament_id) VALUES ('НС-пустой', 'Гагарин', ?, ?, 'B', 'Пётр Организатор', 'ns-org@example.com', 'approved', ?, ?)").run(day(0), day(1), crypto.randomUUID(), bare);
+  runNotHeldCheck(db);
+  const st = (id) => db.prepare('SELECT held_status FROM tournaments WHERE id = ?').get(id).held_status;
+  eq([st(bare), st(withDoc), st(withRes), st(old), st(future)].join(','), 'not_held,,,,', `метка только у турнира без документов и результатов, начавшегося с ${NOT_HELD_FROM}`);
+  eq(db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE kind = 'tournament.not_held.staff' AND subject LIKE '%НС-пустой%'").get().n, 1, 'письмо Федерации');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE kind = 'tournament.not_held' AND to_email = 'ns-org@example.com'").get().n, 1, 'письмо организатору');
+  const card = (await http(`/tournaments/${bare}`)).text;
+  assert(/tag--not_held">Не состоялся/.test(card) && !/Приём заявок откроется|Заявки до/.test(card), 'карточка: «Не состоялся», без строки приёма');
+  const list = (await http('/tournaments?status=not_held')).text;
+  assert(list.includes(`href="/tournaments/${bare}"`) && !list.includes(`href="/tournaments/${withDoc}"`), 'фильтр «Не состоялся»');
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const adm = (await http('/admin/tournaments', { jar })).text;
+  assert(adm.includes(`action="/admin/tournaments/${bare}/held"`), 'в админке нет кнопки снять метку');
+  const un = await http(`/admin/tournaments/${bare}/held`, { method: 'POST', jar, form: { _csrf: tokenFrom(adm) } });
+  eq(un.status, 302, 'снятие метки');
+  runNotHeldCheck(db);
+  eq(st(bare), 'confirmed', 'снятая секретарём метка не возвращается');
+  db.prepare('DELETE FROM results WHERE tournament_id = ?').run(withRes);
+  db.prepare('DELETE FROM players WHERE id = ?').run(pid);
+  db.prepare("DELETE FROM tournament_requests WHERE name = 'НС-пустой'").run();
+  db.prepare(`DELETE FROM tournaments WHERE id IN (${[bare, withDoc, withRes, old, future].join(',')})`).run();
+  return 'пустой — «не состоялся» + 2 письма; с документом, с результатами, старый (до правила) и будущий — без метки; карточка, фильтр, снятие метки';
 });
 
 await check('изображение пересобирается: ресайз и снятый EXIF', async () => {

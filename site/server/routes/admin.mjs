@@ -839,6 +839,21 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
     }),
   );
 
+  // «НЕ СОСТОЯЛСЯ» ставит ежедневная проверка (lib/tournament-day.mjs); если турнир всё-таки
+  // прошёл, секретарь снимает метку — 'confirmed', и проверка её больше не поставит.
+  app.post(
+    '/admin/tournaments/:id/held',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const info = db.prepare("UPDATE tournaments SET held_status = 'confirmed' WHERE id = ?").run(id);
+      if (!info.changes) throw new ValidationError('Турнир не найден');
+      logAction(db, actorId(req), 'tournament.held.confirm', id, null);
+      flash(req, res, 'ok', 'Метка «не состоялся» снята.', '/admin/tournaments');
+    }),
+  );
+
   app.post(
     '/admin/tournaments',
     requireRole(...DATA_ROLES),

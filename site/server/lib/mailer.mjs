@@ -160,6 +160,34 @@ export function mailTournamentSubmitted({ organizer, name, statusUrl }) {
   };
 }
 
+const ruDate = (iso) => (iso ? iso.split('-').reverse().join('.') : '');
+const whenOf = (t) => (t.start_date && t.start_date !== t.end_date ? `${ruDate(t.start_date)} — ${ruDate(t.end_date)}` : ruDate(t.end_date));
+
+export function mailEntryOpenStaff(t) {
+  return {
+    subject: `Открылся приём заявок: ${t.name}`,
+    body:
+      `Сегодня открылся приём заявок на турнир «${t.name}» (категория ${t.category}, ${whenOf(t)}${t.city ? ', ' + t.city : ''}).\n\n` +
+      'Организатору отправлено письмо со ссылкой на загрузку документов турнира. ' +
+      'Если ко дню начала документов не будет, турнир будет отмечен как несостоявшийся.' +
+      SIGN,
+  };
+}
+
+export function mailTournamentNotHeld({ tournament: t, organizer = null, staff = false }) {
+  return {
+    subject: `Турнир не состоялся: ${t.name}`,
+    body:
+      (staff ? '' : `Здравствуйте, ${organizer}.\n\n`) +
+      `Турнир «${t.name}» (${whenOf(t)}) отмечен на сайте Федерации как несостоявшийся: ` +
+      'ко дню начала не был загружен ни один документ турнира — приём заявок так и не был открыт.\n\n' +
+      (staff
+        ? 'Если турнир всё-таки прошёл, снимите метку в админке: «Турниры» → «Снять метку „не состоялся“».'
+        : 'Если это ошибка — ответьте на это письмо, секретарь Федерации разберётся.') +
+      SIGN,
+  };
+}
+
 export function mailTournamentDocsOpen({ organizer, name, statusUrl }) {
   return {
     subject: 'Открыт приём заявок — загрузите документы турнира — ФТСО',

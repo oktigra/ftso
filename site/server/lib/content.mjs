@@ -65,6 +65,7 @@ export function allNews(db) {
 
 /** Публичный список турниров: свежие сверху, как в календаре. */
 export function tournamentStatus(t, today = new Date().toISOString().slice(0, 10)) {
+  if (t.held_status === 'not_held') return 'not_held'; // документов ко дню начала не было (lib/tournament-day.mjs)
   if (t.end_date < today) return 'finished';
   if (t.start_date && t.start_date <= today) return 'ongoing';
   if (!t.start_date && t.end_date === today) return 'ongoing';
@@ -107,7 +108,7 @@ export function entryDeadline(t) {
 export function entryStatus(t, today = new Date().toISOString().slice(0, 10)) {
   const start = t.start_date || t.end_date;
   const deadline = entryDeadline(t);
-  if (!start || !deadline) return 'closed';
+  if (!start || !deadline || t.held_status === 'not_held') return 'closed';
   if (today < entryOpens(t)) return 'soon';
   if (today <= deadline && today < start) return 'open';
   if (today < start) return 'late';
@@ -138,7 +139,7 @@ export function tournamentList(db, filters = {}) {
   if (filters.sex) { where.push('t.sex = ?'); args.push(filters.sex); }
   const rows = db
     .prepare(
-      `SELECT t.id, t.name, t.end_date, t.start_date, t.category, t.city, t.kind, t.format, t.age_group, t.sex, t.entry_deadline,
+      `SELECT t.id, t.name, t.end_date, t.start_date, t.category, t.city, t.kind, t.format, t.age_group, t.sex, t.entry_deadline, t.held_status,
               (SELECT COUNT(*) FROM results r WHERE r.tournament_id = t.id) AS participants
          FROM tournaments t ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
         ORDER BY t.end_date DESC, t.id DESC`,
@@ -252,7 +253,7 @@ const RU_MONTHS = ['января', 'февраля', 'марта', 'апреля
 /** Ближайший турнир (не завершённый) — для карточки на главной; null, если нет. */
 export function homeNextEvent(db) {
   const today = new Date().toISOString().slice(0, 10);
-  const t = db.prepare('SELECT id, name, start_date, end_date FROM tournaments WHERE is_published = 1 AND end_date >= ? ORDER BY COALESCE(start_date, end_date), id LIMIT 1').get(today);
+  const t = db.prepare("SELECT id, name, start_date, end_date FROM tournaments WHERE is_published = 1 AND end_date >= ? AND held_status IS NOT 'not_held' ORDER BY COALESCE(start_date, end_date), id LIMIT 1").get(today);
   if (!t) return null;
   const d = t.start_date || t.end_date;
   const status = tournamentStatus(t, today);
@@ -267,11 +268,11 @@ export function homeNextEvent(db) {
 /** Ближайшие/идущие турниры для карточек главной (опубликованные, не завершённые), затем последние завершённые. */
 export function homeTournaments(db, limit = 4) {
   const today = new Date().toISOString().slice(0, 10);
-  const up = db.prepare(`SELECT id, name, start_date, end_date, category, city, kind, age_group, sex,
+  const up = db.prepare(`SELECT id, name, start_date, end_date, category, city, kind, age_group, sex, held_status,
       (SELECT COUNT(*) FROM results r WHERE r.tournament_id = t.id) AS participants
      FROM tournaments t WHERE is_published = 1 AND end_date >= ? ORDER BY COALESCE(start_date, end_date), id LIMIT ?`).all(today, limit);
   const rest = limit - up.length;
-  const past = rest > 0 ? db.prepare(`SELECT id, name, start_date, end_date, category, city, kind, age_group, sex,
+  const past = rest > 0 ? db.prepare(`SELECT id, name, start_date, end_date, category, city, kind, age_group, sex, held_status,
       (SELECT COUNT(*) FROM results r WHERE r.tournament_id = t.id) AS participants
      FROM tournaments t WHERE is_published = 1 AND end_date < ? ORDER BY end_date DESC, id DESC LIMIT ?`).all(today, rest) : [];
   return [...up, ...past].map((t) => ({ ...t, status: tournamentStatus(t, today) }));
