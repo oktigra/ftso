@@ -166,6 +166,11 @@ export function createApp(config) {
   // раньше он жил копией внутри home.ejs, и вторая витрина форматировала даты по-своему.
   const MONTHS_RU = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
   app.locals.linkify = linkify; // адреса в тексте новости — ссылками (server/lib/linkify.mjs)
+  // ДАТЫ ДЛЯ ЛЮДЕЙ (аудит 09.10.2026): «2026-09-07» → «07.09.2026», «… 00:58:12» → «… 00:58».
+  app.locals.ruDate = (v) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}:\d{2}))?/.exec(String(v || ''));
+    return m ? `${m[3]}.${m[2]}.${m[1]}${m[4] ? ' ' + m[4] : ''}` : (v || '');
+  };
   app.locals.dm = (d) => (d ? `${Number(d.slice(8, 10))} ${MONTHS_RU[Number(d.slice(5, 7)) - 1]}` : '');
 
   app.use(

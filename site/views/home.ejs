@@ -80,7 +80,7 @@
           <a class="live-card__t" href="/tournaments/<%= m.tournament_id %>"><%= m.tournament %></a>
           <div class="live-card__p live-card__p--win"><% if (m.w_anon) { %>Игрок удалён<% } else { %><a href="/player/<%= m.w_id %>"><%= m.w_name %></a><% } %></div>
           <div class="live-card__p"><% if (m.l_anon) { %>Игрок удалён<% } else { %><a href="/player/<%= m.l_id %>"><%= m.l_name %></a><% } %></div>
-          <div class="live-card__s"><%= m.scoreShown || '' %> <span class="muted">· <%= m.played_on %><%= m.kind === 'double' ? ' · пары' : '' %></span></div>
+          <div class="live-card__s"><%= m.scoreShown || '' %> <span class="muted">· <%= ruDate(m.played_on) %><%= m.kind === 'double' ? ' · пары' : '' %></span></div>
         </article>
       <% }); %>
     </div>
@@ -264,7 +264,7 @@
         <% news.forEach(function (n) { %>
           <article class="news-card fx-card">
             <%- include('partials/court-card') %>
-            <span class="news-date"><%= n.published_at || n.created_at.slice(0, 10) %></span>
+            <span class="news-date"><%= ruDate(n.published_at || n.created_at.slice(0, 10)) %></span>
             <h3><%= n.title %></h3>
             <p><%= n.summary || '' %></p>
             <a class="link-more" href="/news/<%= n.id %>">Читать <span aria-hidden="true">→</span></a>

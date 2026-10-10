@@ -56,7 +56,7 @@
           </table>
         </div>
         <% if (history.best) { %>
-          <p class="rating-summary"><strong>Наивысшее место:</strong> <%= history.best.rank %> (<%= history.best.asOf %>)</p>
+          <p class="rating-summary"><strong>Наивысшее место:</strong> <%= history.best.rank %> (<%= ruDate(history.best.asOf) %>)</p>
         <% } %>
         <% if (history.points.length > 1) { %>
           <%
@@ -90,7 +90,7 @@
           </div>
         <% } %>
         <p class="rating-summary muted">
-          <%= statusText %> · актуальность <%= profile.rating.asOf %> · обновлён <%= profile.rating.computedAt %> UTC.
+          <%= statusText %> · актуальность <%= ruDate(profile.rating.asOf) %> · обновлён <%= ruDate(profile.rating.computedAt) %> UTC.
           <% if (profile.slices.length) { %>
             Возрастные срезы:
             <% profile.slices.forEach(function (id, i) { %><%= i ? ', ' : '' %><a href="/rating?slice=<%= id %>"><%= sliceLabels.get(id) %></a><% }); %>.
@@ -113,7 +113,7 @@
             <tbody>
               <% profile.results.forEach(function (r) { %>
                 <tr>
-                  <td><%= r.end_date %></td>
+                  <td><%= ruDate(r.end_date) %></td>
                   <td><a href="/tournaments/<%= r.tournament_id %>"><%= r.tournament_name %></a></td>
                   <td><%= r.category %></td>
                   <td><%= disciplineRu[r.discipline] %></td>

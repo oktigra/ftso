@@ -17,8 +17,8 @@
     <form method="post" action="/admin/tournaments" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="field field--wide"><label for="t-name">Название</label><input id="t-name" name="name" maxlength="160" required></div>
-      <div class="field"><label for="t-start">Начало</label><input id="t-start" name="start_date" placeholder="ГГГГ-ММ-ДД" maxlength="10"></div>
-      <div class="field"><label for="t-date">Завершение</label><input id="t-date" name="end_date" placeholder="ГГГГ-ММ-ДД" maxlength="10" required></div>
+      <div class="field"><label for="t-start">Начало</label><input id="t-start" name="start_date" type="date"></div>
+      <div class="field"><label for="t-date">Завершение</label><input id="t-date" name="end_date" type="date" required></div>
       <div class="field"><label for="t-cat">Категория</label>
         <select id="t-cat" name="category" required>
           <% categories.forEach(function (c) { %><option value="<%= c %>"><%= c %></option><% }); %>
@@ -86,8 +86,8 @@
               <td><a href="/tournaments/<%= t.id %>"><%= t.id %></a></td>
               <td><span class="tag <%= t.is_published ? 'tag--upcoming' : '' %>"><%= t.is_published ? 'опубликован' : 'черновик' %></span></td>
               <td><span class="ro"><%= t.name %></span><input class="ed" form="edit-tournament-<%= t.id %>" name="name" value="<%= t.name %>" maxlength="160" required></td>
-              <td><span class="ro"><%= t.start_date || '—' %></span><input class="ed" form="edit-tournament-<%= t.id %>" name="start_date" value="<%= t.start_date || '' %>" maxlength="10" placeholder="ГГГГ-ММ-ДД"></td>
-              <td><span class="ro"><%= t.end_date %></span><input class="ed" form="edit-tournament-<%= t.id %>" name="end_date" value="<%= t.end_date %>" maxlength="10" required></td>
+              <td><span class="ro"><%= t.start_date || '—' %></span><input class="ed" form="edit-tournament-<%= t.id %>" name="start_date" type="date" value="<%= t.start_date || '' %>" aria-label="Начало"></td>
+              <td><span class="ro"><%= t.end_date %></span><input class="ed" form="edit-tournament-<%= t.id %>" name="end_date" type="date" value="<%= t.end_date %>" required aria-label="Завершение"></td>
               <td><span class="ro"><%= t.category %></span>
                 <select class="ed" form="edit-tournament-<%= t.id %>" name="category" required>
                   <% categories.forEach(function (c) { %><option value="<%= c %>"<%= t.category === c ? ' selected' : '' %>><%= c %></option><% }); %>

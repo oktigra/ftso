@@ -5,7 +5,7 @@
   <div class="container">
     <span class="eyebrow">Новости</span>
     <h1><%= item.title %></h1>
-    <p class="muted"><%= item.published_at || item.created_at.slice(0, 10) %> · <%= item.author || 'Федерация тенниса Смоленской области' %></p>
+    <p class="muted"><%= ruDate(item.published_at || item.created_at.slice(0, 10)) %> · <%= item.author || 'Федерация тенниса Смоленской области' %></p>
   </div>
 </section>
 <section class="section-pad section-pad--tight">

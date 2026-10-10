@@ -17,7 +17,7 @@
       <div class="field"><label for="n-title">Заголовок</label><input id="n-title" name="title" maxlength="200" required></div>
       <div class="field"><label for="n-summary">Короткое описание</label><input id="n-summary" name="summary" maxlength="500"></div>
       <div class="field"><label for="n-body">Текст</label><textarea id="n-body" name="body" rows="6" maxlength="20000" required></textarea></div>
-      <div class="field"><label for="n-date">Дата публикации</label><input id="n-date" name="published_at" placeholder="ГГГГ-ММ-ДД"></div>
+      <div class="field"><label for="n-date">Дата публикации</label><input id="n-date" name="published_at" type="date"></div>
       <div class="field"><label for="n-author">Автор</label><input id="n-author" name="author" maxlength="120" placeholder="пусто — Федерация"></div>
       <div class="field"><label for="n-cat">Категория</label>
         <select id="n-cat" name="category"><% Object.keys(categories).forEach(function (k) { %><option value="<%= k %>"<%= k === 'federation' ? ' selected' : '' %>><%= categories[k] %></option><% }); %></select></div>
@@ -46,7 +46,7 @@
           <div class="field"><label for="b-<%= n.id %>">Текст</label>
             <textarea id="b-<%= n.id %>" name="body" rows="4" maxlength="20000" required><%= n.body %></textarea></div>
           <div class="field"><label for="d-<%= n.id %>">Дата публикации</label>
-            <input id="d-<%= n.id %>" name="published_at" placeholder="ГГГГ-ММ-ДД" value="<%= n.published_at || '' %>"></div>
+            <input id="d-<%= n.id %>" name="published_at" type="date" value="<%= n.published_at || '' %>"></div>
           <div class="field"><label for="a-<%= n.id %>">Автор</label>
             <input id="a-<%= n.id %>" name="author" maxlength="120" value="<%= n.author || '' %>" placeholder="пусто — Федерация"></div>
           <div class="field"><label for="c-<%= n.id %>">Категория</label>

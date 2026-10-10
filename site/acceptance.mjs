@@ -3964,8 +3964,10 @@ async function uploadDocs(token, files, jar = new Jar()) {
 
 const docsOf = (tid) => db.prepare('SELECT u.*, f.title FROM tournament_files f JOIN uploads u ON u.id = f.upload_id WHERE f.tournament_id = ? ORDER BY f.id').all(tid);
 
+// Даты заявки — относительно сегодня: заявка подаётся только на предстоящий турнир.
+const FUTURE = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
 const BASE_FIELDS = {
-  name: 'Кубок приёмки', city: 'Смоленск', start_date: '2026-08-30', end_date: '2026-09-01', category: 'A',
+  name: 'Кубок приёмки', city: 'Смоленск', start_date: FUTURE(20), end_date: FUTURE(22), category: 'A',
   organizer: 'Иван Организаторов', email: 'org@example.com', consent_processing: '1',
 };
 
@@ -3997,10 +3999,14 @@ await check('даты заявки: два календаря, начало не
   assert(/<input id="t-start" name="start_date" type="date" required/.test(page.text), 'нет календаря «Дата начала»');
   assert(/<input id="t-date" name="end_date" type="date" required/.test(page.text), '«Дата завершения» не календарь');
   assert(page.text.indexOf('name="start_date"') < page.text.indexOf('name="end_date"'), 'начало должно стоять перед завершением');
-  const { res } = await submitTournament({ ...BASE_FIELDS, name: 'Кубок задом наперёд', start_date: '2026-09-05' });
+  const { res } = await submitTournament({ ...BASE_FIELDS, name: 'Кубок задом наперёд', start_date: FUTURE(25) });
   eq(res.status, 400, 'начало позже конца должно отклоняться');
   assert(res.text.includes('Дата начала позже даты завершения'), 'причина отказа не названа');
-  assert(res.text.includes('value="2026-09-05"'), 'введённая дата начала потеряна');
+  assert(res.text.includes(`value="${FUTURE(25)}"`), 'введённая дата начала потеряна');
+  const past = await submitTournament({ ...BASE_FIELDS, name: 'Кубок прошлый', start_date: FUTURE(-3), end_date: FUTURE(-1) });
+  assert(past.res.status === 400 && /уже прошла/.test(past.res.text), 'заявка на прошедший турнир должна отбиваться');
+  const far = await submitTournament({ ...BASE_FIELDS, name: 'Кубок далёкий', start_date: FUTURE(900), end_date: FUTURE(901) });
+  assert(far.res.status === 400 && /через два года/.test(far.res.text), 'дата через десятилетия должна отбиваться');
   const { res: noStart } = await submitTournament({ ...BASE_FIELDS, name: 'Кубок без начала', start_date: '' });
   eq(noStart.status, 400, 'заявка без даты начала должна отклоняться');
   eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE name IN ('Кубок задом наперёд', 'Кубок без начала')").get().n, 0,
@@ -4358,7 +4364,7 @@ await check('публичная заявка: организатор выбир�
   const page = await http('/tournament-request');
   eq(page.status, 200, 'форма заявки');
   assert(/name="age_limit"/.test(page.text) && /до 13 лет/.test(page.text) && /свои границы/.test(page.text), 'в публичной форме нет возрастного ограничения');
-  const { res } = await submitTournament({ ...BASE_FIELDS, name: 'Детский кубок приёмки', end_date: '2026-11-15', age_limit: 'u13' });
+  const { res } = await submitTournament({ ...BASE_FIELDS, name: 'Детский кубок приёмки', end_date: FUTURE(30), age_limit: 'u13' });
   eq(res.status, 302, 'заявка принята');
   const r = db.prepare("SELECT id, age_min, age_max FROM tournament_requests WHERE name = 'Детский кубок приёмки'").get();
   assert(r && r.age_min === null && r.age_max === 12, 'границы заявки должны быть (null, 12)');
@@ -4381,6 +4387,51 @@ await check('публичная заявка: организатор выбир�
   db.prepare("DELETE FROM players WHERE full_name LIKE 'Заявка%'").run();
   db.prepare('DELETE FROM write_attempts').run();
   return 'в публичной форме есть возрастное ограничение; (null,12) сохранено в заявке, показано модератору, перенесено в турнир с подписью «до 13 лет» и отбивает взрослого';
+});
+
+await check('аудит 09.10: ошибка в форме не стирает ввод (админка, обратная связь); даты — календари; даты на сайте ДД.ММ.ГГГГ', async () => {
+  // Даты в админке — календари, телефон в заявке — телефонное поле.
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const tPage = (await http('/admin/tournaments', { jar })).text;
+  assert(/id="t-start" name="start_date" type="date"/.test(tPage) && /id="t-date" name="end_date" type="date"/.test(tPage), 'даты турнира в админке не календари');
+  assert(/id="n-date" name="published_at" type="date"/.test((await http('/admin/news', { jar })).text), 'дата новости не календарь');
+  assert(/id="t-phone" name="phone" type="tel"/.test((await http('/tournament-request')).text), 'телефон в заявке не type=tel');
+  // Даты на публичной карточке турнира — ДД.ММ.ГГГГ.
+  const tid = Number(db.prepare("INSERT INTO tournaments (name, start_date, end_date, category, kind, is_published) VALUES ('Кубок дат', '2027-05-03', '2027-05-05', 'C', 'other', 1)").run().lastInsertRowid);
+  assert((await http(`/tournaments/${tid}`)).text.includes('Даты 03.05.2027 — 05.05.2027'), 'на карточке турнира даты не ДД.ММ.ГГГГ');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
+  // Браузер: ошибка сервера возвращает форму с введённым.
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch({ executablePath: CHROMIUM, args: ['--no-sandbox'] });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    await page.goto(`${inst.base}/login`); await page.fill('input[name="username"]', ADMIN.user); await page.fill('input[name="password"]', ADMIN.pass);
+    await Promise.all([page.waitForLoadState('networkidle'), page.click('button[type="submit"]')]);
+    await page.goto(`${inst.base}/admin/tournaments`, { waitUntil: 'networkidle' });
+    await page.fill('#t-name', 'Кубок, который не пропадёт');
+    await page.fill('#t-start', '2027-06-10'); await page.fill('#t-date', '2027-06-01'); // начало позже конца — ошибка сервера
+    await Promise.all([page.waitForNavigation(), page.locator('#t-name').evaluate((el) => el.form.requestSubmit())]); await page.waitForLoadState('networkidle');
+    assert(await page.locator('.flash--error').count(), 'нет сообщения об ошибке');
+    eq(await page.inputValue('#t-name'), 'Кубок, который не пропадёт', 'название турнира пропало после ошибки');
+    eq(await page.inputValue('#t-start'), '2027-06-10', 'дата начала пропала после ошибки');
+    // Успешная отправка не оставляет «хвоста»: следующая форма открывается пустой.
+    await page.fill('#t-start', '2027-06-01'); await page.fill('#t-date', '2027-06-02');
+    await Promise.all([page.waitForNavigation(), page.locator('#t-name').evaluate((el) => el.form.requestSubmit())]); await page.waitForLoadState('networkidle');
+    assert(await page.locator('.flash--ok').count(), 'турнир не создан');
+    eq(await page.inputValue('#t-name'), '', 'после успеха форма должна быть пустой');
+    db.prepare("DELETE FROM tournaments WHERE name = 'Кубок, который не пропадёт'").run();
+    // Обратная связь: сервер отбивает, текст сообщения возвращается.
+    db.prepare("DELETE FROM write_attempts WHERE key LIKE 'f:%'").run();
+    await page.goto(`${inst.base}/contacts`, { waitUntil: 'networkidle' });
+    const msg = 'Длинное сообщение секретарю, которое жалко набирать заново.';
+    await page.fill('#fb-name', 'Мария'); await page.fill('#fb-email', 'maria@example.com'); await page.fill('#fb-message', msg);
+    await page.locator('#fb-message').evaluate((el) => { el.form.noValidate = true; el.form.querySelector('[name="consent_processing"]').checked = false; });
+    await Promise.all([page.waitForNavigation(), page.locator('#fb-message').evaluate((el) => el.form.requestSubmit())]); await page.waitForLoadState('networkidle');
+    assert(await page.locator('.notice--error').count(), 'нет ошибки обратной связи');
+    eq(await page.inputValue('#fb-message'), msg, 'текст обращения пропал после ошибки');
+    await page.close();
+  } finally { await browser.close(); }
+  return 'админка и обратная связь возвращают введённое после ошибки, после успеха форма чистая; даты — календари, tel; карточка «03.05.2027»';
 });
 
 await check('зона файлов: накопление до трёх, кнопка «Удалить», перетаскивание на десктопе, без слов о нём на телефоне; админка обёрнута; «Редакция от» только на юридических страницах', async () => {
