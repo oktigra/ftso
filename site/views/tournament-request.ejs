@@ -25,7 +25,7 @@
           <ul>
             <% errors.forEach(function (e) { %><li><%= e %></li><% }); %>
           </ul>
-          <p class="muted">Текстовые поля сохранены. Файлы придётся выбрать заново — браузер не отдаёт их повторно.</p>
+          <p class="muted">Введённые данные сохранены.</p>
         </div>
       <% } %>
 
@@ -115,25 +115,17 @@
         <fieldset class="consent-box">
           <legend>Документы</legend>
           <%
-            // ОДНА НАКОПИТЕЛЬНАЯ ЗОНА (замечание владельца 18.09.2026): документы добавляются по
-            // одному — выбором или перетаскиванием — до maxFiles штук, у каждого своя кнопка
-            // «Удалить». Сервер принимает до maxFiles файлов под любым именем поля.
+            // ДОКУМЕНТЫ — С ОТКРЫТИЯ ПРИЁМА ЗАЯВОК (10.10.2026, правило владельца): в заявке
+            // файлов нет; положение, сетку и регламент организатор загружает по ссылке на
+            // статус заявки после согласования турнира.
           %>
-          <div class="field">
-            <label for="t-docs">Положение, сетка, регламент</label>
-            <div class="file-drop file-drop--multi" data-file-drop data-file-max="<%= maxFiles %>">
-              <input id="t-docs" name="docs" type="file" multiple class="file-drop__input" aria-describedby="t-doc-hint">
-              <label class="file-drop__zone" for="t-docs">
-                <span class="file-drop__icon" aria-hidden="true"></span>
-                <span class="file-drop__text"><b>Добавить файл</b><span class="file-drop__or"> или перетащите сюда</span></span>
-                <span class="file-drop__meta">до <%= maxFiles %> файлов · каждый до <%= maxFileMb %> МБ</span>
-              </label>
-              <ul class="file-drop__list" data-file-list hidden></ul>
-            </div>
-          </div>
-          <p class="field-hint" id="t-doc-hint">
-            До <%= maxFiles %> файлов, каждый не больше <%= maxFileMb %> МБ. Принимаются PDF, документы
-            Office и изображения. Тип проверяется по содержимому файла, а не по расширению.
+          <p id="t-doc-hint">
+            <strong>Положение, сетку и регламент сейчас прикладывать не нужно.</strong>
+            Их можно будет загрузить после согласования турнира — с момента открытия приёма заявок:
+            для категории&nbsp;A — за месяц до начала турнира, для категорий B и&nbsp;C — за две недели.
+          </p>
+          <p class="field-hint">
+            Ссылку для загрузки пришлём на почту вместе со статусом заявки, а в день открытия приёма — напомним.
             <strong>Результаты матчей файлом не принимаются</strong> — их вносит секретарь Федерации,
             иначе рейтинг не посчитается.
           </p>

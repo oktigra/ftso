@@ -14,7 +14,7 @@
  * должно лежать в поле «Основание публикации».
  */
 import { randomBytes } from 'node:crypto';
-import { ValidationError, str, email as emailField } from './validate.mjs';
+import { ValidationError, str, isoDate, email as emailField } from './validate.mjs';
 
 /** Поля, у которых есть отдельная отметка согласия. */
 export const OPTIONAL_FIELDS = [
@@ -32,14 +32,46 @@ export const OPTIONAL_FIELDS = [
  * словами), дата её присвоения или подтверждения — категорию подтверждают раз в
  * несколько лет, и без даты непонятно, действует ли она, — роли на турнирах и опыт.
  */
+//
+// РОЛИ И СРОК ДОКУМЕНТА (10.10.2026, решение владельца): роли — выбор из трёх, можно
+// любые сразу; дата присвоения/подтверждения — календарь, и у документа есть срок
+// (1 или 2 года, выбирает судья). Дату храним ВСЕГДА (alwaysStore): по ней сайт
+// напоминает об окончании срока, а «публиковать» решает только показ на сайте.
+// Срок документа — служебный (без allow): не публикуется никогда.
+export const REFEREE_ROLES = ['судья', 'судья-наблюдатель', 'главный судья'];
+export const REFEREE_VALID_YEARS = { 1: '1 год', 2: '2 года' };
+
 export const REFEREE_FIELDS = [
   { key: 'city', allow: 'allow_city', label: 'Город' },
   { key: 'category', allow: 'allow_category', label: 'Квалификационная категория' },
-  { key: 'category_date', allow: 'allow_category_date', label: 'Когда присвоена или подтверждена' },
-  { key: 'roles', allow: 'allow_roles', label: 'Роли на турнирах' },
+  { key: 'category_date', allow: 'allow_category_date', label: 'Когда присвоена или подтверждена', type: 'date', alwaysStore: true },
+  { key: 'category_valid_years', label: 'Срок действия документа', type: 'select', options: REFEREE_VALID_YEARS },
+  { key: 'roles', allow: 'allow_roles', label: 'Роли на турнирах', type: 'multi', options: REFEREE_ROLES },
   { key: 'experience', allow: 'allow_experience', label: 'Опыт судейства' },
   { key: 'contact', allow: 'allow_contact', label: 'Контакт для связи' },
 ];
+
+/** Значение поля анкеты по его типу; пустое — null. Чужие варианты отбиваются. */
+export function fieldValue(f, raw) {
+  if (f.type === 'date') {
+    const v = String(raw || '').trim();
+    return v ? isoDate(v, f.label) : null;
+  }
+  if (f.type === 'select') {
+    const v = String(raw || '').trim();
+    if (!v) return null;
+    if (!Object.hasOwn(f.options, v)) throw new ValidationError(`${f.label}: выберите значение из списка`);
+    return Number(v);
+  }
+  if (f.type === 'multi') {
+    const picked = (Array.isArray(raw) ? raw : raw ? [raw] : []).map((v) => String(v).trim()).filter(Boolean);
+    const bad = picked.find((v) => !f.options.includes(v));
+    if (bad) throw new ValidationError(`${f.label}: «${bad}» нет в списке`);
+    // Порядок — как в списке, а не как отмечали: одинаковые наборы пишутся одинаково.
+    return f.options.filter((o) => picked.includes(o)).join(', ') || null;
+  }
+  return str(raw, f.label, { max: 200, required: false });
+}
 
 /** Текст согласия фиксируется в заявке целиком: потом он и есть доказательство. */
 export function consentText(operator, purpose = 'реестра тренеров') {
@@ -65,6 +97,9 @@ export const REGISTRIES = {
   referees: {
     table: 'referee_applications', target: 'referees', idColumn: 'referee_id',
     fields: REFEREE_FIELDS, title: 'судей', purpose: 'реестра спортивных судей',
+    // В карточку судьи уходят почта (для напоминания о сроке документа, не публикуется)
+    // и отметка, показывать ли дату категории: сама дата хранится всегда.
+    onApprove: (app) => ({ email: app.email, category_date_public: app.allow_category_date ? 1 : 0 }),
   },
 };
 
@@ -80,10 +115,13 @@ export function applicationInput(body, operator, fields = OPTIONAL_FIELDS, purpo
     consent_text: consentText(operator, purpose),
   };
   for (const f of fields) {
-    const value = str(body[f.key], f.label, { max: 200, required: false });
+    const value = fieldValue(f, body[f.key]);
+    // Служебное поле (без отметки «публиковать») хранится как есть и наружу не идёт.
+    if (!f.allow) { data[f.key] = value; continue; }
     const allowed = flag(body, f.allow);
     // Заполнено, но не отмечено — не ошибка: человек мог передумать. Просто не берём.
-    data[f.key] = allowed ? value : null;
+    // Кроме alwaysStore: такое значение нужно Федерации само по себе (срок документа).
+    data[f.key] = allowed || f.alwaysStore ? value : null;
     data[f.allow] = allowed && value ? 1 : 0;
   }
   return data;
@@ -91,7 +129,7 @@ export function applicationInput(body, operator, fields = OPTIONAL_FIELDS, purpo
 
 export function createApplication(db, data, ip, registry = REGISTRIES.coaches) {
   const token = randomBytes(24).toString('base64url');
-  const cols = ['full_name', 'email', 'note', 'consent_10_1', 'consent_text', ...registry.fields.flatMap((f) => [f.key, f.allow])];
+  const cols = ['full_name', 'email', 'note', 'consent_10_1', 'consent_text', ...registry.fields.flatMap((f) => (f.allow ? [f.key, f.allow] : [f.key]))];
   const sql = `INSERT INTO ${registry.table} (${cols.join(', ')}, status_token, ip) VALUES (${cols.map(() => '?').join(', ')}, ?, ?)`;
   const id = Number(db.prepare(sql).run(...cols.map((c) => data[c]), token, ip || null).lastInsertRowid);
   return { id, token };
@@ -123,9 +161,10 @@ export function approveApplication(db, id, userId, registry = REGISTRIES.coaches
   const day = String(app.created_at || '').slice(0, 10);
   const basis = `согласие через сайт от ${day}`;
   const values = {};
-  for (const f of registry.fields) values[f.key] = app[f.allow] ? app[f.key] : null;
-  const cols = ['full_name', ...registry.fields.map((f) => f.key), 'basis', 'document_date'];
-  const vals = [app.full_name, ...registry.fields.map((f) => values[f.key]), basis, day];
+  for (const f of registry.fields) values[f.key] = !f.allow || f.alwaysStore || app[f.allow] ? app[f.key] : null;
+  const extra = registry.onApprove ? registry.onApprove(app) : {};
+  const cols = ['full_name', ...registry.fields.map((f) => f.key), 'basis', 'document_date', ...Object.keys(extra)];
+  const vals = [app.full_name, ...registry.fields.map((f) => values[f.key]), basis, day, ...Object.values(extra)];
   const newId = Number(
     db.prepare(`INSERT INTO ${registry.target} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...vals).lastInsertRowid,
   );

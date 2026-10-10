@@ -3,8 +3,10 @@
 // слой загрузки файлов: четыре копии разойдутся, и разойдутся молча.
 //
 // Раздел описывается ДАННЫМИ (таблица, поля, порядок), а код общий.
-import { str, isoDate, ValidationError } from './validate.mjs';
+import { str, isoDate, email as emailField, ValidationError } from './validate.mjs';
 import { resolvePlayer } from './registrations.mjs';
+import { REFEREE_ROLES, REFEREE_VALID_YEARS, fieldValue } from './coach-applications.mjs';
+import { categoryExpires, categoryState } from './referee-reminders.mjs';
 
 /**
  * personal: true — в справочнике есть ФИО живых людей. Публикация ФИО это
@@ -50,11 +52,16 @@ export const DIRECTORIES = {
       // Категории по требованиям Минспорта: ЮС, 3К, 2К, 1К, ВК; международные значки
       // ITF (белый, бронзовый, серебряный, золотой) пишутся здесь же словами.
       { name: 'category', label: 'Категория', max: 80, filter: true },
-      { name: 'category_date', label: 'Категория присвоена', max: 40 },
-      { name: 'roles', label: 'Роли на турнирах', max: 160 },
+      // Дата — календарь и хранится всегда (по ней напоминание о сроке документа);
+      // на сайте видна, только если отмечено category_date_public (publicFlag).
+      { name: 'category_date', label: 'Категория присвоена', type: 'date', publicFlag: 'category_date_public' },
+      { name: 'category_valid_years', label: 'Срок документа', type: 'select', options: REFEREE_VALID_YEARS, internal: true },
+      { name: 'roles', label: 'Роли на турнирах', type: 'multi', options: REFEREE_ROLES },
       { name: 'experience', label: 'Опыт судейства', max: 200 },
       { name: 'city', label: 'Город', max: 80, filter: true },
       { name: 'contact', label: 'Контакт', max: 120 },
+      // Служебная почта: напоминание об окончании срока документа. На сайте не видна.
+      { name: 'email', label: 'Почта для напоминаний', type: 'email', max: 160, internal: true },
       { name: 'note', label: 'Примечание', max: 500 },
     ],
   },
@@ -111,10 +118,18 @@ export function directoryInput(spec, body, { db = null } = {}) {
   const data = {};
   for (const field of spec.fields) {
     if (field.player) continue; // ниже: связь с игроком пишется в столбец player_id
-    data[field.name] = str(body[field.name], field.label, {
-      max: field.max,
-      required: Boolean(field.required),
-    });
+    if (field.type === 'email') {
+      const v = String(body[field.name] || '').trim();
+      data[field.name] = v ? emailField(v, field.label) : null;
+    } else if (field.type) {
+      data[field.name] = fieldValue(field, body[field.name]);
+    } else {
+      data[field.name] = str(body[field.name], field.label, {
+        max: field.max,
+        required: Boolean(field.required),
+      });
+    }
+    if (field.publicFlag) data[field.publicFlag] = body[field.publicFlag] === 'on' || body[field.publicFlag] === '1' ? 1 : 0;
   }
   const pf = spec.fields.find((f) => f.player);
   if (pf) {
@@ -136,7 +151,8 @@ export function directoryInput(spec, body, { db = null } = {}) {
 }
 
 const columnsOf = (spec) =>
-  spec.fields.map((f) => (f.player ? 'player_id' : f.name)).concat(spec.personal ? ['basis', 'document_date'] : []);
+  spec.fields.flatMap((f) => (f.player ? ['player_id'] : f.publicFlag ? [f.name, f.publicFlag] : [f.name]))
+    .concat(spec.personal ? ['basis', 'document_date'] : []);
 
 /**
  * Список раздела с фильтрами по полям, помеченным filter:true (ТЗ 4.5/4.6:
@@ -158,6 +174,9 @@ export function listDirectory(db, spec, filters = {}) {
       const p = r.player_id ? get.get(r.player_id) : null;
       r.player = p && !p.anonymized_at ? p : null; // обезличенный игрок связь не показывает
     }
+  }
+  if (spec.key === 'referees') {
+    for (const r of rows) { r.category_expires = categoryExpires(r); r.category_state = categoryState(r); }
   }
   return rows;
 }

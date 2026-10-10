@@ -11,13 +11,16 @@ import { AGE_LIMIT_PRESETS } from '../lib/age.mjs';
 import { parseMultipart } from '../lib/multipart.mjs';
 import { checkTicket, consumeTicket } from '../lib/form-guard.mjs';
 import { storeUpload, deleteUpload, UPLOAD_PROFILES } from '../lib/uploads.mjs';
-import { createRequest, byToken } from '../lib/tournament-requests.mjs';
+import { createRequest, byToken, docsGate } from '../lib/tournament-requests.mjs';
+import { tournamentFiles } from '../lib/content.mjs';
 import { queueMail, flushOutbox, mailTournamentSubmitted } from '../lib/mailer.mjs';
 import { LEGAL_VERSION_LABEL, OPERATOR } from '../lib/legal.mjs';
 import { CATEGORIES } from '../lib/validate.mjs';
 
 const STATUS_RU = { pending: 'на рассмотрении', approved: 'согласована', rejected: 'отклонена' };
 const PROFILE = 'tournament-doc';
+// Всего документов у турнира от организатора (положение, сетка, регламент, дополнения).
+const MAX_DOCS = 10;
 
 export default function mountTournamentRequest(app, { db, config, limitTournamentRequest }) {
   const maxFiles = config.tournamentRequest.maxFiles;
@@ -91,17 +94,10 @@ export default function mountTournamentRequest(app, { db, config, limitTournamen
         );
       }
 
-      for (const file of files) {
-        stored.push(
-          // eslint-disable-next-line no-await-in-loop
-          await storeUpload(db, {
-            buffer: file.buffer,
-            filename: file.filename,
-            profile: PROFILE,
-            dir: config.upload.dir,
-            meta: { declaredType: file.declaredType, field: file.field },
-          }),
-        );
+      // Документы в заявке больше не принимаются (10.10.2026): они грузятся по ссылке
+      // на статус после согласования, с открытия приёма заявок.
+      if (files.length) {
+        throw new ValidationError('Документы турнира загружаются после согласования — по ссылке на статус заявки, с началом приёма заявок.');
       }
 
       const { token } = createRequest(db, { fields: data, uploads: stored, ip: req.ip });
@@ -137,14 +133,79 @@ export default function mountTournamentRequest(app, { db, config, limitTournamen
     });
   });
 
-  app.get('/tournament-request/status/:token', (req, res, next) => {
-    const request = byToken(db, req.params.token);
-    if (!request) return next();
-    res.render('tournament-request-status', {
+  function renderStatus(req, res, request, { errors = [], status = 200 } = {}) {
+    const gate = docsGate(db, request);
+    const docs = gate.tournament ? tournamentFiles(db, gate.tournament.id) : [];
+    const notice = req.session.docsNotice || null;
+    delete req.session.docsNotice;
+    res.status(status).render('tournament-request-status', {
       title: 'Статус заявки на турнир — ФТСО',
       request,
       statusText: STATUS_RU[request.status] || request.status,
+      gate,
+      docs,
+      errors,
+      notice,
+      maxFiles,
+      maxFileMb: Math.round(maxFileBytes / 1024 / 1024),
       op: OPERATOR,
     });
+  }
+
+  app.get('/tournament-request/status/:token', (req, res, next) => {
+    const request = byToken(db, req.params.token);
+    if (!request) return next();
+    renderStatus(req, res, request);
+  });
+
+  // ДОКУМЕНТЫ ОТ ОРГАНИЗАТОРА — по секретной ссылке статуса, когда открыт приём заявок.
+  // Файлы идут через общий слой загрузки (magic bytes, лимит, EXIF) и сразу
+  // прикрепляются к турниру; секретарю уходит письмо, лишнее он снимет в админке.
+  app.post('/tournament-request/status/:token/files', limitTournamentRequest, async (req, res, next) => {
+    const request = byToken(db, req.params.token);
+    if (!request) return next();
+    const stored = [];
+    try {
+      const { files } = await parseMultipart(req, { maxFileBytes, maxFiles, maxFieldBytes: 8 * 1024 });
+      const gate = docsGate(db, request);
+      if (!gate.open) throw new ValidationError(gate.reason);
+      if (!files.length) throw new ValidationError('Выберите хотя бы один файл.');
+      const already = tournamentFiles(db, gate.tournament.id).length;
+      if (already + files.length > MAX_DOCS) {
+        throw new ValidationError(`У турнира уже ${already} документов, всего можно ${MAX_DOCS}. Лишние уберёт секретарь — напишите ему.`);
+      }
+      for (const file of files) {
+        stored.push(
+          // eslint-disable-next-line no-await-in-loop
+          await storeUpload(db, {
+            buffer: file.buffer,
+            filename: file.filename,
+            profile: PROFILE,
+            dir: config.upload.dir,
+            meta: { declaredType: file.declaredType, field: file.field },
+          }),
+        );
+      }
+      const ins = db.prepare('INSERT INTO tournament_files (tournament_id, upload_id, title) VALUES (?, ?, ?)');
+      db.transaction(() => { for (const u of stored) ins.run(gate.tournament.id, u.id, u.original_name || null); })();
+      req.formAccepted?.();
+      queueMail(db, {
+        to: OPERATOR.email,
+        kind: 'tournament.docs.uploaded',
+        subject: `Организатор загрузил документы: ${gate.tournament.name}`,
+        body: `Организатор (${request.organizer}) загрузил к турниру «${gate.tournament.name}» документов: ${stored.length}.\n` +
+          stored.map((u) => `— ${u.original_name}`).join('\n') +
+          `\n\nПроверить и при необходимости снять: /admin/tournaments`,
+      });
+      flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
+      req.session.docsNotice = `Загружено документов: ${stored.length}. Они уже прикреплены к турниру.`;
+      return req.session.save(() => res.redirect(303, `/tournament-request/status/${request.status_token}`));
+    } catch (err) {
+      for (const row of stored) {
+        try { deleteUpload(db, row.id, config.upload.dir); } catch (e) { console.error('[документы турнира] не удалось убрать файл после отката', e); }
+      }
+      if (err instanceof ValidationError) return renderStatus(req, res, request, { errors: err.messages, status: 400 });
+      return next(err);
+    }
   });
 }

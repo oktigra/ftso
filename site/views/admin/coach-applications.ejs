@@ -29,8 +29,8 @@
               <% fields.forEach(function (f) { %>
                 <tr>
                   <td><%= f.label %></td>
-                  <td><%= a[f.key] || '—' %></td>
-                  <td><%= a[f.allow] ? 'да' : 'нет' %></td>
+                  <td><%= a[f.key] == null || a[f.key] === '' ? '—' : f.type === 'select' ? (f.options[a[f.key]] || a[f.key]) : f.type === 'date' ? String(a[f.key]).split('-').reverse().join('.') : a[f.key] %></td>
+                  <td><%= !f.allow ? 'не публикуется' : a[f.allow] ? 'да' : 'нет' %></td>
                 </tr>
               <% }); %>
             </tbody>

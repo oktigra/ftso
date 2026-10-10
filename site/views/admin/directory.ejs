@@ -29,7 +29,7 @@
       <% spec.fields.forEach(function (f) { %>
         <div class="field">
           <label for="new-<%= f.name %>"><%= f.label %><%= f.required ? ' *' : '' %></label>
-          <input id="new-<%= f.name %>" name="<%= f.name %>" maxlength="<%= f.max %>"<%= f.required ? ' required' : '' %><%= f.player ? ' list="players-list" placeholder="если тренер сам играет — фамилия"' : '' %>>
+          <%- include('../partials/dir-field', { f: f, id: 'new-' + f.name, value: '', flagOn: true }) %>
         </div>
       <% }); %>
       <% if (spec.personal) { %>
@@ -43,7 +43,7 @@
         </div>
         <div class="field">
           <label for="new-doc-date">Дата документа *</label>
-          <input id="new-doc-date" name="document_date" placeholder="ГГГГ-ММ-ДД" required>
+          <input id="new-doc-date" name="document_date" type="date" required>
         </div>
       <% } %>
       <button class="btn btn--primary" type="submit">Добавить</button>
@@ -75,13 +75,13 @@
             <tr>
               <td><%= row.id %></td>
               <% spec.fields.forEach(function (f) { %>
-                <td><input form="edit-<%= spec.key %>-<%= row.id %>" name="<%= f.name %>"
-                           maxlength="<%= f.max %>"<%= f.required ? ' required' : '' %><%= f.player ? ' list="players-list"' : '' %>
-                           value="<%= f.player ? (row.player ? row.player.full_name : '') : (row[f.name] || '') %>"></td>
+                <td><%- include('../partials/dir-field', { f: f, id: 'e-' + spec.key + '-' + row.id + '-' + f.name, form: 'edit-' + spec.key + '-' + row.id, value: f.player ? (row.player ? row.player.full_name : '') : row[f.name], flagOn: f.publicFlag ? Boolean(row[f.publicFlag]) : false }) %><% if (f.name === 'category_valid_years' && row.category_expires) { %>
+                  <div class="small <%= row.category_state === 'ok' ? 'muted' : 'expiry--' + row.category_state %>">до <%= row.category_expires.split('-').reverse().join('.') %><%= row.category_state === 'expired' ? ' — истёк' : row.category_state === 'soon' ? ' — истекает' : '' %></div>
+                <% } %></td>
               <% }); %>
               <% if (spec.personal) { %>
                 <td><input form="edit-<%= spec.key %>-<%= row.id %>" name="basis" maxlength="200" required value="<%= row.basis || '' %>"></td>
-                <td><input form="edit-<%= spec.key %>-<%= row.id %>" name="document_date" required value="<%= row.document_date || '' %>"></td>
+                <td><input form="edit-<%= spec.key %>-<%= row.id %>" name="document_date" type="date" required value="<%= row.document_date || '' %>" aria-label="Дата документа"></td>
               <% } %>
               <% if (spec.photo) { %>
                 <td class="dir-photo">

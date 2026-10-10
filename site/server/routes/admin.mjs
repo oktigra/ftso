@@ -60,7 +60,7 @@ import {
   byId as tournamentRequestById,
 } from '../lib/tournament-requests.mjs';
 import { sendUpload, uploadById, deleteUpload } from '../lib/uploads.mjs';
-import { attachRequestFiles } from '../lib/content.mjs';
+import { attachRequestFiles, entryOpens } from '../lib/content.mjs';
 import { createAccount, issueResetToken, accountByPlayer } from '../lib/player-accounts.mjs';
 import {
   activeGuardianFor,
@@ -719,6 +719,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         organizer: r.organizer,
         name: r.name,
         statusUrl: requestStatusUrl(req, r.status_token),
+        docsFrom: entryOpens(db.prepare('SELECT category, start_date, end_date FROM tournaments WHERE id = ?').get(out.tournamentId)),
       });
       queueMail(db, { to: r.email, kind: 'tournament.approved', ...letter });
       flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
@@ -835,6 +836,21 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       logAction(db, actorId(req), on ? 'tournament.publish' : 'tournament.unpublish', id, null);
       if (on) postInBackground(db, config, actorId(req), 'tournament.publish', tournamentPost(db, req, id, '🎾 Турнир в календаре:'));
       flash(req, res, 'ok', on ? 'Турнир опубликован — виден в календаре и на сайте.' : 'Турнир снят с публикации — черновик, виден только здесь.', '/admin/tournaments');
+    }),
+  );
+
+  // «НЕ СОСТОЯЛСЯ» ставит ежедневная проверка (lib/tournament-day.mjs); если турнир всё-таки
+  // прошёл, секретарь снимает метку — 'confirmed', и проверка её больше не поставит.
+  app.post(
+    '/admin/tournaments/:id/held',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const id = intAtLeast(req.params.id, 'id');
+      const info = db.prepare("UPDATE tournaments SET held_status = 'confirmed' WHERE id = ?").run(id);
+      if (!info.changes) throw new ValidationError('Турнир не найден');
+      logAction(db, actorId(req), 'tournament.held.confirm', id, null);
+      flash(req, res, 'ok', 'Метка «не состоялся» снята.', '/admin/tournaments');
     }),
   );
 

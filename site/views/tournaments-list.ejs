@@ -125,7 +125,7 @@
           // список дня под сеткой. Одни и те же данные кормят и то, и другое.
           const catRu = { A: 'кат. A ×2', B: 'кат. B ×1', C: 'кат. C ×0,5' };
           const fmtD = (iso) => iso ? iso.slice(8, 10).replace(/^0/, '') + '.' + iso.slice(5, 7) : '';
-          const tournamentStatusOf = (t) => (t.end_date < grid.today ? 'finished' : ((t.start_date || t.end_date) <= grid.today ? 'ongoing' : 'upcoming'));
+          const tournamentStatusOf = (t) => (t.held_status === 'not_held' ? 'not_held' : t.end_date < grid.today ? 'finished' : ((t.start_date || t.end_date) <= grid.today ? 'ongoing' : 'upcoming'));
           const barTitle = (b) => [b.name, b.from === b.to ? fmtD(b.to) : fmtD(b.from) + '–' + fmtD(b.to), b.city, catRu[b.category] || ('кат. ' + b.category), b.live ? 'идёт сейчас' : b.done ? 'завершён' : b.entryOpen ? 'приём заявок открыт' : ''].filter(Boolean).join(' · ');
         %>
         <ul class="cal__legend" aria-label="Обозначения">
@@ -220,7 +220,7 @@
                 <div class="tdrawer__meta"><%= t.city || 'Смоленская область' %> · <%= kindRu[t.kind] || 'турнир' %><%= t.format ? ' · ' + formatRu[t.format] : '' %><%= t.participants ? ' · участников: ' + t.participants : '' %></div>
                 <div class="tdrawer__tags">
                   <span class="tag tag--<%= t.status %>"><%= statusRu[t.status] %></span>
-                  <% if (t.status === 'upcoming' || filters.entry) { %><span class="tag tag--entry-<%= t.entry %>" title="Заявки до <%= t.entryDeadline ? t.entryDeadline.split('-').reverse().join('.') : '' %>"><%= entryRu[t.entry] %></span><% } %>
+                  <% if (t.status === 'upcoming' || filters.entry) { %><span class="tag tag--entry-<%= t.entry %>" title="<%= t.entry === 'soon' ? 'Приём откроется ' + t.entryOpens.split('-').reverse().join('.') : 'Заявки до ' + (t.entryDeadline ? t.entryDeadline.split('-').reverse().join('.') : '') %>"><%= t.entry === 'soon' ? 'Приём с ' + t.entryOpens.split('-').reverse().join('.') : entryRu[t.entry] %></span><% } %>
                   <% if (t.age_group) { %><span class="tag"><%= t.age_group %></span><% } %>
                   <% if (t.sex) { %><span class="tag"><%= sexRu[t.sex] %></span><% } %>
                 </div>

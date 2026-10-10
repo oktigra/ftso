@@ -44,6 +44,7 @@ import {
   ENTRY_STATUS_RU,
   entryStatus,
   entryDeadline,
+  entryOpens,
   calendarGrid,
 } from '../lib/content.mjs';
 import { uploadById, sendUpload, sendUploadInline } from '../lib/uploads.mjs';
@@ -212,13 +213,14 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
   app.get('/tournaments/:id', (req, res, next) => {
     if (!/^\d+$/.test(req.params.id)) return next();
     const tournament = db
-      .prepare('SELECT id, name, end_date, start_date, category, city, kind, format, age_group, sex, venue, organizer, organizer_contact, fee, entry_deadline FROM tournaments WHERE id = ? AND is_published = 1')
+      .prepare('SELECT id, name, end_date, start_date, category, city, kind, format, age_group, sex, venue, organizer, organizer_contact, fee, entry_deadline, held_status FROM tournaments WHERE id = ? AND is_published = 1')
       .get(Number(req.params.id));
     if (!tournament) return next(); // -> общий 404-обработчик
     res.status(200).render('tournament', {
       formatRu: TOURNAMENT_FORMAT_RU,
       entry: entryStatus(tournament),
       entryDeadline: entryDeadline(tournament),
+      entryOpens: entryOpens(tournament),
       entryRu: ENTRY_STATUS_RU,
       title: `${tournament.name} — ФТСО`,
       metaDescription: descriptionFrom(

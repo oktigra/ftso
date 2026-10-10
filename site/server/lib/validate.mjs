@@ -37,8 +37,8 @@ export const TOURNAMENT_KIND_RU = { team: 'Командная встреча', c
 // Возраст турнира: список (решение владельца 06.09.2026) + «ввод вручную» — своя подпись.
 export const TOURNAMENT_AGES = ['до 12', 'до 14', 'до 16', 'до 18', 'взрослые', '45+', '55+'];
 export const TOURNAMENT_SEX_RU = { M: 'мужчины / юноши', F: 'женщины / девушки', X: 'смешанный' };
-export const TOURNAMENT_STATUSES = ['upcoming', 'ongoing', 'finished'];
-export const TOURNAMENT_STATUS_RU = { upcoming: 'Предстоящий', ongoing: 'Идёт', finished: 'Завершён' };
+export const TOURNAMENT_STATUSES = ['upcoming', 'ongoing', 'finished', 'not_held'];
+export const TOURNAMENT_STATUS_RU = { upcoming: 'Предстоящий', ongoing: 'Идёт', finished: 'Завершён', not_held: 'Не состоялся' };
 
 export function str(value, field, { min = 1, max = 200, required = true } = {}) {
   const v = typeof value === 'string' ? value.trim() : '';

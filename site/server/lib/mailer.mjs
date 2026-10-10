@@ -132,6 +132,21 @@ export function mailApproved({ fullName, statusUrl }) {
   };
 }
 
+export function mailRefereeExpiry({ fullName, category, expires, expired }) {
+  const date = expires.split('-').reverse().join('.');
+  return {
+    subject: expired ? 'Срок документа на судейскую категорию истёк — ФТСО' : 'Заканчивается срок документа на судейскую категорию — ФТСО',
+    body:
+      `Здравствуйте, ${fullName}.\n\n` +
+      (expired
+        ? `Срок действия документа на судейскую категорию${category ? ` (${category})` : ''} истёк ${date}.\n\n`
+        : `Срок действия документа на судейскую категорию${category ? ` (${category})` : ''} заканчивается ${date}.\n\n`) +
+      'Пожалуйста, оформите документы о подтверждении категории заново и сообщите новую дату ' +
+      'секретарю Федерации — ответьте на это письмо.' +
+      SIGN,
+  };
+}
+
 export function mailTournamentSubmitted({ organizer, name, statusUrl }) {
   return {
     subject: 'Заявка на проведение турнира принята — ФТСО',
@@ -145,12 +160,54 @@ export function mailTournamentSubmitted({ organizer, name, statusUrl }) {
   };
 }
 
-export function mailTournamentApproved({ organizer, name, statusUrl }) {
+const ruDate = (iso) => (iso ? iso.split('-').reverse().join('.') : '');
+const whenOf = (t) => (t.start_date && t.start_date !== t.end_date ? `${ruDate(t.start_date)} — ${ruDate(t.end_date)}` : ruDate(t.end_date));
+
+export function mailEntryOpenStaff(t) {
+  return {
+    subject: `Открылся приём заявок: ${t.name}`,
+    body:
+      `Сегодня открылся приём заявок на турнир «${t.name}» (категория ${t.category}, ${whenOf(t)}${t.city ? ', ' + t.city : ''}).\n\n` +
+      'Организатору отправлено письмо со ссылкой на загрузку документов турнира. ' +
+      'Если ко дню начала документов не будет, турнир будет отмечен как несостоявшийся.' +
+      SIGN,
+  };
+}
+
+export function mailTournamentNotHeld({ tournament: t, organizer = null, staff = false }) {
+  return {
+    subject: `Турнир не состоялся: ${t.name}`,
+    body:
+      (staff ? '' : `Здравствуйте, ${organizer}.\n\n`) +
+      `Турнир «${t.name}» (${whenOf(t)}) отмечен на сайте Федерации как несостоявшийся: ` +
+      'ко дню начала не был загружен ни один документ турнира — приём заявок так и не был открыт.\n\n' +
+      (staff
+        ? 'Если турнир всё-таки прошёл, снимите метку в админке: «Турниры» → «Снять метку „не состоялся“».'
+        : 'Если это ошибка — ответьте на это письмо, секретарь Федерации разберётся.') +
+      SIGN,
+  };
+}
+
+export function mailTournamentDocsOpen({ organizer, name, statusUrl }) {
+  return {
+    subject: 'Открыт приём заявок — загрузите документы турнира — ФТСО',
+    body:
+      `Здравствуйте, ${organizer}.\n\n` +
+      `На турнир «${name}» открыт приём заявок. Теперь можно загрузить документы турнира — ` +
+      'положение, сетку, регламент — по ссылке на статус заявки:\n' +
+      `${statusUrl}\n` +
+      'Ссылка личная — не пересылайте её посторонним.' +
+      SIGN,
+  };
+}
+
+export function mailTournamentApproved({ organizer, name, statusUrl, docsFrom = null }) {
   return {
     subject: 'Турнир согласован — ФТСО',
     body:
       `Здравствуйте, ${organizer}.\n\n` +
       `Турнир «${name}» согласован и добавлен в календарь Федерации.\n\n` +
+      (docsFrom ? `Документы турнира (положение, сетка, регламент) можно будет загрузить по ссылке ниже с ${docsFrom.split('-').reverse().join('.')} — с началом приёма заявок; в этот день придёт напоминание.\n\n` : '') +
       'Результаты для рейтинга вносятся секретарём через административную часть — ' +
       'файлом сетки рейтинг не рассчитывается.\n\n' +
       `Статус заявки: ${statusUrl}` +

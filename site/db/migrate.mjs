@@ -347,6 +347,18 @@ export function migrate() {
   for (const c of ['age_min', 'age_max']) addColumnIfMissing(db, 'tournaments', c, 'INTEGER');
   for (const c of ['age_min', 'age_max']) addColumnIfMissing(db, 'tournament_requests', c, 'INTEGER');
   addColumnIfMissing(db, 'tournament_requests', 'start_date', 'TEXT'); // дата начала в заявке (09.10.2026); у старых заявок пусто
+  // СРОК ДОКУМЕНТА СУДЬИ (10.10.2026): срок 1/2 года, почта для напоминания, показ даты
+  // категории отдельной отметкой (сама дата хранится всегда), какой срок уже напомнили.
+  // НЕ СОСТОЯЛСЯ (10.10.2026): held_status NULL | 'not_held' | 'confirmed' (метку снял секретарь);
+  // entry_open_notified_at — письмо Федерации о дне открытия приёма уже ушло.
+  addColumnIfMissing(db, 'tournaments', 'held_status', 'TEXT');
+  addColumnIfMissing(db, 'tournaments', 'entry_open_notified_at', 'TEXT');
+  addColumnIfMissing(db, 'tournament_requests', 'docs_notice_sent_at', 'TEXT'); // письмо «открыт приём — загрузите документы» (10.10.2026)
+  addColumnIfMissing(db, 'referee_applications', 'category_valid_years', 'INTEGER');
+  addColumnIfMissing(db, 'referees', 'category_valid_years', 'INTEGER');
+  addColumnIfMissing(db, 'referees', 'category_date_public', 'INTEGER NOT NULL DEFAULT 1');
+  addColumnIfMissing(db, 'referees', 'email', 'TEXT');
+  addColumnIfMissing(db, 'referees', 'category_reminded_for', 'TEXT');
   for (const c of ['venue', 'organizer', 'organizer_contact', 'fee', 'entry_deadline']) addColumnIfMissing(db, 'tournaments', c, 'TEXT'); // ТЗ 4.3 место/организатор; взнос/дедлайн
   entryDeadlineToDate(db);
   addColumnIfMissing(db, 'tournaments', 'format', 'TEXT'); // система проведения (задача 2, 12.09.2026)

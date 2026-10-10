@@ -1,0 +1,15 @@
+<%
+/* ВЫПАДАЮЩИЙ СПИСОК С НЕСКОЛЬКИМИ ОТМЕТКАМИ (10.10.2026: роли судьи — любые из трёх).
+   Без JS это обычные галочки внутри <details>; app.js пишет выбранное в заголовок
+   и закрывает список по щелчку мимо. selected — массив или строка «a, b». */
+const sel = Array.isArray(selected) ? selected : String(selected || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+const fa = typeof form !== 'undefined' && form ? ' form="' + form + '"' : '';
+%>
+<details class="multi" data-multi data-placeholder="<%= placeholder %>">
+  <summary class="multi__summary" id="<%= id %>"><span data-multi-label><%= sel.length ? sel.join(', ') : placeholder %></span></summary>
+  <div class="multi__list" role="group" aria-labelledby="<%= id %>">
+    <% options.forEach(function (o) { %>
+      <label class="check"><input type="checkbox" name="<%= name %>" value="<%= o %>"<%- fa %><%= sel.includes(o) ? ' checked' : '' %>> <span><%= o %></span></label>
+    <% }); %>
+  </div>
+</details>

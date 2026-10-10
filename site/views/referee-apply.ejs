@@ -47,7 +47,7 @@
           <dd>Месяц и год из приказа: «03.2024». Категорию подтверждают раз в несколько лет, поэтому без даты непонятно, действует ли она сейчас. Не помните точно — напишите год.</dd>
 
           <dt>Роли на турнирах</dt>
-          <dd>Что вы обычно делаете: главный судья, заместитель главного судьи, судья на вышке, судья-инспектор, судья на линии, секретарь соревнований. Перечислите через запятую.</dd>
+          <dd>Отметьте в списке одну или несколько ролей: судья, судья-наблюдатель, главный судья.</dd>
 
           <dt>Опыт судейства</dt>
           <dd>Коротко: с какого года судите, какие соревнования — первенства области, турниры РТТ, всероссийские. Например: «с 2015, турниры РТТ до 15 лет, первенства области».</dd>
@@ -114,12 +114,30 @@
              владельца): под полем она читалась как отдельный вопрос и терялась. */
           %>
           <div class="field-allow">
-            <input id="f-<%= f.key %>" name="<%= f.key %>" maxlength="200" value="<%= values[f.key] || '' %>">
-            <label class="check check--inline" for="a-<%= f.allow %>">
-              <input type="checkbox" id="a-<%= f.allow %>" name="<%= f.allow %>" <%= values[f.allow] ? 'checked' : '' %>>
-              <span>публиковать на сайте</span>
-            </label>
+            <% if (f.type === 'date') { %>
+              <input id="f-<%= f.key %>" name="<%= f.key %>" type="date" value="<%= values[f.key] || '' %>">
+            <% } else if (f.type === 'select') { %>
+              <select id="f-<%= f.key %>" name="<%= f.key %>" aria-describedby="h-<%= f.key %>">
+                <option value="">— не указан —</option>
+                <% Object.keys(f.options).forEach(function (k) { %><option value="<%= k %>"<%= String(values[f.key] || '') === k ? ' selected' : '' %>><%= f.options[k] %></option><% }); %>
+              </select>
+            <% } else if (f.type === 'multi') { %>
+              <%- include('partials/multi-select', { id: 'f-' + f.key, name: f.key, options: f.options, selected: values[f.key], placeholder: 'выберите одну или несколько' }) %>
+            <% } else { %>
+              <input id="f-<%= f.key %>" name="<%= f.key %>" maxlength="200" value="<%= values[f.key] || '' %>">
+            <% } %>
+            <% if (f.allow) { %>
+              <label class="check check--inline" for="a-<%= f.allow %>">
+                <input type="checkbox" id="a-<%= f.allow %>" name="<%= f.allow %>" <%= values[f.allow] ? 'checked' : '' %>>
+                <span>публиковать на сайте</span>
+              </label>
+            <% } %>
           </div>
+          <% if (f.key === 'category_date') { %>
+            <p class="field-hint">Дата приказа о присвоении или подтверждении категории.</p>
+          <% } else if (f.key === 'category_valid_years') { %>
+            <p class="field-hint" id="h-<%= f.key %>">На сайте не публикуется. За месяц до окончания срока Федерация напомнит на почту, что документы пора оформить заново.</p>
+          <% } %>
         </div>
       <% }); %>
 

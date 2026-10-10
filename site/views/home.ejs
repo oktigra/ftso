@@ -102,7 +102,7 @@
         /* КАРТОЧКИ ТУРНИРОВ вместо таблицы: дата крупно, название, город, категория,
            статус; ближайшие/идущие — первыми, затем последние завершённые. */
         /* dm() — общий хелпер даты из app.locals (server/app.mjs), одна форма на все витрины. */
-        const statusRu = { upcoming: 'предстоящий', ongoing: 'идёт', finished: 'завершён' };
+        const statusRu = { upcoming: 'предстоящий', ongoing: 'идёт', finished: 'завершён', not_held: 'не состоялся' };
         %>
         <% if (!homeTournaments.length) { %>
           <div class="panel notice notice--invite">

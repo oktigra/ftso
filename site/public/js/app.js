@@ -651,6 +651,25 @@
     if (input.value) apply();
   }
 
+  // ВЫПАДАЮЩИЙ СПИСОК С ОТМЕТКАМИ (10.10.2026, роли судьи): заголовок показывает
+  // выбранное, щелчок мимо или Esc закрывает список. Без JS — обычные галочки.
+  var multis = Array.prototype.slice.call(document.querySelectorAll('[data-multi]'));
+  multis.forEach(function (d) {
+    var label = d.querySelector('[data-multi-label]');
+    var boxes = Array.prototype.slice.call(d.querySelectorAll('input[type="checkbox"]'));
+    var sync = function () {
+      var picked = boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+      label.textContent = picked.length ? picked.join(', ') : d.getAttribute('data-placeholder');
+    };
+    boxes.forEach(function (b) { b.addEventListener('change', sync); });
+    d.addEventListener('keydown', function (e) { if (e.key === 'Escape' && d.open) { d.open = false; d.querySelector('summary').focus(); } });
+  });
+  if (multis.length) {
+    document.addEventListener('click', function (e) {
+      multis.forEach(function (d) { if (d.open && !d.contains(e.target)) d.open = false; });
+    });
+  }
+
   // Слияние карточек: «Отмена» сворачивает форму (21.09.2026).
   document.querySelectorAll('[data-merge-cancel]').forEach(function (b) {
     b.addEventListener('click', function () { var d = b.closest('details'); if (d) d.removeAttribute('open'); });

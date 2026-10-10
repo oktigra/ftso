@@ -1,7 +1,7 @@
 <%
 /* СТАТУС заявки на турнир — по секретной ссылке. Показываем минимум:
-   название, статус, решение. Контакты организатора и приложенные файлы здесь
-   не выводятся: ссылка может уехать в чужие руки. */
+   название, статус, решение. Контакты организатора здесь не выводятся: ссылка
+   может уехать в чужие руки. Документы турнира — только названия, они и так публичны. */
 %>
 <%- include('partials/head') %>
 <%- include('partials/header') %>
@@ -21,6 +21,10 @@
         <p class="lead">Заявка отправлена.</p>
         <p class="muted">Ссылка на статус заявки отправлена на указанную почту.</p>
       <% } else { %>
+        <% if (notice) { %><div class="flash flash--ok" role="status"><%= notice %></div><% } %>
+        <% if (errors && errors.length) { %>
+          <div class="form-errors" role="alert"><p><strong>Документы не загружены.</strong></p><ul><% errors.forEach(function (e) { %><li><%= e %></li><% }); %></ul></div>
+        <% } %>
         <p class="lead">
           Заявка на турнир «<%= request.name %>» — <strong><%= statusText %></strong>.
         </p>
@@ -33,12 +37,53 @@
             Заявка передана секретарю Федерации. Решение придёт письмом, здесь оно тоже
             появится — сохраните эту ссылку.
           </p>
+          <p class="muted">
+            Документы турнира (положение, сетку, регламент) можно будет загрузить здесь после
+            согласования — с <%= gate.opens.split('-').reverse().join('.') %>, когда откроется приём заявок.
+          </p>
         <% } else if (request.status === 'approved') { %>
           <p class="muted">
             Турнир согласован и добавлен в календарь Федерации.
             Результаты для рейтинга вносит секретарь через административную часть —
             файлом сетки рейтинг не рассчитывается.
           </p>
+          <%
+          /* ДОКУМЕНТЫ ТУРНИРА — с открытия приёма заявок (10.10.2026). Названия файлов здесь
+             можно показать: прикреплённые документы и так видны на странице турнира. */
+          %>
+          <div class="stack docs-block" id="docs">
+            <h2>Документы турнира</h2>
+            <% if (docs.length) { %>
+              <ul class="small">
+                <% docs.forEach(function (d) { %><li><%= d.doc_title || d.original_name %></li><% }); %>
+              </ul>
+            <% } %>
+            <% if (gate.open) { %>
+              <form method="post" action="/tournament-request/status/<%= request.status_token %>/files" enctype="multipart/form-data" class="stacked-form">
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <div class="field">
+                  <label for="t-docs">Положение, сетка, регламент</label>
+                  <div class="file-drop file-drop--multi" data-file-drop data-file-max="<%= maxFiles %>">
+                    <input id="t-docs" name="docs" type="file" multiple class="file-drop__input" aria-describedby="t-doc-hint">
+                    <label class="file-drop__zone" for="t-docs">
+                      <span class="file-drop__icon" aria-hidden="true"></span>
+                      <span class="file-drop__text"><b>Добавить файл</b><span class="file-drop__or"> или перетащите сюда</span></span>
+                      <span class="file-drop__meta">до <%= maxFiles %> файлов · каждый до <%= maxFileMb %> МБ</span>
+                    </label>
+                    <ul class="file-drop__list" data-file-list hidden></ul>
+                  </div>
+                </div>
+                <p class="field-hint" id="t-doc-hint">
+                  До <%= maxFiles %> файлов за раз, каждый не больше <%= maxFileMb %> МБ. Принимаются PDF, документы
+                  Office и изображения. Тип проверяется по содержимому файла. Документы сразу появятся на странице турнира.
+                  <strong>Результаты матчей файлом не принимаются</strong> — их вносит секретарь Федерации.
+                </p>
+                <div><button class="btn btn--primary" type="submit">Загрузить документы</button></div>
+              </form>
+            <% } else { %>
+              <p class="muted"><%= gate.reason %></p>
+            <% } %>
+          </div>
         <% } else { %>
           <p class="muted">
             <% if (request.reject_reason) { %>Причина: <%= request.reject_reason %><% } else { %>Причина не указана.<% } %>

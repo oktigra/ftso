@@ -77,8 +77,10 @@
          таблице на их месте стоял прочерк, в карточке он был бы шумом.
          Спец-виды значений (профиль игрока, карта, адрес, сайт) сохранены как были. */
       const titleField = spec.fields[0];
-      const restFields = spec.fields.slice(1);
-      const filled = (row, f) => (f.player ? Boolean(row.player) : Boolean(row[f.name]));
+      // Служебные поля (срок документа, почта для напоминаний) на сайт не выходят;
+      // поле с publicFlag — только если в карточке отмечено «показывать на сайте».
+      const restFields = spec.fields.slice(1).filter((f) => !f.internal);
+      const filled = (row, f) => (f.player ? Boolean(row.player) : Boolean(row[f.name]) && (!f.publicFlag || Boolean(row[f.publicFlag])));
       %>
       <ul class="dir-cards">
         <% rows.forEach(function (row) { %>
@@ -99,6 +101,7 @@
                     <%= row[f.name] %> · <a href="https://yandex.ru/maps/?text=<%= encodeURIComponent(row[f.name]) %>" rel="nofollow noopener" target="_blank">на карте ↗</a>
                   <% } else if (f.name === 'site') { %>
                     <a href="<%= row[f.name] %>" rel="nofollow noopener"><%= row[f.name] %></a>
+                  <% } else if (f.type === 'date' && /^\d{4}-\d{2}-\d{2}$/.test(row[f.name])) { %><%= row[f.name].split('-').reverse().join('.') %>
                   <% } else { %><%= row[f.name] %><% } %>
                 </dd>
               <% }); %>

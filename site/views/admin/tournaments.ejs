@@ -131,6 +131,7 @@
                 <button class="btn btn--secondary btn--small ro" type="button" data-edit>Редактировать</button>
                 <button class="btn btn--primary btn--small ed" type="submit" form="edit-tournament-<%= t.id %>">Сохранить</button>
                 <button class="btn btn--<%= t.is_published ? 'secondary' : 'primary' %> btn--small" type="submit" form="pub-tournament-<%= t.id %>"><%= t.is_published ? 'Снять с публикации' : 'Опубликовать' %></button>
+                <% if (t.held_status === 'not_held') { %><span class="tag tag--not_held" title="Ко дню начала не было документов">не состоялся</span><button class="btn btn--secondary btn--small" type="submit" form="held-tournament-<%= t.id %>">Снять метку «не состоялся»</button><% } %>
                 <button class="btn btn--danger btn--small" type="submit" form="del-tournament-<%= t.id %>" data-confirm="Удалить турнир «<%= t.name %>» со всеми результатами, матчами и сетками?">Удалить</button>
               </td>
             </tr>
@@ -146,6 +147,11 @@
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
         <input type="hidden" name="value" value="<%= t.is_published ? '0' : '1' %>">
       </form>
+      <% if (t.held_status === 'not_held') { %>
+        <form id="held-tournament-<%= t.id %>" method="post" action="/admin/tournaments/<%= t.id %>/held" hidden>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        </form>
+      <% } %>
       <form id="del-tournament-<%= t.id %>" method="post" action="/admin/tournaments/<%= t.id %>/delete" hidden>
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       </form>
