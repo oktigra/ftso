@@ -103,7 +103,7 @@
 
         <div class="field">
           <label for="t-phone">Телефон</label>
-          <input id="t-phone" name="phone" maxlength="40" value="<%= values.phone || '' %>">
+          <input id="t-phone" name="phone" type="tel" autocomplete="tel" maxlength="40" value="<%= values.phone || '' %>">
           <p class="field-hint">Необязательно — только если удобнее по телефону.</p>
         </div>
 

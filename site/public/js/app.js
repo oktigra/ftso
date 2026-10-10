@@ -670,6 +670,68 @@
     });
   }
 
+  // ВВОД НЕ ПРОПАДАЕТ ПРИ ОШИБКЕ (аудит 09.10.2026). Админка (~80 форм) на ошибке
+  // валидации делает редирект с сообщением — и форма возвращалась пустой: секретарь
+  // терял текст новости из-за одной кривой даты. Одно правило на все формы: при
+  // отправке введённое кладётся в sessionStorage вкладки (ключ — адрес формы); если
+  // вернулась страница с ошибкой, значения подставляются обратно, при успехе —
+  // стираются. Пароли, файлы, скрытые поля и CSRF не запоминаются никогда.
+  var KEEP_PREFIX = 'ftso-keep:';
+  var KEEP_TTL = 15 * 60 * 1000;
+  var keepKey = function (form) {
+    try { return KEEP_PREFIX + new URL(form.getAttribute('action') || location.pathname, location.href).pathname; } catch (e) { return null; }
+  };
+  var keepable = function (el) {
+    if (!el.name || el.disabled) return false;
+    var t = (el.type || '').toLowerCase();
+    return ['password', 'file', 'hidden', 'submit', 'button', 'reset', 'image'].indexOf(t) === -1 && el.name !== '_csrf';
+  };
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (!form || (form.method || '').toLowerCase() !== 'post' || form.hasAttribute('data-no-keep')) return;
+    var key = keepKey(form); if (!key) return;
+    var fields = [];
+    Array.prototype.forEach.call(form.elements, function (el) {
+      if (!keepable(el)) return;
+      var t = (el.type || '').toLowerCase();
+      if (t === 'checkbox' || t === 'radio') fields.push([el.name, el.value, el.checked ? 1 : 0]);
+      else if (el.multiple && el.options) fields.push([el.name, Array.prototype.filter.call(el.options, function (o) { return o.selected; }).map(function (o) { return o.value; })]);
+      else fields.push([el.name, el.value]);
+    });
+    if (!fields.length) return;
+    try { sessionStorage.setItem(key, JSON.stringify({ at: Date.now(), fields: fields })); } catch (err) { /* приватный режим — просто не помним */ }
+  }, true);
+  (function restoreKept() {
+    var hasError = document.querySelector('.flash--error, .form-errors, .notice--error');
+    var forms = Array.prototype.slice.call(document.querySelectorAll('form[method="post"], form[method="POST"]'));
+    forms.forEach(function (form) {
+      var key = keepKey(form); if (!key) return;
+      var saved = null;
+      try { saved = JSON.parse(sessionStorage.getItem(key) || 'null'); } catch (err) { saved = null; }
+      if (!saved) return;
+      if (!hasError || Date.now() - saved.at > KEEP_TTL) { try { sessionStorage.removeItem(key); } catch (err) { /* нет хранилища */ } return; }
+      var touched = [];
+      saved.fields.forEach(function (f) {
+        Array.prototype.forEach.call(form.elements, function (el) {
+          if (el.name !== f[0] || !keepable(el)) return;
+          var t = (el.type || '').toLowerCase();
+          if (t === 'checkbox' || t === 'radio') { if (el.value === f[1]) { el.checked = Boolean(f[2]); touched.push(el); } }
+          else if (el.multiple && el.options && Array.isArray(f[1])) { Array.prototype.forEach.call(el.options, function (o) { o.selected = f[1].indexOf(o.value) !== -1; }); touched.push(el); }
+          else if (!Array.isArray(f[1])) { el.value = f[1]; touched.push(el); }
+        });
+      });
+      touched.forEach(function (el) { el.dispatchEvent(new Event('change', { bubbles: true })); });
+      // Строка таблицы в режиме просмотра: восстановленные значения лежат в скрытых
+      // полях правки — открываем строку, чтобы человек их увидел.
+      touched.forEach(function (el) {
+        var tr = el.closest && el.closest('tr[data-editable]');
+        var btn = tr && tr.classList.contains('t-row--ro') ? tr.querySelector('[data-edit]') : null;
+        if (btn) btn.click();
+      });
+      try { sessionStorage.removeItem(key); } catch (err) { /* нет хранилища */ }
+    });
+  })();
+
   // Слияние карточек: «Отмена» сворачивает форму (21.09.2026).
   document.querySelectorAll('[data-merge-cancel]').forEach(function (b) {
     b.addEventListener('click', function () { var d = b.closest('details'); if (d) d.removeAttribute('open'); });

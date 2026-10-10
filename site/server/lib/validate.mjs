@@ -291,6 +291,10 @@ export function tournamentRequestInput(body) {
   const start_date = isoDate(body.start_date, 'Дата начала');
   const end_date = isoDate(body.end_date, 'Дата завершения');
   if (start_date > end_date) throw new ValidationError('Дата начала позже даты завершения');
+  // Заявка — на будущий турнир (аудит 09.10.2026): прошедший или через десятилетия — опечатка.
+  const today = new Date().toISOString().slice(0, 10);
+  if (start_date < today) throw new ValidationError('Дата начала уже прошла — заявка подаётся на предстоящий турнир');
+  if (end_date > `${Number(today.slice(0, 4)) + 2}${today.slice(4)}`) throw new ValidationError('Дата завершения дальше чем через два года — проверьте год');
   return {
     age_min: ageLimit.min,
     age_max: ageLimit.max,

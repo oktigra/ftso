@@ -20,7 +20,7 @@
     <form method="post" action="/admin/partners" class="inline-form" enctype="multipart/form-data">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="field"><label for="p-name">Название</label><input id="p-name" name="name" maxlength="120" required></div>
-      <div class="field"><label for="p-url">Ссылка на сайт</label><input id="p-url" name="url" maxlength="300" placeholder="https://"></div>
+      <div class="field"><label for="p-url">Ссылка на сайт</label><input id="p-url" name="url" type="url" maxlength="300" placeholder="https://"></div>
       <div class="field"><label for="p-sort">Сортировка</label><input id="p-sort" name="sort" inputmode="numeric" maxlength="4" value="100"></div>
       <div class="field"><label for="p-logo">Логотип</label><input id="p-logo" type="file" name="logo" accept="image/*"></div>
       <button class="btn btn--primary btn--small" type="submit">Добавить</button>

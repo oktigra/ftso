@@ -190,7 +190,7 @@
               <% history.results.forEach(function (r) { %>
                 <tr>
                   <td><%= r.name %></td>
-                  <td><%= r.end_date %></td>
+                  <td><%= ruDate(r.end_date) %></td>
                   <td><span class="badge badge--<%= r.category.toLowerCase() %>"><%= r.category %></span></td>
                   <td><%= r.place %></td>
                 </tr>
@@ -213,7 +213,7 @@
               <% history.matches.forEach(function (m) { %>
                 <tr>
                   <td><%= m.tournament %></td>
-                  <td><%= m.end_date %></td>
+                  <td><%= ruDate(m.end_date) %></td>
                   <%
                   /* Соперник, удалившийся по ст. 21, показывается обезличенно и
                      здесь: его матч остаётся, имя — нет. */
