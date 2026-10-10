@@ -160,12 +160,26 @@ export function mailTournamentSubmitted({ organizer, name, statusUrl }) {
   };
 }
 
-export function mailTournamentApproved({ organizer, name, statusUrl }) {
+export function mailTournamentDocsOpen({ organizer, name, statusUrl }) {
+  return {
+    subject: 'Открыт приём заявок — загрузите документы турнира — ФТСО',
+    body:
+      `Здравствуйте, ${organizer}.\n\n` +
+      `На турнир «${name}» открыт приём заявок. Теперь можно загрузить документы турнира — ` +
+      'положение, сетку, регламент — по ссылке на статус заявки:\n' +
+      `${statusUrl}\n` +
+      'Ссылка личная — не пересылайте её посторонним.' +
+      SIGN,
+  };
+}
+
+export function mailTournamentApproved({ organizer, name, statusUrl, docsFrom = null }) {
   return {
     subject: 'Турнир согласован — ФТСО',
     body:
       `Здравствуйте, ${organizer}.\n\n` +
       `Турнир «${name}» согласован и добавлен в календарь Федерации.\n\n` +
+      (docsFrom ? `Документы турнира (положение, сетка, регламент) можно будет загрузить по ссылке ниже с ${docsFrom.split('-').reverse().join('.')} — с началом приёма заявок; в этот день придёт напоминание.\n\n` : '') +
       'Результаты для рейтинга вносятся секретарём через административную часть — ' +
       'файлом сетки рейтинг не рассчитывается.\n\n' +
       `Статус заявки: ${statusUrl}` +

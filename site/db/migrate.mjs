@@ -349,6 +349,7 @@ export function migrate() {
   addColumnIfMissing(db, 'tournament_requests', 'start_date', 'TEXT'); // дата начала в заявке (09.10.2026); у старых заявок пусто
   // СРОК ДОКУМЕНТА СУДЬИ (10.10.2026): срок 1/2 года, почта для напоминания, показ даты
   // категории отдельной отметкой (сама дата хранится всегда), какой срок уже напомнили.
+  addColumnIfMissing(db, 'tournament_requests', 'docs_notice_sent_at', 'TEXT'); // письмо «открыт приём — загрузите документы» (10.10.2026)
   addColumnIfMissing(db, 'referee_applications', 'category_valid_years', 'INTEGER');
   addColumnIfMissing(db, 'referees', 'category_valid_years', 'INTEGER');
   addColumnIfMissing(db, 'referees', 'category_date_public', 'INTEGER NOT NULL DEFAULT 1');

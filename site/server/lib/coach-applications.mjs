@@ -38,7 +38,7 @@ export const OPTIONAL_FIELDS = [
 // (1 или 2 года, выбирает судья). Дату храним ВСЕГДА (alwaysStore): по ней сайт
 // напоминает об окончании срока, а «публиковать» решает только показ на сайте.
 // Срок документа — служебный (без allow): не публикуется никогда.
-export const REFEREE_ROLES = ['судья', 'судья на вышке', 'главный судья'];
+export const REFEREE_ROLES = ['судья', 'судья-наблюдатель', 'главный судья'];
 export const REFEREE_VALID_YEARS = { 1: '1 год', 2: '2 года' };
 
 export const REFEREE_FIELDS = [

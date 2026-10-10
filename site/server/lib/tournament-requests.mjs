@@ -11,6 +11,8 @@ import { randomBytes } from 'node:crypto';
 import { storeUpload, deleteUpload } from './uploads.mjs';
 import { ageRangeLabel } from './age.mjs';
 import { recordConsent } from './consent-journal.mjs';
+import { entryOpens } from './content.mjs';
+import { queueMail, mailTournamentDocsOpen } from './mailer.mjs';
 
 export function byToken(db, token) {
   return db.prepare('SELECT * FROM tournament_requests WHERE status_token = ?').get(String(token || ''));
@@ -154,3 +156,47 @@ export function purgeRequests(db, retentionDays, dir) {
 }
 
 export { storeUpload };
+
+// --- документы турнира от организатора ---------------------------------------
+//
+// ДОКУМЕНТЫ — С ОТКРЫТИЯ ПРИЁМА ЗАЯВОК (10.10.2026, правило владельца). В форме
+// заявки файлов больше нет: положение, сетку и регламент организатор загружает
+// по ссылке на статус заявки — после согласования турнира и не раньше открытия
+// приёма (категория A — за месяц до начала, B и C — за две недели, entryOpens).
+// В день открытия организатору приходит письмо со ссылкой (runDocsOpenNotices).
+
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const ru = (iso) => iso.split('-').reverse().join('.');
+
+/** Можно ли загружать документы по заявке: { open, opens, reason, tournament }. */
+export function docsGate(db, request, now = todayIso()) {
+  const opens = entryOpens(request);
+  if (request.status !== 'approved' || !request.tournament_id) {
+    return { open: false, opens, reason: `Документы загружаются после согласования турнира — с ${ru(opens)} (начало приёма заявок).` };
+  }
+  const t = db.prepare('SELECT id, name, category, start_date, end_date, is_published FROM tournaments WHERE id = ?').get(request.tournament_id);
+  if (!t) return { open: false, opens, reason: 'Турнир не найден в календаре — напишите секретарю Федерации.' };
+  const tOpens = entryOpens(t);
+  if (now < tOpens) return { open: false, opens: tOpens, tournament: t, reason: `Загрузка документов откроется ${ru(tOpens)} — с началом приёма заявок.` };
+  if (t.end_date < now) return { open: false, opens: tOpens, tournament: t, reason: 'Турнир завершён — документы больше не принимаются.' };
+  return { open: true, opens: tOpens, tournament: t, reason: '' };
+}
+
+export function runDocsOpenNotices(db, { baseUrl, now = todayIso() } = {}) {
+  const rows = db
+    .prepare(`SELECT r.id, r.name, r.organizer, r.email, r.status_token, t.category, t.start_date, t.end_date
+                FROM tournament_requests r JOIN tournaments t ON t.id = r.tournament_id
+               WHERE r.status = 'approved' AND r.docs_notice_sent_at IS NULL AND t.is_published = 1`)
+    .all();
+  let sent = 0;
+  for (const r of rows) {
+    const start = r.start_date || r.end_date;
+    if (now < entryOpens(r) || now >= start) continue;
+    db.transaction(() => {
+      queueMail(db, { to: r.email, kind: 'tournament.docs.open', ...mailTournamentDocsOpen({ organizer: r.organizer, name: r.name, statusUrl: `${String(baseUrl || '').replace(/\/$/, '')}/tournament-request/status/${r.status_token}` }) });
+      db.prepare("UPDATE tournament_requests SET docs_notice_sent_at = datetime('now') WHERE id = ?").run(r.id);
+    })();
+    sent += 1;
+  }
+  return sent;
+}

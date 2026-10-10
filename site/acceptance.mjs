@@ -3126,7 +3126,7 @@ await check('анкета судьи: поля по требованиям к с
   // 10.10.2026: дата — календарь, срок документа 1/2 года (служебный), роли — выбор из трёх.
   assert(/name="category_date" type="date"/.test(page.text), 'дата категории должна быть календарём');
   assert(/<select id="f-category_valid_years" name="category_valid_years"/.test(page.text) && !page.text.includes('name="allow_category_valid_years"'), 'срок документа — список без отметки «публиковать»');
-  for (const role of ['судья', 'судья на вышке', 'главный судья']) {
+  for (const role of ['судья', 'судья-наблюдатель', 'главный судья']) {
     assert(page.text.includes(`name="roles" value="${role}"`), `в списке ролей нет «${role}»`);
   }
   const jarPub = new Jar();
@@ -3136,7 +3136,7 @@ await check('анкета судьи: поля по требованиям к с
     ['city', 'Смоленск'], ['allow_city', 'on'],
     ['category', '1К, белый значок ITF'], ['allow_category', 'on'],
     ['category_valid_years', '2'],
-    ['roles', 'главный судья'], ['roles', 'судья на вышке'], ['allow_roles', 'on'],
+    ['roles', 'главный судья'], ['roles', 'судья-наблюдатель'], ['allow_roles', 'on'],
     ['contact', '+7 900 555-44-33'],
     ['consent_10_1', 'on'],
   ];
@@ -3145,7 +3145,7 @@ await check('анкета судьи: поля по требованиям к с
   eq(badDate.status, 400, 'дата текстом должна отбиваться');
   assert(/ожидался формат/.test(badDate.text) && badDate.text.includes('value="1К, белый значок ITF"'), 'нет причины или ввод потерян');
   assert(/name="roles" value="главный судья" checked/.test(badDate.text), 'отмеченные роли не вернулись в форму');
-  const badRole = await http('/referees/apply', { method: 'POST', jar: jarPub, form: [...base, ['category_date', '2024-03-15'], ['roles', 'судья-наблюдатель']] });
+  const badRole = await http('/referees/apply', { method: 'POST', jar: jarPub, form: [...base, ['category_date', '2024-03-15'], ['roles', 'судья на линии']] });
   eq(badRole.status, 400, 'роль не из списка должна отбиваться');
   // Дата без отметки «публиковать» всё равно хранится: по ней напоминание о сроке.
   const sent = await http('/referees/apply', { method: 'POST', jar: jarPub, form: [...base, ['category_date', '2024-03-15']] });
@@ -3155,7 +3155,7 @@ await check('анкета судьи: поля по требованиям к с
   eq(row.category, '1К, белый значок ITF', 'категория должна сохраниться');
   eq(row.contact, null, 'неотмеченный контакт не должен сохраняться');
   eq([row.category_date, row.allow_category_date, row.category_valid_years].join('|'), '2024-03-15|0|2', 'дата хранится без отметки, срок — 2 года');
-  eq(row.roles, 'судья на вышке, главный судья', 'роли — в порядке списка');
+  eq(row.roles, 'судья-наблюдатель, главный судья', 'роли — в порядке списка');
 
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const adminPage = await http('/admin/referee-applications', { jar });
@@ -3173,7 +3173,7 @@ await check('анкета судьи: поля по требованиям к с
   assert(/Судейкин Тест Тестович/.test(pub.text), 'судьи нет на витрине');
   assert(!/900 555-44-33/.test(pub.text), 'неотмеченный контакт попал на витрину');
   assert(!/15\.03\.2024|2024-03-15/.test(pub.text) && !pub.text.includes('sud@example.com') && !/Срок документа/.test(pub.text), 'дата без отметки, почта или срок попали на витрину');
-  assert(pub.text.includes('судья на вышке, главный судья'), 'роли не видны на витрине');
+  assert(pub.text.includes('судья-наблюдатель, главный судья'), 'роли не видны на витрине');
 
   db.prepare('DELETE FROM referees WHERE id = ?').run(ref.id);
   db.prepare('DELETE FROM referee_applications').run();
@@ -3928,6 +3928,27 @@ async function submitTournament(fields, files = [], jar = new Jar()) {
   return { res, jar, _csrf };
 }
 
+// ДОКУМЕНТЫ ТУРНИРА (10.10.2026) грузятся не в заявке, а по ссылке на статус после
+// согласования и с открытия приёма. Фикстура: согласованная заявка с турниром.
+function docsRequest(name, { category = 'B', startIn = 5, status = 'approved' } = {}) {
+  const day = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+  const tid = status === 'approved'
+    ? Number(db.prepare("INSERT INTO tournaments (name, start_date, end_date, category, city, kind, is_published) VALUES (?, ?, ?, ?, 'Смоленск', 'other', 1)").run(name, day(startIn), day(startIn + 1), category).lastInsertRowid)
+    : null;
+  const token = crypto.randomUUID().replace(/-/g, '');
+  db.prepare("INSERT INTO tournament_requests (name, city, start_date, end_date, category, organizer, email, status, status_token, tournament_id) VALUES (?, 'Смоленск', ?, ?, ?, 'Иван Организаторов', 'org@example.com', ?, ?, ?)")
+    .run(name, day(startIn), day(startIn + 1), category, status, token, tid);
+  return { token, tid };
+}
+
+async function uploadDocs(token, files, jar = new Jar()) {
+  db.prepare("DELETE FROM write_attempts WHERE key LIKE 't:%'").run();
+  const _csrf = tokenFrom((await http('/tournament-request', { jar })).text);
+  return http(`/tournament-request/status/${token}/files`, { method: 'POST', multipart: { fields: { _csrf }, files }, jar });
+}
+
+const docsOf = (tid) => db.prepare('SELECT u.*, f.title FROM tournament_files f JOIN uploads u ON u.id = f.upload_id WHERE f.tournament_id = ? ORDER BY f.id').all(tid);
+
 const BASE_FIELDS = {
   name: 'Кубок приёмки', city: 'Смоленск', start_date: '2026-08-30', end_date: '2026-09-01', category: 'A',
   organizer: 'Иван Организаторов', email: 'org@example.com', consent_processing: '1',
@@ -3945,18 +3966,15 @@ await check('multipart без CSRF-токена отвергается', async (
 });
 
 await check('exe под именем .pdf отбит, файл на диске не остался', async () => {
+  const { token, tid } = docsRequest('Кубок exe');
   const before = db.prepare('SELECT COUNT(*) AS n FROM uploads').get().n;
-  const { res } = await submitTournament(BASE_FIELDS, [
-    { field: 'doc_polozhenie', filename: 'polozhenie.pdf', type: 'application/pdf', buffer: EXE },
-  ]);
-  eq(res.status, 400, 'заявка с исполняемым файлом должна отклоняться');
+  const res = await uploadDocs(token, [{ field: 'docs', filename: 'polozhenie.pdf', type: 'application/pdf', buffer: EXE }]);
+  eq(res.status, 400, 'исполняемый файл должен отклоняться');
   assert(/Исполняемые файлы/.test(res.text), 'причина отказа не названа');
-  assert(res.text.includes('value="Кубок приёмки"'), 'черновик текстовых полей потерян');
   eq(db.prepare('SELECT COUNT(*) AS n FROM uploads').get().n, before,
     'после отказа осталась запись загрузки — файл осиротел');
-  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE name = 'Кубок приёмки'").get().n, 0,
-    'заявка с отклонённым файлом записана');
-  return 'HTTP 400 с причиной, текстовые поля сохранены, осиротевших файлов нет';
+  eq(docsOf(tid).length, 0, 'отклонённый файл прикреплён к турниру');
+  return 'HTTP 400 с причиной, осиротевших файлов нет, к турниру ничего не прикреплено';
 });
 
 await check('даты заявки: два календаря, начало не позже конца', async () => {
@@ -3975,21 +3993,22 @@ await check('даты заявки: два календаря, начало не
   return 'оба поля type="date", начало перед концом; начало позже конца и пустое начало -> 400, ввод сохранён';
 });
 
-await check('заявка с документом уходит на модерацию, а не в календарь', async () => {
+await check('заявка уходит на модерацию, а не в календарь; документы в заявке не принимаются', async () => {
+  const form = (await http('/tournament-request')).text;
+  assert(!/type="file"/.test(form), 'в форме заявки не должно быть загрузки файлов');
+  assert(/сейчас прикладывать не нужно/.test(form) && /за месяц до начала/.test(form) && /за две недели/.test(form), 'нет пометки, когда грузить документы');
+  const withFile = await submitTournament({ ...BASE_FIELDS, name: 'Кубок с файлом' }, [{ field: 'docs', filename: 'polozhenie.pdf', type: 'application/pdf', buffer: PDF }]);
+  eq(withFile.res.status, 400, 'файл в заявке должен отбиваться');
+  assert(/после согласования/.test(withFile.res.text), 'причина отказа не названа');
   const tournamentsBefore = db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n;
   const { res } = await submitTournament(
     { ...BASE_FIELDS, name: 'Кубок Смоленска (приёмка)', phone: '8-900-000-00-00', comment: 'корты «Днепр»' },
-    [{ field: 'doc_polozhenie', filename: 'polozhenie.pdf', type: 'application/pdf', buffer: PDF }],
   );
   eq(res.status, 302, 'подача заявки');
   const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок Смоленска (приёмка)'").get();
   eq(r.status, 'pending', 'заявка должна ждать модерации');
   eq(db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n, tournamentsBefore,
     'форма НЕ должна создавать турнир до модерации');
-  const files = treq.requestFiles(db, r.id);
-  eq(files.length, 1, 'документ не привязан к заявке');
-  eq(files[0].profile, 'tournament-doc', 'профиль загрузки');
-  assert(existsSync(resolve(UPLOAD_DIR, files[0].stored_name)), 'файла нет на диске');
   // Контакты организатора — ПДн, у обработки должно быть основание в журнале.
   const consent = db
     .prepare("SELECT kind, event, source FROM consents WHERE subject_ref LIKE '%заявка на турнир%' ORDER BY id DESC LIMIT 1")
@@ -4001,7 +4020,53 @@ await check('заявка с документом уходит на модера
   const status = await http(`/tournament-request/status/${r.status_token}`);
   eq(status.status, 200, 'страница статуса по токену');
   assert(status.text.includes('на рассмотрении'), 'статус не показан');
-  return 'заявка pending, документ привязан и лежит на диске, согласие организатора в журнале, письмо в очереди';
+  assert(/можно будет загрузить здесь после\s+согласования/.test(status.text) && !/type="file"/.test(status.text), 'до согласования загрузки нет, есть пометка');
+  return 'без файлов — pending; с файлом — 400 с причиной; согласие организатора в журнале, письмо в очереди';
+});
+
+await check('документы турнира: по ссылке статуса, только после согласования и с открытия приёма; сразу на странице турнира', async () => {
+  const pdf = (n) => ({ field: 'docs', filename: n, type: 'application/pdf', buffer: PDF });
+  const pending = docsRequest('Кубок ждущий', { status: 'pending' });
+  const p = await uploadDocs(pending.token, [pdf('a.pdf')]);
+  eq(p.status, 400, 'до согласования загрузка закрыта');
+  assert(/после согласования/.test(p.text), 'причина: после согласования');
+  const early = docsRequest('Кубок ранний', { category: 'A', startIn: 40 });
+  const page = (await http(`/tournament-request/status/${early.token}`)).text;
+  assert(/Загрузка документов откроется \d{2}\.\d{2}\.\d{4}/.test(page) && !/type="file"/.test(page), 'A за 40 дней: дата открытия, формы нет');
+  eq((await uploadDocs(early.token, [pdf('a.pdf')])).status, 400, 'A за 40 дней — рано');
+  const done = docsRequest('Кубок прошедший', { startIn: -10 });
+  const d = await uploadDocs(done.token, [pdf('a.pdf')]);
+  assert(d.status === 400 && /завершён/.test(d.text), 'завершённый турнир документы не принимает');
+  const open = docsRequest('Кубок открытый', { category: 'B', startIn: 5 });
+  assert(/id="t-docs"/.test((await http(`/tournament-request/status/${open.token}`)).text), 'B за 5 дней: форма загрузки есть');
+  const mailsBefore = db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE kind = 'tournament.docs.uploaded'").get().n;
+  const jar = new Jar();
+  const ok = await uploadDocs(open.token, [pdf('polozhenie.pdf'), pdf('setka.pdf')], jar);
+  eq(ok.status, 303, 'загрузка принята');
+  eq(docsOf(open.tid).map((f) => f.title).join(','), 'polozhenie.pdf,setka.pdf', 'документы прикреплены к турниру');
+  assert(/Загружено документов: 2/.test((await http(`/tournament-request/status/${open.token}`, { jar })).text), 'нет сообщения о загрузке');
+  assert((await http(`/tournaments/${open.tid}`)).text.includes('polozhenie.pdf'), 'документа нет на странице турнира');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE kind = 'tournament.docs.uploaded'").get().n, mailsBefore + 1, 'секретарю не ушло письмо');
+  db.prepare(`DELETE FROM tournament_requests WHERE status_token IN (?, ?, ?, ?)`).run(pending.token, early.token, done.token, open.token);
+  return 'до согласования и до открытия приёма — 400 с причиной и датой; завершённый — 400; открытый — файлы у турнира и на витрине, письмо секретарю';
+});
+
+await check('письмо организатору в день открытия приёма: «загрузите документы», один раз', async () => {
+  const soon = docsRequest('Кубок письма-рано', { category: 'A', startIn: 40 });
+  const now = docsRequest('Кубок письма-сейчас', { category: 'B', startIn: 10 });
+  const n = () => db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE kind = 'tournament.docs.open'").get().n;
+  const about = (token) => db.prepare("SELECT body FROM mail_outbox WHERE kind = 'tournament.docs.open' AND body LIKE ?").all(`%${token}%`);
+  treq.runDocsOpenNotices(db, { baseUrl: 'https://ftso67.ru' });
+  eq(`${about(now.token).length}:${about(soon.token).length}`, '1:0', 'письмо только тому, у кого приём уже открыт');
+  const body = about(now.token)[0].body;
+  assert(body.includes(`https://ftso67.ru/tournament-request/status/${now.token}`) && /Кубок письма-сейчас/.test(body), 'в письме нет ссылки или названия');
+  const total = n();
+  treq.runDocsOpenNotices(db, { baseUrl: 'https://ftso67.ru' });
+  eq(n(), total, 'повторного письма быть не должно');
+  eq(about(now.token).length, 1, 'повторного письма быть не должно');
+  db.prepare('DELETE FROM tournament_requests WHERE status_token IN (?, ?)').run(soon.token, now.token);
+  db.prepare('DELETE FROM tournaments WHERE id IN (?, ?)').run(soon.tid, now.tid);
+  return 'приём открыт — одно письмо со ссылкой на загрузку; ещё не открыт — ничего; повтор не шлётся';
 });
 
 await check('изображение пересобирается: ресайз и снятый EXIF', async () => {
@@ -4013,13 +4078,10 @@ await check('изображение пересобирается: ресайз �
   const metaIn = await sharpLib(photo).metadata();
   assert(metaIn.exif, 'исходный файл должен содержать EXIF, иначе проверка бессмысленна');
 
-  const { res } = await submitTournament(
-    { ...BASE_FIELDS, name: 'Кубок с фотографией', email: 'photo@example.com' },
-    [{ field: 'doc_setka', filename: 'setka.jpg', type: 'image/jpeg', buffer: photo }],
-  );
-  eq(res.status, 302, 'подача заявки с изображением');
-  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок с фотографией'").get();
-  const [file] = treq.requestFiles(db, r.id);
+  const { token, tid } = docsRequest('Кубок с фотографией');
+  const res = await uploadDocs(token, [{ field: 'docs', filename: 'setka.jpg', type: 'image/jpeg', buffer: photo }]);
+  eq(res.status, 303, 'загрузка изображения');
+  const [file] = docsOf(tid);
   const stored = readFileSync(resolve(UPLOAD_DIR, file.stored_name));
   const metaOut = await sharpLib(stored).metadata();
   assert(!metaOut.exif, 'EXIF остался в сохранённом файле — утекли бы геолокация и модель камеры');
@@ -4032,17 +4094,16 @@ await check('число файлов ограничено', async () => {
   const files = Array.from({ length: 5 }, (_, i) => ({
     field: `doc_${i}`, filename: `doc${i}.pdf`, type: 'application/pdf', buffer: PDF,
   }));
-  const { res } = await submitTournament({ ...BASE_FIELDS, name: 'Кубок с пачкой файлов' }, files);
+  const { token, tid } = docsRequest('Кубок с пачкой файлов');
+  const res = await uploadDocs(token, files);
   eq(res.status, 400, `перебор файлов должен давать 400 (а не 429 от лимитера), получено ${res.status}`);
   assert(/Слишком много файлов/.test(res.text), 'отказ не по числу файлов — проверка ловит не то');
-  eq(db.prepare("SELECT COUNT(*) AS n FROM tournament_requests WHERE name = 'Кубок с пачкой файлов'").get().n, 0,
-    'заявка с перебором файлов записана');
-  return `5 файлов при лимите ${config.tournamentRequest.maxFiles} -> 400 «Слишком много файлов», заявки нет`;
+  eq(docsOf(tid).length, 0, 'при переборе что-то прикрепилось');
+  return `5 файлов при лимите ${config.tournamentRequest.maxFiles} за раз -> 400 «Слишком много файлов», ничего не прикреплено`;
 });
 
 await check('документ отдаётся только за логином и только как attachment', async () => {
-  const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок Смоленска (приёмка)'").get();
-  const [file] = treq.requestFiles(db, r.id);
+  const file = db.prepare("SELECT u.* FROM tournament_files f JOIN uploads u ON u.id = f.upload_id WHERE f.title = 'polozhenie.pdf' ORDER BY f.id DESC LIMIT 1").get();
 
   const anon = await http(`/admin/files/${file.id}`);
   assert(anon.status === 302 || anon.status === 403, `аноним получил файл (HTTP ${anon.status})`);
@@ -4064,7 +4125,6 @@ await check('согласование создаёт турнир, отказ о
   const page = await http('/admin/tournament-requests', { jar });
   const _csrf = tokenFrom(page.text);
   assert(page.text.includes('Кубок Смоленска (приёмка)'), 'заявки нет в списке модерации');
-  assert(page.text.includes('polozhenie.pdf'), 'документ не показан модератору');
 
   const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок Смоленска (приёмка)'").get();
   const before = db.prepare('SELECT COUNT(*) AS n FROM tournaments').get().n;
@@ -4089,6 +4149,7 @@ await check('согласование создаёт турнир, отказ о
     db.prepare("SELECT COUNT(*) AS n FROM mail_outbox WHERE to_email = ? AND kind = 'tournament.approved'").get(r.email).n === 1,
     'письмо о согласовании не поставлено в очередь',
   );
+  assert(/можно будет загрузить по ссылке ниже с \d{2}\.\d{2}\.\d{4}/.test(db.prepare("SELECT body FROM mail_outbox WHERE to_email = ? AND kind = 'tournament.approved'").get(r.email).body), 'в письме о согласовании нет даты, с которой грузить документы');
 
   const bad = await submitTournament({ ...BASE_FIELDS, name: 'Кубок отказной', email: 'otkaz-org@example.com' });
   eq(bad.res.status, 302, 'подача заявки для отказа');
@@ -4277,6 +4338,9 @@ await check('зона файлов: накопление до трёх, кноп
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await page.goto(`${inst.base}/tournament-request`, { waitUntil: 'networkidle' });
     assert(!/Редакция от/.test(await page.evaluate(() => document.body.innerText)), 'на форме заявки не должно быть «Редакция от»');
+    // Зона файлов живёт теперь на странице статуса согласованной заявки (10.10.2026).
+    const zoneReq = docsRequest('Кубок зоны файлов');
+    await page.goto(`${inst.base}/tournament-request/status/${zoneReq.token}`, { waitUntil: 'networkidle' });
     const zone = page.locator('.file-drop__zone').first();
     eq(await zone.count(), 1, 'зона файла есть');
     assert(await page.locator('.file-drop--multi #t-docs[multiple]').count() === 1, 'документы — одна накопительная зона с multiple');
@@ -4302,7 +4366,7 @@ await check('зона файлов: накопление до трёх, кноп
     eq(await page.locator('#t-docs').evaluate((i) => i.closest('.file-drop').querySelector('.file-drop__text b').textContent), 'Добавить ещё файл', 'после удаления зона снова зовёт добавить');
     await page.close();
     const mob = await browser.newPage({ viewport: { width: 390, height: 844 } });
-    await mob.goto(`${inst.base}/tournament-request`, { waitUntil: 'networkidle' });
+    await mob.goto(`${inst.base}/tournament-request/status/${zoneReq.token}`, { waitUntil: 'networkidle' });
     assert(!/перетащите/.test(await mob.locator('.file-drop__zone').first().innerText()), 'на телефоне слов о перетаскивании нет');
     await mob.close();
     // Админка: обёртка строится скриптом вокруг любого поля файла; в таблицах — компактная; multiple принимает пачку.
@@ -4317,15 +4381,14 @@ await check('зона файлов: накопление до трёх, кноп
     eq(await adm.locator('#doc-file').evaluate((i) => i.files.length), 1, 'одиночное поле берёт только первый файл из пачки');
     await adm.close();
     // Сквозняк: три файла под одним именем поля docs доезжают до заявки.
-    const { res: sent } = await submitTournament({ ...BASE_FIELDS, name: 'Кубок трёх файлов', email: 'org3@example.com' }, [1, 2, 3].map((i) => ({ field: 'docs', filename: `doc${i}.pdf`, type: 'application/pdf', buffer: PDF })));
-    eq(sent.status, 302, 'заявка с тремя файлами принята');
-    const r3 = db.prepare("SELECT id FROM tournament_requests WHERE name = 'Кубок трёх файлов'").get();
-    eq(db.prepare('SELECT COUNT(*) AS n FROM tournament_request_files WHERE request_id = ?').get(r3.id).n, 3, 'все три файла привязаны к заявке');
-    db.prepare('DELETE FROM tournament_requests WHERE id = ?').run(r3.id);
+    const sent = await uploadDocs(zoneReq.token, [1, 2, 3].map((i) => ({ field: 'docs', filename: `doc${i}.pdf`, type: 'application/pdf', buffer: PDF })));
+    eq(sent.status, 303, 'три файла приняты');
+    eq(docsOf(zoneReq.tid).length, 3, 'все три файла прикреплены к турниру');
+    db.prepare('DELETE FROM tournament_requests WHERE status_token = ?').run(zoneReq.token);
     const reg = await http('/register'); assert(!/[Рр]едакция от/.test(reg.text), 'на регистрации редакции нет');
     const priv = await http('/privacy'); assert(/Редакция от/.test(priv.text), 'на политике редакция остаётся');
   } finally { await browser.close(); }
-  return 'одна накопительная зона: два выбора + перетаскивание = три файла, четвёртый и дубль отбиты, «Удалить» убирает свой; три файла доезжают до заявки; телефон без слов о перетаскивании; в админке все поля обёрнуты; редакция только на /privacy';
+  return 'одна накопительная зона: два выбора + перетаскивание = три файла, четвёртый и дубль отбиты, «Удалить» убирает свой; три файла доезжают до турнира со страницы статуса; телефон без слов о перетаскивании; в админке все поля обёрнуты; редакция только на /privacy';
 });
 
 await check('подвал: подпись разработчика со ссылкой на его сайт, в новой вкладке и с noopener', async () => {
@@ -5179,14 +5242,14 @@ await check('публичный файл отдаётся защищённым �
   return `публичный документ 200 + attachment + nosniff, статикой не отдаётся; файл с модерации ${pending ? 'закрыт' : '(нет в наличии)'}`;
 });
 
-await check('согласование заявки переносит документы на карточку турнира', async () => {
+await check('согласование старой заявки с файлами переносит документы на карточку турнира', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
-  const { res } = await submitTournament(
-    { ...BASE_FIELDS, name: 'Кубок с переносом файлов', email: 'carry@example.com' },
-    [{ field: 'doc_polozhenie', filename: 'polozhenie.pdf', type: 'application/pdf', buffer: PDF }],
-  );
+  const { res } = await submitTournament({ ...BASE_FIELDS, name: 'Кубок с переносом файлов', email: 'carry@example.com' });
   eq(res.status, 302, 'подача заявки');
   const r = db.prepare("SELECT * FROM tournament_requests WHERE name = 'Кубок с переносом файлов'").get();
+  // Заявки, поданные до 10.10.2026, могли прийти с файлами — им путь на турнир сохранён.
+  const legacy = await up.storeUpload(db, { buffer: PDF, filename: 'polozhenie.pdf', profile: 'tournament-doc', dir: UPLOAD_DIR });
+  db.prepare('INSERT INTO tournament_request_files (request_id, upload_id) VALUES (?, ?)').run(r.id, legacy.id);
   const page = await http('/admin/tournament-requests', { jar });
   const _csrf = tokenFrom(page.text);
   const appr = await http(`/admin/tournament-requests/${r.id}/approve`, { method: 'POST', form: { _csrf }, jar });

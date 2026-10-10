@@ -60,7 +60,7 @@ import {
   byId as tournamentRequestById,
 } from '../lib/tournament-requests.mjs';
 import { sendUpload, uploadById, deleteUpload } from '../lib/uploads.mjs';
-import { attachRequestFiles } from '../lib/content.mjs';
+import { attachRequestFiles, entryOpens } from '../lib/content.mjs';
 import { createAccount, issueResetToken, accountByPlayer } from '../lib/player-accounts.mjs';
 import {
   activeGuardianFor,
@@ -719,6 +719,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         organizer: r.organizer,
         name: r.name,
         statusUrl: requestStatusUrl(req, r.status_token),
+        docsFrom: entryOpens(db.prepare('SELECT category, start_date, end_date FROM tournaments WHERE id = ?').get(out.tournamentId)),
       });
       queueMail(db, { to: r.email, kind: 'tournament.approved', ...letter });
       flushOutbox(db).catch((err) => console.error('[почта] разбор очереди упал', err));
