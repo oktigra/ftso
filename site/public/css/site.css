@@ -871,6 +871,17 @@ input:focus-visible, select:focus-visible, textarea:focus-visible{
   box-shadow:var(--field-shadow-in), 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
 }
 input::placeholder, textarea::placeholder{color:var(--muted); opacity:.75;}
+/* АВТОЗАПОЛНЕНИЕ БРАУЗЕРА (17.10.2026): Chrome/Edge красят поля, заполненные из сохранённых
+   логинов и адресов, своим светлым фоном — в тёмной и тёплой темах поле становилось белым.
+   Фон автозаполнения перекрываем внутренней тенью цвета поля, текст — цветом темы. */
+input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus,
+textarea:-webkit-autofill, select:-webkit-autofill{
+  -webkit-text-fill-color:var(--text); caret-color:var(--text);
+  -webkit-box-shadow:0 0 0 1000px var(--field-bg) inset, var(--field-shadow-in);
+  box-shadow:0 0 0 1000px var(--field-bg) inset, var(--field-shadow-in);
+  transition:background-color 99999s ease-out 0s;
+}
+input:autofill{background:var(--field-bg); color:var(--text);}
 input[type="checkbox"], input[type="radio"]{accent-color:var(--primary);}
 input[type="checkbox"]{border-radius:.3rem;}
 textarea{border-radius:.8rem;}
