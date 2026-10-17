@@ -479,6 +479,20 @@ html[data-theme="warm"]{--rplate-hi:#c2410c; --rplate-hi-soft:rgba(194,65,12,.12
 .page-head__row{display:flex; align-items:flex-end; justify-content:space-between; gap:1rem; flex-wrap:wrap;}
 .page-head__row h1{margin:0;}
 .tabs--head{margin:0 0 .4rem;}
+/* Рейтинг: вторая строка вкладок (разряд) и блок «Как считается рейтинг» (17.10.2026). */
+.tabs--sub{margin-top:.5rem;}
+.sport-rank{margin:.5rem 0 0;}
+.sport-rank__expired{color:var(--danger, #b42318);}
+.tabs--sub .tabs__item{padding:.4rem .9rem; font-size:.9rem;}
+.method h2{margin:0;}
+.method__block h3{margin:0 0 .4rem; font-size:1.1rem;}
+.method__block p, .method__block ul{margin:.3rem 0;}
+.method__table th, .method__table td{text-align:center; white-space:nowrap;}
+.method__table th[scope="row"]{text-align:left;}
+.method__scroll{overflow-x:auto; max-width:100%;}
+.method__full summary{cursor:pointer; font-weight:600; padding:.4rem 0;}
+.method__full h4{margin:.8rem 0 .3rem;}
+
 /* СЕТКА МЕСЯЦА КАЛЕНДАРЯ (задача 4, 12.09.2026) */
 .cal{margin-top:1rem;}
 .cal__nav{display:flex; align-items:center; justify-content:space-between; gap:.6rem; margin-bottom:.6rem; flex-wrap:wrap;}

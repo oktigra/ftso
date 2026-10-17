@@ -55,8 +55,9 @@ function scrubSnapshots(db, playerId) {
       continue;
     }
     let changed = false;
-    // Три разряда в снимке: одиночный (players), парный (doubles), микст (mixed).
-    for (const p of [...(data.players || []), ...(data.doubles || []), ...(data.mixed || [])]) {
+    // Снимок методики 2026 — шесть списков в data.lists; старые снимки — players/doubles/mixed.
+    const lists = data.lists ? Object.values(data.lists).flat() : [];
+    for (const p of [...lists, ...(data.players || []), ...(data.doubles || []), ...(data.mixed || [])]) {
       if (p.playerId === playerId) {
         p.playerName = ERASED_LABEL;
         p.city = '';

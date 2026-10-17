@@ -1,0 +1,103 @@
+<%
+/* КАК СЧИТАЕТСЯ РЕЙТИНГ — для игроков, простым языком. Все числа — из rating-method.mjs
+   (через methodView), поэтому текст не может разойтись с расчётом. */
+const g = method.groups;
+%>
+<div class="method stack" id="metodika">
+  <h2>Как считается рейтинг</h2>
+
+  <div class="method__block">
+    <h3>1. Шесть рейтингов</h3>
+    <p>Рейтинг ведётся отдельно для трёх групп — <strong>взрослые</strong>, <strong>до 17 лет</strong>, <strong>до 13 лет</strong> — и в каждой отдельно <strong>одиночный</strong> и <strong>парный</strong> разряд.</p>
+    <p>Очки идут в рейтинг той группы, <strong>в чьей сетке вы играли</strong>, а не по вашему возрасту. Например, 12-летняя спортсменка, сыгравшая в сетке до 17 лет, получит очки в рейтинг до 17 лет. Ветераны (45 лет и старше) считаются в группе «взрослые».</p>
+  </div>
+
+  <div class="method__block">
+    <h3>2. Категория сетки — по её размеру</h3>
+    <p>Размер сетки задаётся регламентом турнира и не зависит от того, сколько игроков заявилось.</p>
+    <div class="method__scroll">
+      <table class="rating-table method__table">
+        <thead><tr><th scope="col">Размер сетки</th><% method.categories.forEach(function (c) { %><th scope="col"><%= c.size %></th><% }); %></tr></thead>
+        <tbody><tr><th scope="row">Категория</th><% method.categories.forEach(function (c) { %><td><strong><%= c.cat %></strong></td><% }); %></tr></tbody>
+      </table>
+    </div>
+    <p class="muted">У каждой сетки турнира своя категория: например, на одном первенстве одиночный разряд может быть категории B (сетка на 24), а парный — C (сетка на 16).</p>
+  </div>
+
+  <div class="method__block">
+    <h3>3. Очки за победу в турнире</h3>
+    <div class="method__scroll">
+      <table class="rating-table method__table">
+        <thead><tr><th scope="col">Категория</th><% g.forEach(function (x) { %><th scope="col"><%= x.label %></th><% }); %></tr></thead>
+        <tbody>
+          <% method.categories.forEach(function (c) { %>
+            <tr><th scope="row"><%= c.cat %> (сетка <%= c.size %>)</th><% g.forEach(function (x) { %><td><%= method.winPoints[x.id][c.cat] %></td><% }); %></tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="method__block">
+    <h3>4. Очки за место — процент от очков за победу</h3>
+    <div class="method__scroll">
+      <table class="rating-table method__table">
+        <thead><tr><th scope="col">Место</th><% method.places.forEach(function (p) { %><th scope="col"><%= p.label %></th><% }); %></tr></thead>
+        <tbody><tr><th scope="row">Процент</th><% method.places.forEach(function (p) { %><td><%= p.percent %>%</td><% }); %></tr></tbody>
+      </table>
+    </div>
+    <ul>
+      <li>3 и 4 место различаются, если сыгран матч за 3 место. Если такого матча не было, оба полуфиналиста получают очки за 3 место (40%).</li>
+      <li>Очки округляются до целого: 0,5 и больше — вверх.</li>
+    </ul>
+  </div>
+
+  <div class="method__block">
+    <h3>5. Пары и микст</h3>
+    <ul>
+      <li>В парном разряде очки за место <strong>делятся пополам</strong> между партнёрами; если получается дробное число — округляется вверх. Пример: пара выиграла турнир, за который положено 1000 очков, — каждый партнёр получает 500.</li>
+      <li>Отдельного рейтинга по миксту нет: результаты микста идут <strong>в парный рейтинг</strong>. Если вы сыграли на одном турнире и в парном разряде, и в миксте, в зачёт идут оба результата.</li>
+    </ul>
+  </div>
+
+  <div class="method__block">
+    <h3>6. Что идёт в зачёт</h3>
+    <ul>
+      <li>В рейтинг идут <strong><%= method.countBest %> лучших результатов</strong> за последние 52 недели. Результат старше 52 недель выпадает из зачёта сам, но остаётся в профиле игрока и в карточке турнира.</li>
+      <li>При равенстве очков выше тот, кто выиграл больше личных встреч у соперников с теми же очками; затем — у кого выше очки за лучшие турниры по порядку; затем — кто сыграл больше турниров. Если и это равно — место делится.</li>
+      <li>Рейтинг пересчитывается в начале каждого месяца.</li>
+    </ul>
+  </div>
+
+  <div class="method__block">
+    <h3>Примеры</h3>
+    <ul>
+      <% method.examples.forEach(function (e) { %><li><%= e.text %> — <strong><%= e.points %></strong> очков.</li><% }); %>
+    </ul>
+  </div>
+
+  <details class="method__full">
+    <summary>Все очки за места — одиночный разряд</summary>
+    <% g.forEach(function (x) { %>
+      <h4><%= x.label %></h4>
+      <div class="method__scroll">
+        <table class="rating-table method__table">
+          <thead><tr><th scope="col">Категория</th><% method.places.forEach(function (p) { %><th scope="col"><%= p.label %></th><% }); %></tr></thead>
+          <tbody><% method.categories.forEach(function (c) { %><tr><th scope="row"><%= c.cat %></th><% method.single[x.id][c.cat].forEach(function (v) { %><td><%= v %></td><% }); %></tr><% }); %></tbody>
+        </table>
+      </div>
+    <% }); %>
+  </details>
+  <details class="method__full">
+    <summary>Все очки за места — парный разряд и микст (каждому партнёру)</summary>
+    <% g.forEach(function (x) { %>
+      <h4><%= x.label %></h4>
+      <div class="method__scroll">
+        <table class="rating-table method__table">
+          <thead><tr><th scope="col">Категория</th><% method.places.forEach(function (p) { %><th scope="col"><%= p.label %></th><% }); %></tr></thead>
+          <tbody><% method.categories.forEach(function (c) { %><tr><th scope="row"><%= c.cat %></th><% method.pair[x.id][c.cat].forEach(function (v) { %><td><%= v %></td><% }); %></tr><% }); %></tbody>
+        </table>
+      </div>
+    <% }); %>
+  </details>
+</div>

@@ -1,5 +1,6 @@
 // Миграция: ОТДЕЛЬНАЯ команда `npm run migrate` ДО старта сервера,
 // не авто-в-старте (иначе гонка). Идемпотентна: CREATE TABLE IF NOT EXISTS.
+import { defaultRatingGroup } from '../server/lib/rating-method.mjs';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -395,6 +396,14 @@ export function migrate() {
 
   addColumnIfMissing(db, 'users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'gallery_items', 'tournament_id', 'INTEGER REFERENCES tournaments(id) ON DELETE SET NULL');
+  // МЕТОДИКА РЕЙТИНГА 2026 (17.10.2026): рейтинговая группа турнира (взрослые / до 17 / до 13)
+  // — по ней результат идёт в свой список; по умолчанию — из возрастного ограничения.
+  addColumnIfMissing(db, 'tournaments', 'rating_group', 'TEXT');
+  for (const t of db.prepare('SELECT id, age_min, age_max FROM tournaments WHERE rating_group IS NULL').all()) {
+    db.prepare('UPDATE tournaments SET rating_group = ? WHERE id = ?').run(defaultRatingGroup(t.age_min, t.age_max), t.id);
+  }
+  // Спортивный разряд игрока (приказ Минспорта) — для профиля.
+  for (const c of ['sport_rank', 'sport_rank_order', 'sport_rank_date', 'sport_rank_until']) addColumnIfMissing(db, 'players', c, 'TEXT');
   const resultsRebuilt = upgradeResults(db);
   const matchesRebuilt = upgradeMatches(db);
   upgradeMatchesStage(db); // этап матча + UNIQUE со stage (06.09.2026) — после партнёров по паре

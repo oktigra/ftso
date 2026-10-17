@@ -526,6 +526,30 @@ check('группировка по ageGroup: тот же расчёт внутр
   eq(s.players.map((p) => [p.rank, p.playerId]), [[1, 'S1']], 'взрослые');
 });
 
+check('готовые очки результата (points) заменяют таблицу места', () => {
+  const st = computeStandings({
+    tournaments: [{ id: 'T1', name: 'T1', endDate: '2026-08-30', category: 'A' }, { id: 'T2', name: 'T2', endDate: '2026-08-30', category: 'A' }],
+    results: [
+      { playerId: 'X', tournamentId: 'T1', place: 1, points: 350 },
+      { playerId: 'X', tournamentId: 'T2', place: 2, points: 45 },
+      { playerId: 'Y', tournamentId: 'T1', place: 2 },
+    ],
+    asOf: '2026-10-01',
+  });
+  const x = st.players.find((p) => p.playerId === 'X');
+  const y = st.players.find((p) => p.playerId === 'Y');
+  eq(x.ratingPoints, 395, 'X: 350 + 45');
+  eq(y.ratingPoints, 140, 'Y: без points — 70 × 2');
+});
+
+check('points < 0 или не число — падение', () => {
+  let threw = false;
+  try {
+    computeStandings({ tournaments: [{ id: 'T', name: 'T', endDate: '2026-08-30', category: 'A' }], results: [{ playerId: 'X', tournamentId: 'T', place: 1, points: -5 }], asOf: '2026-10-01' });
+  } catch { threw = true; }
+  eq(threw, true, 'падение');
+});
+
 // ===========================================================================
 // Итог + печать standings
 // ===========================================================================

@@ -83,6 +83,10 @@ const TOURNAMENTS = [
 ];
 const insTournament = db.prepare('INSERT INTO tournaments (name, end_date, category) VALUES (?, ?, ?)');
 const T = TOURNAMENTS.map((t) => Number(insTournament.run(...t).lastInsertRowid));
+// Размер сетки по регламенту (методика 17.10.2026): без него места дают 0 очков.
+// Демо: A — сетка на 32 (1000 за победу), B — на 16 (500): соотношение как у прежней шкалы ×2 / ×1.
+const insSize = db.prepare("INSERT INTO tournament_draw_sizes (tournament_id, discipline, sex, size) VALUES (?, 'single', '*', ?)");
+TOURNAMENTS.forEach((t, i) => insSize.run(T[i], t[2] === 'A' ? 32 : 16));
 
 const insResult = db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)');
 const insMatch = db.prepare(

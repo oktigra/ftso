@@ -1,0 +1,45 @@
+<%- include('../partials/head') %>
+<%- include('../partials/header') %>
+<main id="top" class="admin-shell">
+<div class="container stack">
+  <h1>Спортивные разряды по приказу</h1>
+  <%- include('_shell') %>
+  <div class="panel">
+    <p class="muted">Вставьте ФИО из приказа — по одному человеку на строку (номера строк можно оставить). Сайт найдёт карточки по фамилии и имени, недостающих игроков заведёт (пол — по отчеству, город — Смоленск). Сомнительные строки не трогаются — их видно в проверке. Сначала нажмите «Проверить».</p>
+    <form method="post" action="/admin/players/ranks" class="stack">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <div class="field-row">
+        <div class="field"><label for="r-rank">Разряд</label>
+          <select id="r-rank" name="sport_rank" required>
+            <% sportRanks.forEach(function (r) { %><option value="<%= r.id %>"<%= (form.sport_rank || 'r1') === r.id ? ' selected' : '' %>><%= r.label %></option><% }); %>
+          </select>
+        </div>
+        <div class="field field--wide"><label for="r-order">Приказ (как показывать в профиле)</label><input id="r-order" name="sport_rank_order" maxlength="200" value="<%= form.sport_rank_order || 'приказ Минспорта Смоленской области от 31.08.2026 № 530-п' %>"></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label for="r-date">Дата приказа</label><input id="r-date" name="sport_rank_date" type="date" value="<%= form.sport_rank_date || '' %>"></div>
+        <div class="field"><label for="r-until">Действует до</label><input id="r-until" name="sport_rank_until" type="date" value="<%= form.sport_rank_until || '' %>"></div>
+      </div>
+      <div class="field"><label for="r-names">ФИО, по одному на строку</label><textarea id="r-names" name="names" rows="14" required><%= form.names || '' %></textarea></div>
+      <div class="inline-form">
+        <button class="btn btn--secondary" type="submit" name="apply" value="0">Проверить</button>
+        <% if (plan) { %><button class="btn btn--primary" type="submit" name="apply" value="1">Внести (<%= plan.filter(function (r) { return r.action !== 'skip'; }).length %>)</button><% } %>
+      </div>
+    </form>
+  </div>
+  <% if (plan) { %>
+    <div class="panel">
+      <h2>Проверка</h2>
+      <div class="table-scroll"><table class="admin-table">
+        <thead><tr><th>ФИО из приказа</th><th>Что будет</th><th>Подробности</th></tr></thead>
+        <tbody>
+          <% plan.forEach(function (r) { %>
+            <tr><td><%= r.name %></td><td><%= r.action === 'update' ? 'разряд в карточку' : r.action === 'create' ? 'новая карточка' : 'пропуск' %></td><td class="<%= r.action === 'skip' ? 'notice--error' : 'muted' %>"><%= r.note %></td></tr>
+          <% }); %>
+        </tbody>
+      </table></div>
+    </div>
+  <% } %>
+</div>
+</main>
+<%- include('../partials/footer') %>

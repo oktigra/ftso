@@ -13,6 +13,7 @@ export class ValidationError extends Error {
 
 // Контролируемый список возрастных групп. Набор задаёт Федерация — правится
 // здесь, жёсткого CHECK в схеме нет.
+import { RATING_GROUPS, defaultRatingGroup } from './rating-method.mjs';
 import { AGE_LIMIT_PRESETS, ageRangeLabel } from './age.mjs';
 
 export const AGE_GROUPS = ['до 19', '19-34', '35-44', '45-54', '55+'];
@@ -339,6 +340,9 @@ export function tournamentInput(body) {
     // строится из них, чтобы календарь и карточка не расходились с проверкой.
     age_min: ageLimit.min,
     age_max: ageLimit.max,
+    // РЕЙТИНГОВАЯ ГРУППА (методика 17.10.2026): в какой список рейтинга идут места турнира.
+    // «auto»/пусто — по возрастному ограничению (до 13 → до 13, до 17 → до 17, иначе взрослые).
+    rating_group: RATING_GROUPS.includes(String(body.rating_group || '')) ? String(body.rating_group) : defaultRatingGroup(ageLimit.min, ageLimit.max),
   };
 }
 

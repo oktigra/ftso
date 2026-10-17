@@ -11,7 +11,7 @@
     <h1>Рейтинг игроков — Федерация тенниса Смоленской области</h1>
     <p class="muted">
       <% if (standings) { %>
-        Разряд: <%= disciplineRu[discipline] || discipline %> · актуальность: <%= standings.asOf %><%= statusText ? ' · ' + statusText : '' %> · ftso67.ru/rating
+        Список: <%= listLabel %> · актуальность: <%= standings.asOf %><%= statusText ? ' · ' + statusText : '' %> · ftso67.ru/rating
       <% } else { %>Рейтинг ещё не рассчитан.<% } %>
     </p>
     <% if (rows.length > 1) { %>

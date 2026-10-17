@@ -49,7 +49,9 @@ node rating/example.mjs       # пример: печать таблицы + CSV/
 ```js
 computeStandings({
   tournaments,   // [{ id, name, endDate: "YYYY-MM-DD", category: "A" | "B" }]
-  results,       // [{ playerId, playerName, tournamentId, place }]  place — целое с 1
+  results,       // [{ playerId, playerName, tournamentId, place, points? }]  place — целое с 1;
+                 // points — готовые очки за результат (сайт считает их по своей методике),
+                 // без него — pointsByPlace × categoryCoef
   matches,       // необязательно: [{ tournamentId, winnerPlayerId, loserPlayerId }]
   asOf,          // необязательно, по умолчанию сегодня по UTC
   config,        // необязательно, по умолчанию DEFAULT_CONFIG

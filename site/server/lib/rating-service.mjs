@@ -3,51 +3,136 @@
 // «Изменение» на УРОВНЕ САЙТА (движок остаётся снимком, дельту не считает).
 import { computeStandings, DEFAULT_CONFIG } from '../../../rating/rating.mjs';
 import { ageOn, sliceAge, ageLabel, slicesFor } from './age.mjs';
+import {
+  RATING_GROUPS, RATING_GROUP_RU, LIST_DISCIPLINES, LIST_DISCIPLINE_RU, LIST_KEYS, listKey,
+  pointsFor, COUNT_BEST, WINDOW_DAYS,
+} from './rating-method.mjs';
 
-export { DEFAULT_CONFIG as RATING_CONFIG };
 
-// Разряды. Рейтинги считаются РАЗДЕЛЬНО (как у РТТ): одиночный по results с
-// discipline='single' и матчам kind='single', парный — по 'double', микст — по
-// 'mixed' (решение владельца 11.09.2026: у РТТ микста в классификации нет, у
-// федерации он есть в первом же турнире — третий список, ТЕ ЖЕ правила, без
-// скидок; в парный не подмешивается). Движок один и тот же и не переписывается.
-export const DISCIPLINES = ['single', 'double', 'mixed'];
-export const DISCIPLINE_RU = { single: 'одиночный', double: 'парный', mixed: 'микст' };
-// Поле снимка, где лежит список разряда.
-const SNAPSHOT_LIST = { single: 'players', double: 'doubles', mixed: 'mixed' };
+// МЕТОДИКА 2026 (17.10.2026, rating-method.mjs): шесть списков — рейтинговая группа сетки
+// (взрослые / до 17 / до 13) × разряд (одиночный / парный). Микст отдельного списка не имеет
+// и идёт в ПАРНЫЙ вместе с парами (оба результата с одного турнира — два зачёта). Очки за
+// результат считает методика (группа, размер сетки, деление пары) и отдаёт движку готовыми;
+// движок по-прежнему отбирает лучшие, держит окно 52 недели и разбивает равенство очков.
+export const DISCIPLINE_RU = { single: 'одиночный', double: 'парный', mixed: 'микст', pair: 'парный' };
+export const RATING_CONFIG = {
+  ...DEFAULT_CONFIG,
+  countBest: COUNT_BEST,
+  windowDays: WINDOW_DAYS,
+  categoryCoef: { '-': 1 }, // очки приходят готовыми — коэффициент категории не участвует
+};
+export { RATING_GROUPS, RATING_GROUP_RU, LIST_DISCIPLINES, LIST_DISCIPLINE_RU, LIST_KEYS, listKey };
 
-/** Список разряда из снимка/standings; снимки старше разряда поля не имеют — пусто. */
-export function tableFor(standings, discipline = 'single') {
-  if (!standings) return [];
-  const list = standings[SNAPSHOT_LIST[discipline] || 'players'];
+/** Список из снимка/standings по ключу «группа.разряд»; снимки прежней методики списков не имеют — пусто. */
+export function tableFor(standings, key = 'adult.single') {
+  if (!standings || !standings.lists) return [];
+  const list = standings.lists[key];
   return Array.isArray(list) ? list : [];
 }
 
-/** Вход движка ровно в его формате: {tournaments, results, matches} — для одного разряда. */
-export function collectEngineInput(db, discipline = 'single') {
-  const tournaments = db
-    .prepare('SELECT id, name, end_date AS endDate, category FROM tournaments WHERE is_published = 1 ORDER BY id')
-    .all();
-  // Имя и город берутся из players — имя одно на игрока, движок не ругается.
-  const results = db
+/** Размеры сеток турниров: «турнир|разряд|пол» → размер. */
+function drawSizeMap(db) {
+  const m = new Map();
+  for (const r of db.prepare('SELECT tournament_id, discipline, sex, size FROM tournament_draw_sizes').all()) {
+    m.set(`${r.tournament_id}|${r.discipline}|${r.sex}`, r.size);
+  }
+  return m;
+}
+
+/** Размер сетки результата: своя сетка по полу (микст — X), иначе общая для разряда (*). */
+export function drawSizeFor(sizes, tournamentId, discipline, playerSex) {
+  const sexKey = discipline === 'mixed' ? 'X' : playerSex || '*';
+  return sizes.get(`${tournamentId}|${discipline}|${sexKey}`) || sizes.get(`${tournamentId}|${discipline}|*`) || null;
+}
+
+/**
+ * РАЗМЕР ПО ЧИСЛУ УЧАСТНИКОВ (решение Алекса 17.10.2026): если размер сетки по регламенту
+ * не задан (протокола нет), берётся наименьшая регламентная сетка, в которую входят
+ * участники этой сетки (пары — по числу пар): ≤ 8 → 8, ≤ 16 → 16, ≤ 24 → 24, иначе 32.
+ * Заданный размер всегда важнее; в админке подстановка помечена — её можно уточнить.
+ */
+export function inferredDrawSize(entrants) {
+  if (!entrants) return null;
+  return entrants <= 8 ? 8 : entrants <= 16 ? 16 : entrants <= 24 ? 24 : 32;
+}
+
+/** Число участников каждой сетки: «турнир|разряд|пол» → человек (одиночка) или пар. */
+function entrantCounts(db) {
+  const m = new Map();
+  for (const r of db.prepare(
+    `SELECT r.tournament_id AS tid, r.discipline AS d, CASE WHEN r.discipline = 'mixed' THEN 'X' ELSE COALESCE(p.sex, '*') END AS sx, COUNT(*) AS n
+       FROM results r JOIN players p ON p.id = r.player_id GROUP BY 1, 2, 3`,
+  ).all()) {
+    m.set(`${r.tid}|${r.d}|${r.sx}`, r.d === 'single' ? r.n : Math.ceil(r.n / 2));
+  }
+  return m;
+}
+
+// Группа турнира: своя колонка, а у записей без неё — из возрастного ограничения (как defaultRatingGroup).
+export const GROUP_SQL = "COALESCE(t.rating_group, CASE WHEN t.age_max IS NOT NULL AND t.age_max <= 12 THEN 'u13' WHEN t.age_max IS NOT NULL AND t.age_max <= 16 THEN 'u17' ELSE 'adult' END)";
+
+const EVENT_SUFFIX = { single: '', double: ' — пары', mixed: ' — микст' };
+
+/**
+ * Вход движка для одного списка (группа × разряд). Событие зачёта — турнир для
+ * одиночного и «турнир:разряд» для парного (пары и микст одного турнира — два зачёта).
+ * Сетка без заданного размера считается по числу участников и попадает в missing — админка показывает.
+ */
+export function collectListInput(db, group, listDisc, sizes = drawSizeMap(db), counts = entrantCounts(db)) {
+  const discs = listDisc === 'single' ? ['single'] : ['double', 'mixed'];
+  const rows = db
     .prepare(
-      `SELECT r.player_id AS playerId, p.full_name AS playerName,
-              r.tournament_id AS tournamentId, r.place AS place
+      `SELECT r.player_id AS playerId, p.full_name AS playerName, p.sex AS sex,
+              r.tournament_id AS tid, r.place, r.discipline, t.name, t.end_date AS endDate
          FROM results r JOIN players p ON p.id = r.player_id
          JOIN tournaments t ON t.id = r.tournament_id
-        WHERE r.discipline = ? AND t.is_published = 1
+        WHERE t.is_published = 1 AND ${GROUP_SQL} = ?
+          AND r.discipline IN (${discs.map(() => '?').join(',')})
         ORDER BY r.id`,
     )
-    .all(discipline);
+    .all(group, ...discs);
+  const events = new Map();
+  const results = [];
+  const missing = [];
+  for (const r of rows) {
+    const eventId = listDisc === 'single' ? String(r.tid) : `${r.tid}:${r.discipline}`;
+    if (!events.has(eventId)) {
+      events.set(eventId, { id: eventId, name: r.name + EVENT_SUFFIX[r.discipline], endDate: r.endDate, category: '-' });
+    }
+    const sexKey = r.discipline === 'mixed' ? 'X' : r.sex || '*';
+    let size = drawSizeFor(sizes, r.tid, r.discipline, r.sex);
+    if (!size) {
+      size = inferredDrawSize(counts.get(`${r.tid}|${r.discipline}|${sexKey}`));
+      missing.push({ tournamentId: r.tid, discipline: r.discipline, sex: sexKey, inferred: size, playerId: r.playerId });
+    }
+    const pts = pointsFor({ group, drawSize: size, place: r.place, pair: r.discipline !== 'single' });
+    results.push({ playerId: r.playerId, playerName: r.playerName, tournamentId: eventId, place: r.place, points: pts === null ? 0 : pts });
+  }
+  const kind = listDisc === 'single' ? 'single' : 'double';
   const matches = db
     .prepare(
-      `SELECT m.tournament_id AS tournamentId, m.winner_player_id AS winnerPlayerId,
-              m.loser_player_id AS loserPlayerId
+      `SELECT m.tournament_id AS tid, m.winner_player_id AS winnerPlayerId, m.loser_player_id AS loserPlayerId
          FROM matches m JOIN tournaments t ON t.id = m.tournament_id
-        WHERE m.kind = ? AND t.is_published = 1 ORDER BY m.id`,
+        WHERE m.kind = ? AND t.is_published = 1 AND ${GROUP_SQL} = ? ORDER BY m.id`,
     )
-    .all(discipline);
-  return { tournaments, results, matches };
+    .all(kind, group)
+    .map((m) => {
+      const id = listDisc === 'single' ? String(m.tid) : [`${m.tid}:double`, `${m.tid}:mixed`].find((e) => events.has(e));
+      return id && events.has(id) ? { tournamentId: id, winnerPlayerId: m.winnerPlayerId, loserPlayerId: m.loserPlayerId } : null;
+    })
+    .filter(Boolean);
+  return { tournaments: [...events.values()], results, matches, missing };
+}
+
+/**
+ * Вход движка ровно в его формате для одного списка — вместе с конфигом методики, чтобы
+ * computeStandings(collectEngineInput(db)) давал ровно то, что лежит в снимке.
+ * discipline — single | pair (double/mixed — тоже парный), group — adult | u17 | u13.
+ */
+export function collectEngineInput(db, discipline = 'single', group = 'adult') {
+  const d = discipline === 'single' ? 'single' : 'pair';
+  const { tournaments, results, matches } = collectListInput(db, group, d);
+  return { tournaments, results, matches, config: RATING_CONFIG };
 }
 
 /** Город/пол/группа — для показа и фильтров §4.4; движку они не нужны. */
@@ -74,31 +159,39 @@ function rowsWithMeta(standings, meta) {
 }
 
 /**
- * Снимок = вывод движка + метаданные игроков, чтобы витрина не зависела от JOIN.
- * players — одиночный разряд, doubles — парный (пустой список, пока парных
- * результатов нет: схема готова, интерфейс включится с данными).
- * ДАТА РОЖДЕНИЯ В СНИМОК НЕ КЛАДЁТСЯ: возраст считается на выдаче, живьём.
+ * Снимок = вывод движка по шести спискам + метаданные игроков, чтобы витрина не зависела
+ * от JOIN. ДАТА РОЖДЕНИЯ В СНИМОК НЕ КЛАДЁТСЯ: возраст считается на выдаче, живьём.
+ * missingSizes — сетки без заданного размера (взят по числу участников) — для админки.
  */
 export function buildSnapshot(db, { asOf } = {}) {
-  const single = collectEngineInput(db, 'single');
-  const double = collectEngineInput(db, 'double');
-  const mixedIn = collectEngineInput(db, 'mixed');
-  const standings = computeStandings(asOf ? { ...single, asOf } : single);
-  const doubles = computeStandings(asOf ? { ...double, asOf } : double);
-  const mixed = computeStandings(asOf ? { ...mixedIn, asOf } : mixedIn);
   const meta = playerMeta(db);
-  return {
-    ratingStatus: standings.ratingStatus,
-    asOf: standings.asOf,
-    warnings: [
-      ...standings.warnings,
-      ...doubles.warnings.map((w) => `парный: ${w}`),
-      ...mixed.warnings.map((w) => `микст: ${w}`),
-    ],
-    players: rowsWithMeta(standings, meta),
-    doubles: rowsWithMeta(doubles, meta),
-    mixed: rowsWithMeta(mixed, meta),
-  };
+  const sizes = drawSizeMap(db);
+  const counts = entrantCounts(db);
+  const lists = {};
+  const warnings = [];
+  const missing = [];
+  let status = RATING_CONFIG.ratingStatus;
+  let at = asOf;
+  for (const group of RATING_GROUPS) {
+    for (const d of LIST_DISCIPLINES) {
+      const key = listKey(group, d);
+      const input = collectListInput(db, group, d, sizes, counts);
+      const st = computeStandings({ tournaments: input.tournaments, results: input.results, matches: input.matches, config: RATING_CONFIG, ...(asOf ? { asOf } : {}) });
+      status = st.ratingStatus;
+      at = st.asOf;
+      lists[key] = rowsWithMeta(st, meta);
+      warnings.push(...st.warnings.map((w) => `${key}: ${w}`));
+      missing.push(...input.missing);
+    }
+  }
+  const uniq = new Map(missing.map((m) => [`${m.tournamentId}|${m.discipline}|${m.sex}`, m]));
+  return { method: 2, ratingStatus: status, asOf: at, warnings, missingSizes: [...uniq.values()].map(({ playerId, ...m }) => m), lists };
+}
+
+/** Сколько строк в снимке (все списки) — для админки. */
+export function snapshotSize(data) {
+  if (data && data.lists) return Object.values(data.lists).reduce((n, l) => n + l.length, 0);
+  return data && Array.isArray(data.players) ? data.players.length : 0;
 }
 
 // --- лок пересчёта --------------------------------------------------------
@@ -241,21 +334,21 @@ export function currentStandings(db) {
   if (snaps.length === 0) return null;
   const [current, previous] = snaps;
   const prev = previous ? previous.data : null;
-  // Снимки, снятые до появления парного разряда и микста, этих полей не имеют — пусто.
-  const listOf = (data, key) => (data && Array.isArray(data[key]) ? data[key] : []);
-  const changed = (key) => anonymizeForPublic(
-    db,
-    withChange({ players: listOf(current.data, key) }, prev ? { players: listOf(prev, key) } : null),
-  );
+  const lists = {};
+  for (const key of LIST_KEYS) {
+    const cur = tableFor(current.data, key);
+    const before = prev && prev.lists ? { players: tableFor(prev, key) } : null;
+    lists[key] = anonymizeForPublic(db, withChange({ players: cur }, before));
+  }
   return {
     snapshotId: current.id,
     computedAt: current.computedAt,
     status: current.status,
     asOf: current.data.asOf,
     hasPrevious: Boolean(previous),
-    players: anonymizeForPublic(db, withChange(current.data, prev)),
-    doubles: changed('doubles'),
-    mixed: changed('mixed'),
+    lists,
+    // Витрина главной (ТОП) — одиночный рейтинг взрослых.
+    players: lists['adult.single'],
   };
 }
 
@@ -273,7 +366,8 @@ export function currentStandings(db) {
 export function playerProfile(db, playerId) {
   const row = db
     .prepare(
-      `SELECT id, full_name, city, sex, age_group, birth_date, rni, photo_upload_id, anonymized_at
+      `SELECT id, full_name, city, sex, age_group, birth_date, rni, photo_upload_id, anonymized_at,
+              sport_rank, sport_rank_order, sport_rank_until
          FROM players WHERE id = ?`,
     )
     .get(playerId);
@@ -348,6 +442,9 @@ export function playerProfile(db, playerId) {
     sex: row.sex,
     ageGroup: row.age_group || null,
     rni: row.rni || null,
+    sportRank: row.sport_rank || null,
+    sportRankOrder: row.sport_rank_order || null,
+    sportRankUntil: row.sport_rank_until || null,
     age,
     ageLabel: ageLabel(age),
     slices: slicesFor(sliceAge(row.birth_date)), // срезы — по году рождения, как в рейтинге
@@ -357,8 +454,7 @@ export function playerProfile(db, playerId) {
           asOf: standings.asOf,
           computedAt: standings.computedAt,
           status: standings.status,
-          single: inTable(standings.players),
-          double: inTable(standings.doubles),
+          lists: Object.fromEntries(LIST_KEYS.map((k) => [k, inTable(standings.lists[k])]).filter(([, v]) => v)),
         }
       : null,
     tournamentsPlayed: new Set(results.map((r) => r.tournament_id)).size,
@@ -377,12 +473,12 @@ export const STATUS_RU = {
  * место и очки помесячно (последний снимок месяца) и наивысшее место за всю историю
  * снимков. Снимков хранится keepSnapshots (24), этого хватает на два года помесячно.
  */
-export function playerRatingHistory(db, playerId, discipline = 'single') {
+export function playerRatingHistory(db, playerId, key = 'adult.single') {
   const snaps = lastSnapshots(db, 240).reverse(); // от старых к новым
   const byMonth = new Map();
   let best = null;
   for (const s of snaps) {
-    const list = tableFor(s.data, discipline);
+    const list = tableFor(s.data, key);
     const p = list.find((x) => x.playerId === playerId);
     if (!p) continue;
     const month = String(s.data.asOf || s.computedAt).slice(0, 7);
@@ -433,7 +529,7 @@ export function recompute(
   try {
     const snapshot = buildSnapshot(db, { asOf });
     const id = saveSnapshot(db, snapshot, keepSnapshots);
-    return { ok: true, snapshotId: id, players: snapshot.players.length, warnings: snapshot.warnings };
+    return { ok: true, snapshotId: id, players: snapshotSize(snapshot), warnings: snapshot.warnings, missingSizes: snapshot.missingSizes };
   } finally {
     releaseLock(db);
   }

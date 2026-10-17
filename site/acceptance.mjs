@@ -861,7 +861,7 @@ await check('«Изменение»: два снимка -> стрелки; пр
   eq(snaps.length, 2, 'нужно два снимка');
   const cur = JSON.parse(snaps[0].standings_json);
   const prev = JSON.parse(snaps[1].standings_json);
-  const prevRank = new Map(prev.players.map((p) => [p.playerId, p.rank]));
+  const prevRank = new Map((prev.lists ? prev.lists['adult.single'] : prev.players).map((p) => [p.playerId, p.rank]));
   const shown = currentStandings(db);
 
   const kinds = new Set();
@@ -996,25 +996,26 @@ await check('город и пол показываются и фильтруют
   return 'фильтры по полу, возрастной группе и поиск по фамилии работают';
 });
 
-await check('рейтинг: одиночная и парная классификации — равноправные вкладки, фильтры переживают переключение', async () => {
-  // Как у РТТ (проверено у источника 09.09.2026): классификация составляется
-  // РАЗДЕЛЬНО для одиночного и парного разрядов, сводной у них нет. Значит разряд —
-  // переключатель уровня страницы, а не поле среди фильтров вроде города.
+await check('рейтинг: шесть списков — группа (взрослые / до 17 / до 13) и разряд (одиночный / парный) вкладками, фильтры переживают переключение', async () => {
+  // Методика 17.10.2026: рейтинг ведётся отдельно для трёх групп сеток, в каждой — одиночный
+  // и парный (микст — в парном). Группа и разряд — переключатели уровня страницы.
   const page = await http('/rating');
-  assert(/class="tabs"/.test(page.text), 'нет вкладок разряда');
-  assert(/href="\/rating\?discipline=single"[^>]*aria-current="page"/.test(page.text), 'на одиночном разряде вкладка не помечена текущей');
-  assert(/href="\/rating\?discipline=double"/.test(page.text), 'нет вкладки парного разряда');
-  assert(!/<select id="f-discipline"/.test(page.text), 'разряд остался полем в фильтрах');
-  // Разряд не теряется при отправке формы фильтров.
-  assert(/<input type="hidden" name="discipline" value="single">/.test(page.text), 'форма фильтров не несёт разряд');
-  const dbl = await http('/rating?discipline=double');
-  eq(dbl.status, 200, 'парная классификация');
-  assert(/<input type="hidden" name="discipline" value="double">/.test(dbl.text), 'на парном форма теряет разряд');
-  assert(/href="\/rating\?discipline=single"/.test(dbl.text), 'с парного нет пути обратно на одиночный');
-  // Прочие фильтры сохраняются в ссылках вкладок — иначе срез сбрасывается.
-  const withFilter = await http('/rating?discipline=double&sex=M');
-  assert(/href="\/rating\?discipline=single&amp;sex=M"/.test(withFilter.text), 'вкладка не сохраняет выбранный пол');
-  return 'две вкладки классификаций, текущая помечена aria-current, форма несёт разряд, фильтры переживают переключение';
+  assert(/class="tabs"/.test(page.text), 'нет вкладок');
+  for (const g of ['adult', 'u17', 'u13']) assert(new RegExp(`href="/rating\\?group=${g}&amp;discipline=single"`).test(page.text), `нет вкладки группы ${g}`);
+  assert(/href="\/rating\?group=adult&amp;discipline=single"[^>]*aria-current="page"/.test(page.text), 'взрослые/одиночный не помечены текущими');
+  assert(/href="\/rating\?group=adult&amp;discipline=pair"/.test(page.text), 'нет вкладки парного разряда');
+  assert(!/discipline=mixed/.test(page.text), 'вкладка микста осталась — микст теперь в парном');
+  assert(/<input type="hidden" name="group" value="adult">/.test(page.text) && /<input type="hidden" name="discipline" value="single">/.test(page.text), 'форма фильтров не несёт список');
+  const dbl = await http('/rating?group=u13&discipline=pair');
+  eq(dbl.status, 200, 'парный до 13');
+  assert(/<input type="hidden" name="group" value="u13">/.test(dbl.text) && /<input type="hidden" name="discipline" value="pair">/.test(dbl.text), 'на парном до 13 форма теряет список');
+  // Старые ссылки ?discipline=double / mixed ведут в парный.
+  assert(/<input type="hidden" name="discipline" value="pair">/.test((await http('/rating?discipline=mixed')).text), 'старая ссылка на микст не ведёт в парный');
+  const withFilter = await http('/rating?group=u17&discipline=pair&sex=M');
+  assert(/href="\/rating\?group=u17&amp;discipline=single&amp;sex=M"/.test(withFilter.text), 'вкладка не сохраняет выбранный пол');
+  assert(/id="metodika"/.test(page.text) && /Как считается рейтинг/.test(page.text), 'на странице рейтинга нет методики');
+  eq((await http('/rating/metodika')).status, 200, 'страница методики');
+  return 'три группы × два разряда вкладками, текущая помечена, форма несёт список, методика на странице';
 });
 
 await check('рейтинг: пластины вместо таблицы, все восемь колонок на месте, экспорт цел', async () => {
@@ -2333,7 +2334,7 @@ await check('сетка по рейтингу: посев из списка по
 await check('парная сетка: слот — пара «А / Б», посев по сумме парных очков (как у РТТ), матч с партнёрами, места обоим в парный разряд, одиночный результат не трогается', async () => {
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const t = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, is_published) VALUES ('Парная сетка', date('now','+12 days'), 'B', 1)").run().lastInsertRowid);
-  // Парный рейтинг строим сами: прошлый турнир категории A с парными местами 1,1,2,2 → 200,200,140,140.
+  // Парный рейтинг строим сами: прошлый турнир, парная сетка на 32 (A), места 1,1,2,2 → по 500 и 300 каждому.
   const ins = db.prepare("INSERT INTO players (full_name, city, sex) VALUES (?, 'Смоленск', 'M')");
   const d1 = Number(ins.run('Парный Рейтинговый Один').lastInsertRowid);
   const d2 = Number(ins.run('Парный Рейтинговый Два').lastInsertRowid);
@@ -2342,9 +2343,10 @@ await check('парная сетка: слот — пара «А / Б», пос�
   const past = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, is_published) VALUES ('Парный зачёт прошлый', date('now','-30 days'), 'A', 1)").run().lastInsertRowid);
   const pr = db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, 'double')");
   pr.run(past, d1, 1); pr.run(past, d2, 1); pr.run(past, d3, 2); pr.run(past, d4, 2);
+  db.prepare("INSERT INTO tournament_draw_sizes (tournament_id, discipline, sex, size) VALUES (?, 'double', '*', 32)").run(past);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
   const st = currentStandings(db);
-  const d = st.doubles.filter((p) => [d1, d2, d3, d4].includes(p.playerId));
+  const d = st.lists['adult.pair'].filter((p) => [d1, d2, d3, d4].includes(p.playerId));
   eq(d.length, 4, 'четверо должны быть в парном рейтинге');
   const n1 = Number(ins.run('Парный Новичок Один').lastInsertRowid);
   const n2 = Number(ins.run('Парный Новичок Два').lastInsertRowid);
@@ -2525,10 +2527,11 @@ await check('форма турнира: черновик / опубликова�
   const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Черновиков Чер','Смоленск','M')").run().lastInsertRowid);
   db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, 1)').run(draft.id, pid);
   const { collectEngineInput } = await import('./server/lib/rating-service.mjs');
-  assert(!collectEngineInput(db, 'single').results.some((r) => r.playerId === pid), 'результат черновика попал в движок рейтинга');
+  const draftGroup = db.prepare('SELECT rating_group FROM tournaments WHERE id = ?').get(draft.id).rating_group || 'adult';
+  assert(!collectEngineInput(db, 'single', draftGroup).results.some((r) => r.playerId === pid), 'результат черновика попал в движок рейтинга');
   eq((await http(`/admin/tournaments/${draft.id}/publish`, { method: 'POST', form: { _csrf, value: '1' }, jar })).status, 302, 'опубликовать кнопкой');
   eq(db.prepare('SELECT is_published FROM tournaments WHERE id = ?').get(draft.id).is_published, 1, 'кнопка «Опубликовать» не сработала');
-  assert(collectEngineInput(db, 'single').results.some((r) => r.playerId === pid), 'после публикации результат должен считаться');
+  assert(collectEngineInput(db, 'single', draftGroup).results.some((r) => r.playerId === pid), 'после публикации результат должен считаться');
   eq((await http(`/admin/tournaments/${draft.id}/publish`, { method: 'POST', form: { _csrf, value: '0' }, jar })).status, 302, 'снять с публикации');
   eq(db.prepare('SELECT is_published FROM tournaments WHERE id = ?').get(draft.id).is_published, 0, 'снятие не сработало');
   // Правка строки: без action статус не меняется; action=publish публикует.
@@ -2595,7 +2598,7 @@ await check('профиль игрока: наивысшее место и гр�
   const { playerRatingHistory } = await import('./server/lib/rating-service.mjs');
   const st = currentStandings(db);
   const top = st.players[0].playerId;
-  const h = playerRatingHistory(db, top, 'single');
+  const h = playerRatingHistory(db, top, 'adult.single');
   assert(h.best && h.best.rank >= 1 && h.points.length >= 1, 'история пуста для лидера рейтинга');
   const page = await http(`/player/${top}`);
   eq(page.status, 200, 'профиль');
@@ -3286,55 +3289,72 @@ await check('микст подписан на витрине турнира от
   return 'три записи одного игрока — одиночный, парный и микст — подписаны каждая своим разрядом';
 });
 
-await check('микст — третий рейтинг теми же правилами: своя вкладка (только когда не пуст), шкала как у парного, в одиночный и парный не подмешивается', async () => {
-  // Решение владельца 11.09.2026: у РТТ микста в классификации нет, у федерации он есть
-  // в первом же турнире — считать отдельным списком, без скидок.
-  const before = (await http('/rating')).text;
-  assert(!/href="\/rating\?discipline=mixed"/.test(before), 'вкладка микста показана при пустом микстовом рейтинге');
-  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, city, is_published) VALUES ('Микст-зачёт', '2026-08-21', 'B', 'Ярцево', 1)").run().lastInsertRowid);
+await check('микст идёт в парный рейтинг: оба результата турнира (пары и микст) — два зачёта, очки пополам, вверх; отдельной вкладки нет', async () => {
+  // Методика 17.10.2026: отдельного рейтинга по миксту нет, микст считается как парный;
+  // если игрок на турнире сыграл и в парах, и в миксте, в зачёт идут оба результата.
+  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, city, is_published, rating_group) VALUES ('Микст-зачёт', date('now','-20 days'), 'B', 'Ярцево', 1, 'u17')").run().lastInsertRowid);
   const ins = db.prepare('INSERT INTO players (full_name, city, sex, is_public) VALUES (?, ?, ?, 1)');
   const a = Number(ins.run('Микстова Первая', 'Ярцево', 'F').lastInsertRowid);
   const b = Number(ins.run('Микстов Второй', 'Ярцево', 'M').lastInsertRowid);
   const r = db.prepare('INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
   r.run(tid, a, 1, 'mixed'); r.run(tid, b, 2, 'mixed'); r.run(tid, b, 1, 'double');
+  const sz = db.prepare('INSERT INTO tournament_draw_sizes (tournament_id, discipline, sex, size) VALUES (?, ?, ?, ?)');
+  sz.run(tid, 'mixed', 'X', 16); sz.run(tid, 'double', 'M', 8);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
   const st = currentStandings(db);
-  const mx = st.mixed.map((p) => [p.playerName, p.rank, p.ratingPoints]);
-  eq(JSON.stringify(mx.filter((x) => /Микстов/.test(x[0]))), JSON.stringify([['Микстова Первая', 1, 100], ['Микстов Второй', 2, 70]]), 'микст: места и очки по общей шкале (B×1: 100, 70)');
-  assert(!st.players.some((p) => /Микстов/.test(p.playerName)), 'микстовый результат попал в одиночный рейтинг');
-  assert(st.doubles.some((p) => p.playerName === 'Микстов Второй' && p.ratingPoints === 100) && !st.doubles.some((p) => p.playerName === 'Микстова Первая'), 'парный: место в миксте не должно ни добавлять очков, ни давать строку');
-  const page = await http('/rating?discipline=mixed');
-  eq(page.status, 200, 'страница микста');
-  assert(/href="\/rating\?discipline=mixed"[^>]*aria-current="page"/.test(page.text), 'вкладка микста не помечена текущей');
-  assert(/<input type="hidden" name="discipline" value="mixed">/.test(page.text), 'форма фильтров не несёт микст');
-  assert(rowNames(page.text).includes('Микстова Первая') && rowNames(page.text).includes('Микстов Второй'), 'микстовые игроки не показаны');
-  assert(/href="\/rating\?discipline=mixed"/.test((await http('/rating')).text), 'вкладка микста не появилась на одиночном при непустом миксте');
-  const csv = await http('/rating.csv?discipline=mixed');
-  assert(csv.text.includes('Микстова Первая') && !csv.text.includes('Ковалёв'), 'CSV микста не по микстовому списку');
-  const print = await http('/rating/print?discipline=mixed');
-  assert(/Разряд: микст/.test(print.text), 'печатная версия не подписана микстом');
+  const pair = st.lists['u17.pair'];
+  const pa = pair.find((p) => p.playerId === a);
+  const pb = pair.find((p) => p.playerId === b);
+  // до 17, микст сетка 16 (C, 300): 1 место — 300 на пару → 150 каждому; 2 место — 180 → 90.
+  // До 17, пары сетка 8 (D, 150): 1 место — 150 → 75. У Второго два зачёта: 90 + 75 = 165.
+  eq(pa && pa.ratingPoints, 150, 'Первая: победа в миксте C до 17 — 150');
+  eq(pb && pb.ratingPoints, 165, 'Второй: микст 90 + пары 75');
+  eq(pb.counted.length, 2, 'у Второго два зачёта с одного турнира');
+  assert(!st.lists['u17.single'].some((p) => /Микстов/.test(p.playerName)), 'микстовый результат попал в одиночный');
+  assert(!st.lists['adult.pair'].some((p) => /Микстов/.test(p.playerName)), 'результат до 17 попал во взрослый список');
+  const page = await http('/rating?group=u17&discipline=pair');
+  assert(rowNames(page.text).includes('Микстова Первая') && rowNames(page.text).includes('Микстов Второй'), 'парный до 17 не показывает микстовых игроков');
+  assert(!/discipline=mixed/.test(page.text), 'вкладка микста осталась');
+  const print = await http('/rating/print?group=u17&discipline=pair');
+  assert(/Список: До 17 лет · парный разряд/.test(print.text), 'печатная версия не подписана списком');
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
   db.prepare('DELETE FROM players WHERE id IN (?, ?)').run(a, b);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
-  assert(!/href="\/rating\?discipline=mixed"/.test((await http('/rating')).text), 'после удаления микстовых результатов вкладка должна исчезнуть');
-  return 'микст: 1 → 100, 2 → 70 при B×1, свой список, вкладка появляется с данными и исчезает без них; одиночный и парный не тронуты';
+  return 'микст в парном до 17: 150 и 90+75=165, два зачёта, вкладки микста нет';
 });
 
-await check('категория C: принимается формой, коэффициент ×0,5 в движке, показана в правилах на витрине', async () => {
+await check('методика 2026: очки = очки за победу (группа × категория по размеру сетки) × процент места, округление; без размера — по числу участников и предупреждение', async () => {
+  const { pointsFor, pointsTable } = await import('./server/lib/rating-method.mjs');
+  // Таблица, согласованная с федерацией 17.10.2026 (одиночный разряд).
+  const t = pointsTable();
+  eq(JSON.stringify(t.adult.A), JSON.stringify([1000, 600, 400, 300, 200, 100, 50]), 'взрослые A');
+  eq(JSON.stringify(t.adult.D), JSON.stringify([250, 150, 100, 75, 50, 25, 13]), 'взрослые D (12,5 → 13)');
+  eq(JSON.stringify(t.u17.B), JSON.stringify([600, 360, 240, 180, 120, 60, 30]), 'до 17 B');
+  eq(JSON.stringify(t.u13.B), JSON.stringify([350, 210, 140, 105, 70, 35, 18]), 'до 13 B (17,5 → 18)');
+  eq(JSON.stringify(t.u13.D), JSON.stringify([80, 48, 32, 24, 16, 8, 4]), 'до 13 D');
+  eq(pointsFor({ group: 'u13', drawSize: 16, place: 4, pair: true }), 23, 'пара: 45 → 22,5 → 23 каждому');
+  eq(pointsFor({ group: 'adult', drawSize: 32, place: 1, pair: true }), 500, 'пара: 1000 → по 500');
+  eq(pointsFor({ group: 'adult', drawSize: 12, place: 1 }), null, 'сетки на 12 нет — очков нет');
+  eq(pointsFor({ group: 'adult', drawSize: 32, place: 40 }), 0, 'дальше 32 места — 0');
+  // В расчёте: результат без размера сетки — 0 очков и строка в missingSizes.
+  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, is_published, rating_group) VALUES ('Без размера', date('now','-5 days'), 'B', 1, 'adult')").run().lastInsertRowid);
+  const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Безразмерный Игрок', 'Смоленск', 'M')").run().lastInsertRowid);
+  db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, 1, 'single')").run(tid, pid);
+  const res = recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  assert(res.missingSizes.some((m) => m.tournamentId === tid && m.discipline === 'single' && m.inferred === 8), 'пересчёт не сообщил о сетке без размера');
+  eq(currentStandings(db).lists['adult.single'].find((p) => p.playerId === pid).ratingPoints, 250, 'без размера — по 1 участнику сетка 8 (D): 250');
+  // Размер задаётся в админке — и очки появляются.
   const { jar } = await login(ADMIN.user, ADMIN.pass);
-  const _csrf = tokenFrom((await http('/admin/tournaments', { jar })).text);
-  eq((await http('/admin/tournaments', { method: 'POST', form: { _csrf, name: 'Клубный кубок C', end_date: '2026-07-20', category: 'C', kind: 'other', action: 'publish' }, jar })).status, 302, 'турнир категории C');
-  const t = db.prepare("SELECT id, category FROM tournaments WHERE name = 'Клубный кубок C'").get();
-  eq(t && t.category, 'C', 'категория C не сохранилась');
-  const { RATING_CONFIG } = await import('./server/lib/rating-service.mjs');
-  eq(RATING_CONFIG.categoryCoef.C, 0.5, 'коэффициент C');
-  const { computeStandings } = await import('../rating/rating.mjs');
-  const out = computeStandings({ tournaments: [{ id: 1, name: 'C', endDate: '2026-07-20', category: 'C' }], results: [{ playerId: 7, playerName: 'Тест', tournamentId: 1, place: 1 }], matches: [], config: { ...RATING_CONFIG, asOf: '2026-08-01' } });
-  const pts = (out.players || out.standings || [])[0]?.ratingPoints;
-  eq(pts, 50, `1 место в C = 100 × 0,5 (получено ${pts})`);
-  assert(/C × 0\.5/.test((await http('/rating')).text), 'на /rating нет коэффициента C');
-  db.prepare('DELETE FROM tournaments WHERE id = ?').run(t.id); db.prepare('DELETE FROM write_attempts').run();
-  return 'C сохраняется, ×0,5 в движке (100 → 50), показана на витрине';
+  const page = await http(`/admin/tournaments/${tid}/results`, { jar });
+  assert(/id="draw-sizes"/.test(page.text) && /name="size__single__M"/.test(page.text), 'на странице результатов нет размеров сеток');
+  eq((await http(`/admin/tournaments/${tid}/draw-sizes`, { method: 'POST', form: { _csrf: tokenFrom(page.text), size__single__M: '24' }, jar })).status, 302, 'сохранить размер');
+  db.prepare('DELETE FROM write_attempts').run();
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  eq(currentStandings(db).lists['adult.single'].find((p) => p.playerId === pid).ratingPoints, 800, 'взрослые, сетка 24 (B), 1 место — 800');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
+  db.prepare('DELETE FROM players WHERE id = ?').run(pid);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  return 'таблица очков совпала, пары пополам вверх, без размера — по участникам (250) и предупреждение, размер из админки → 800';
 });
 
 await check('турнир: место проведения (из справочника кортов) и организатор с контактом — форма, карточка, одобрение заявки, импорт из текста', async () => {
@@ -6316,11 +6336,65 @@ await check('§8.1 профиль открывается: ФИО, город, п
   assert(row, 'игрок не в снимке');
   assert(page.text.includes(`<td class="rank">${row.rank}</td>`), 'место в рейтинге не выведено');
   assert(page.text.includes(`<td class="pts">${row.ratingPoints}</td>`), 'очки не выведены');
-  const dbl = st.doubles.find((p) => p.playerId === p19);
+  const dbl = st.lists['adult.pair'].find((p) => p.playerId === p19);
   assert(dbl, 'парный рейтинг не посчитан');
   assert(page.text.includes('парный'), 'парный разряд не показан');
   assert(page.text.includes('в паре с') && page.text.includes(P19.partner), 'партнёр по паре не показан');
   return `место ${row.rank}, ${row.ratingPoints} очков; парный: место ${dbl.rank}; матчи со счётом и партнёром`;
+});
+
+await check('спортивный разряд: внесение по приказу списком (проверка → внесение), новые карточки по отчеству, показ в профиле со сроком', async () => {
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const ins = db.prepare("INSERT INTO players (full_name, city, sex) VALUES (?, 'Смоленск', ?)");
+  const known = Number(ins.run('Разрядова Анна', 'F').lastInsertRowid);
+  const bare = Number(ins.run('Однофамильцев', 'M').lastInsertRowid);
+  const page = await http('/admin/players/ranks', { jar });
+  eq(page.status, 200, 'страница разрядов');
+  const names = '1. Разрядова Анна Петровна\n2. Новиченко Глеб Сергеевич\n3. Однофамильцев Иван Ильич';
+  const form = { _csrf: tokenFrom(page.text), sport_rank: 'r1', sport_rank_order: 'приказ Минспорта Смоленской области от 31.08.2026 № 530-п', sport_rank_date: '2026-08-31', sport_rank_until: '2028-08-31', names };
+  const check1 = await http('/admin/players/ranks', { method: 'POST', form: { ...form, apply: '0' }, jar });
+  assert(/разряд в карточку/.test(check1.text) && /новая карточка/.test(check1.text) && /есть карточка только с фамилией/.test(check1.text), 'проверка не показала три исхода');
+  eq(db.prepare("SELECT COUNT(*) AS n FROM players WHERE sport_rank IS NOT NULL").get().n, 0, 'проверка ничего не пишет');
+  eq((await http('/admin/players/ranks', { method: 'POST', form: { ...form, apply: '1' }, jar })).status, 302, 'внесение');
+  const a = db.prepare('SELECT full_name, sport_rank, sport_rank_until FROM players WHERE id = ?').get(known);
+  eq(a.full_name, 'Разрядова Анна Петровна', 'ФИО дополнено отчеством');
+  eq(a.sport_rank, 'r1', 'разряд внесён');
+  const nw = db.prepare("SELECT id, sex, sport_rank FROM players WHERE full_name = 'Новиченко Глеб Сергеевич'").get();
+  assert(nw && nw.sex === 'M' && nw.sport_rank === 'r1', 'новая карточка с полом по отчеству и разрядом');
+  eq(db.prepare('SELECT sport_rank FROM players WHERE id = ?').get(bare).sport_rank, null, 'сомнительная карточка не тронута');
+  const prof = await http(`/player/${known}`);
+  assert(/I спортивный разряд/.test(prof.text) && /№ 530-п/.test(prof.text) && /действует до 31\.08\.2028/.test(prof.text), 'разряд в профиле');
+  db.prepare('DELETE FROM players WHERE id IN (?, ?, ?)').run(known, bare, nw.id);
+  db.prepare('DELETE FROM write_attempts').run();
+  return 'проверка без записи; внесено: карточка с отчеством, новая (муж. по отчеству); однофамилец без имени пропущен; профиль показывает разряд и срок';
+});
+
+await check('импорт протокола: «Рейтинг: до 13» и «размер: 24» у сетки — группа турнира и размер сетки для очков', async () => {
+  const { importTournament } = await import('./server/lib/tournament-import.mjs');
+  const out = importTournament(db, [
+    'Турнир: Импорт методики до 13',
+    'Даты: 2026-08-24 — 2026-08-30',
+    'Город: Смоленск | Категория: A',
+    'Рейтинг: до 13',
+    'Сетка: Девушки до 13 | пол: F | размер: 24',
+    '1/2: Импортова Аа — Импортова Бб 6:1/6:1',
+    '1/2: Импортова Вв — Импортова Гг 6:2/6:2',
+    'Финал: Импортова Аа — Импортова Вв 6:3/6:3',
+    '3 место: Импортова Бб — Импортова Гг 6:4/6:4',
+  ].join('\n'), {});
+  const t = db.prepare('SELECT rating_group FROM tournaments WHERE id = ?').get(out.tournamentId);
+  eq(t.rating_group, 'u13', 'группа турнира');
+  eq(db.prepare("SELECT size FROM tournament_draw_sizes WHERE tournament_id = ? AND discipline = 'single' AND sex = 'F'").get(out.tournamentId)?.size, 24, 'размер сетки');
+  db.prepare('UPDATE tournaments SET is_published = 1 WHERE id = ?').run(out.tournamentId);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  const list = currentStandings(db).lists['u13.single'];
+  const pts = (n) => list.find((p) => p.playerName.startsWith(n))?.ratingPoints;
+  eq([pts('Импортова Аа'), pts('Импортова Вв'), pts('Импортова Бб'), pts('Импортова Гг')].join(','), '350,210,140,105', 'до 13, B: 350 / 210 / 140 (3) / 105 (4)');
+  const ids = db.prepare("SELECT id FROM players WHERE full_name LIKE 'Импортова%'").all().map((r) => r.id);
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(out.tournamentId);
+  db.prepare(`DELETE FROM players WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  return 'группа до 13 и сетка 24 из текста; очки 350/210/140/105 с матчем за 3 место';
 });
 
 await check('§8.2 на профиле нет даты рождения, почты и телефона; адрес — числовой id', async () => {
@@ -6370,33 +6444,30 @@ await check('срез по году рождения (РТТ, решение 04.
   return 'родившиеся в 2012-м оба в «14 лет» (полных 13 и 14), 2013-й — «13 лет»';
 });
 
-await check('§8.4 игрок стоит во всех подходящих возрастных срезах, место считается внутри среза', async () => {
+await check('§8.4 список рейтинга — по группе СЕТКИ, а не по возрасту игрока (методика 17.10.2026); пары — отдельной таблицей', async () => {
   const st = currentStandings(db);
   const row = st.players.find((p) => p.playerId === p19);
-  eq(row.slices.join(','), 'y14,u15,u17,u19', 'срезы четырнадцатилетнего');
-  const has = async (slice) => rowNames((await http(`/rating?slice=${slice}`)).text).includes(P19.name);
-  for (const s of ['y14', 'u15', 'u17', 'u19']) assert(await has(s), `игрока нет в срезе ${s}`);
-  for (const s of ['y13', 'u13', 'adult']) assert(!(await has(s)), `игрок попал в чужой срез ${s}`);
-  // Без даты рождения — только общая таблица.
-  const nb = st.players.find((p) => p.playerId === noBirth19);
-  eq(nb.age, null, 'возраст без даты рождения');
-  eq(nb.slices.length, 0, 'игрок без даты рождения не должен быть в срезах');
-  assert(rowNames((await http('/rating')).text).includes('Бездатов Пётр Ильич'), 'игрок без даты пропал из общей таблицы');
-  assert(!(await has('adult')) && !rowNames((await http('/rating?slice=adult')).text).includes('Бездатов Пётр Ильич'), 'без даты — не в срезе 19+');
-  // Место внутри среза — своё: у y14 два игрока, первый = 1.
-  const y14 = await http('/rating?slice=y14');
-  const names = rowNames(y14.text);
-  eq(names.length, 2, 'в срезе «14 лет» должно быть двое');
-  assert(/<span class="rplate__place">1[ <]/.test(y14.text), 'место внутри среза не с единицы');
-  assert(y14.text.includes('срез: 14 лет'), 'подпись среза');
-  // Парный разряд — своя таблица и фильтр.
-  const dbl = await http('/rating?discipline=double');
+  assert(row, 'игрок (14 лет) во взрослом одиночном — турнир без возрастной группы идёт во взрослый список');
+  eq(row.slices.join(','), 'y14,u15,u17,u19', 'возрастные срезы игрока по-прежнему считаются (профиль)');
+  // 14-летний сыграл в сетке до 13 — очки идут в рейтинг до 13, а не туда, куда «положен» по возрасту.
+  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, is_published, rating_group) VALUES ('Сетка до 13 для проверки', date('now','-3 days'), 'B', 1, 'u13')").run().lastInsertRowid);
+  db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, 2, 'single')").run(tid, p19);
+  db.prepare("INSERT INTO tournament_draw_sizes (tournament_id, discipline, sex, size) VALUES (?, 'single', '*', 8)").run(tid);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  const u13 = currentStandings(db).lists['u13.single'].find((p) => p.playerId === p19);
+  eq(u13 && u13.ratingPoints, 48, 'до 13, сетка 8 (D, 80), 2 место — 48');
+  assert(rowNames((await http('/rating?group=u13&discipline=single')).text).includes(P19.name), 'игрока нет на вкладке «До 13»');
+  assert(!currentStandings(db).lists['u17.single'].some((p) => p.playerId === p19), 'результат до 13 попал в до 17');
+  db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
+  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  // Парный разряд — своя таблица.
+  const dbl = await http('/rating?discipline=pair');
   assert(rowNames(dbl.text).includes(P19.partner), 'парный рейтинг не показан');
   assert(!rowNames((await http('/rating')).text).includes(P19.partner), 'партнёр (без одиночных результатов) попал в одиночный рейтинг');
-  return 'срезы y14,u15,u17,u19; чужие срезы пусты; без даты рождения — только общая; парный — отдельно';
+  return 'сетка до 13 → рейтинг до 13 (48 очков), не до 17; парный — отдельно';
 });
 
-await check('места как у РТТ: пол и срез — свой список с первого, делящие место делят и тут; поиск по фамилии — вид', async () => {
+await check('места как у РТТ: пол — свой список с первого, делящие место делят и тут; поиск по фамилии — вид', async () => {
   // Пластина: <span class="rplate__place">N (O)</span>, скобки только когда место списка ≠ месту общей таблицы.
   const places = (html) => [...html.matchAll(/<span class="rplate__place">(\d+)(?: <span class="muted">\((\d+)\)<\/span>)?<\/span>/g)]
     .map((m) => ({ place: Number(m[1]), overall: m[2] ? Number(m[2]) : Number(m[1]), paren: Boolean(m[2]) }));
@@ -6415,11 +6486,9 @@ await check('места как у РТТ: пол и срез — свой спи
   assert(all.some((r, i) => i > 0 && r.place === all[i - 1].place), 'в общей таблице нет делящих место — проверка деления не сработает');
   invariant(places((await http('/rating?sex=F')).text), 'женщины');
   invariant(places((await http('/rating?sex=M')).text), 'мужчины');
-  invariant(places((await http('/rating?slice=u19')).text), 'до 19');
-  invariant(places((await http('/rating?slice=u19&sex=M')).text), 'юноши до 19');
   const byName = places((await http('/rating?q=' + encodeURIComponent('Волков'))).text);
   assert(byName.length >= 1 && byName.every((r) => !r.paren), 'поиск по фамилии не должен пересчитывать места');
-  return `общая ${all.length} без скобок; пол/срез — с первого, деление наследуется; поиск — вид`;
+  return `общая ${all.length} без скобок; пол — с первого, деление наследуется; поиск — вид`;
 });
 
 await check('§8.5–8.6 фото: нет -> профиль без картинки; загрузил -> появилась; заменил -> новая; удалил -> исчезла сразу, прямая ссылка 404', async () => {
@@ -6806,7 +6875,8 @@ try {
     const read = () => page.evaluate(() => {
       const p = document.querySelector('.rplates--full .rplate');
       const info = p.querySelector('.rplate__info');
-      return { top: Math.round(p.getBoundingClientRect().top), infoH: Math.round(info.getBoundingClientRect().height) };
+      // top — без округления: дробное положение страницы иначе даёт 3 или 4 px от одного и того же подъёма.
+      return { top: p.getBoundingClientRect().top, infoH: Math.round(info.getBoundingClientRect().height) };
     });
     const before = await read();
     await page.locator('.rplates--full .rplate').first().hover();
@@ -6815,7 +6885,7 @@ try {
     await page.close();
     // 14.09 подъём убрали из-за «дрожания» на границе пластин; 19.09 владелец попросил подъём
     // вернуть — теперь у поднятой пластины продлена зона наведения вниз, и курсор из-под неё не выпадает.
-    const lift = before.top - after.top;
+    const lift = Math.round(before.top - after.top);
     eq(lift, 3, `пластина должна подняться на 3 px, поднялась на ${lift}`);
     assert(after.infoH > before.infoH + 20, `справка не раскрылась: ${before.infoH} → ${after.infoH} px`);
     // Дрожание: курсор на нижнем крае пластины — transform остаётся стабильным 600 мс.
