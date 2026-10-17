@@ -1850,9 +1850,11 @@ await check('ТЗ 4.5/4.6 «фото»: у тренера/корта/клуба 
   const jpg = await sharpMod({ create: { width: 640, height: 480, channels: 3, background: '#2a6f97' } })
     .withMetadata({ exif: { IFD0: { Copyright: 'FTSO-EXIF-MARK' } } }).jpeg().toBuffer();
   const up = await http(`/admin/directories/courts/${court.id}/photo`, {
-    method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'photo', filename: 'court.jpg', type: 'image/jpeg', buffer: jpg }] }, jar,
+    method: 'POST', multipart: { fields: { _csrf }, files: [{ field: 'photo', filename: 'Корт «Кристалл» №1.jpg', type: 'image/jpeg', buffer: jpg }] }, jar,
   });
   eq(up.status, 302, 'загрузка фото корта');
+  // Русское имя файла сохраняется как есть (17.10.2026: busboy читал его как latin1 — кракозябры).
+  eq(db.prepare('SELECT original_name FROM uploads ORDER BY id DESC LIMIT 1').get().original_name, 'Корт «Кристалл» №1.jpg', 'русское имя загруженного файла');
   const pub = await http(`/courts/${court.id}/photo`);
   eq(pub.status, 200, 'публичное фото корта');
   const raw = Buffer.from(await (await fetch(inst.base + `/courts/${court.id}/photo`)).arrayBuffer());
@@ -6395,6 +6397,20 @@ await check('импорт протокола: «Рейтинг: до 13» и «�
   db.prepare(`DELETE FROM players WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
   return 'группа до 13 и сетка 24 из текста; очки 350/210/140/105 с матчем за 3 место';
+});
+
+await check('миграция чинит испорченные имена загрузок (UTF-8, прочитанный как latin1), нормальные не трогает', async () => {
+  const good = 'Справка о местоположении сервера #1633 от 4 сентября 2026.pdf';
+  const bad = Buffer.from(good, 'utf8').toString('latin1');
+  const ins = db.prepare("INSERT INTO uploads (stored_name, original_name, mime, kind, profile, size_bytes, sha256) VALUES (?, ?, 'application/pdf', 'document', 'internal-doc', 1, ?)");
+  const a = Number(ins.run('t-bad-' + Date.now(), bad, 'x1').lastInsertRowid);
+  const b = Number(ins.run('t-ok-' + Date.now(), 'Café menu.pdf', 'x2').lastInsertRowid);
+  const { migrate } = await import('./db/migrate.mjs');
+  migrate();
+  eq(db.prepare('SELECT original_name FROM uploads WHERE id = ?').get(a).original_name, good, 'испорченное имя починено');
+  eq(db.prepare('SELECT original_name FROM uploads WHERE id = ?').get(b).original_name, 'Café menu.pdf', 'латиница с акцентом не тронута');
+  db.prepare('DELETE FROM uploads WHERE id IN (?, ?)').run(a, b);
+  return 'кракозябры → «Справка о местоположении сервера…», «Café» не тронуто';
 });
 
 await check('§8.2 на профиле нет даты рождения, почты и телефона; адрес — числовой id', async () => {

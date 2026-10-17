@@ -33,6 +33,9 @@ export function parseMultipart(req, { maxFileBytes = 10 * 1024 * 1024, maxFiles 
       bb = Busboy({
         headers: req.headers,
         limits: { fileSize: maxFileBytes, files: maxFiles, fields: maxFields, fieldSize: maxFieldBytes },
+        // Имя файла браузеры шлют в UTF-8, а busboy по умолчанию читает его как latin1 —
+        // русское имя превращалось в «Ð¡Ð¿ÑÐ°Ð²ÐºÐ°…» (17.10.2026, «Справка о местоположении сервера»).
+        defParamCharset: 'utf8',
       });
     } catch {
       return reject(new ValidationError('Форма отправлена в неверном формате. Обновите страницу и повторите.'));

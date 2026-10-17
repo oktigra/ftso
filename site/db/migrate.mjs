@@ -404,6 +404,15 @@ export function migrate() {
   }
   // Спортивный разряд игрока (приказ Минспорта) — для профиля.
   for (const c of ['sport_rank', 'sport_rank_order', 'sport_rank_date', 'sport_rank_until']) addColumnIfMissing(db, 'players', c, 'TEXT');
+  // ИМЕНА ЗАГРУЖЕННЫХ ФАЙЛОВ (17.10.2026): до исправления разбора загрузок русские имена
+  // сохранялись как UTF-8, прочитанный в latin1 («Ð¡Ð¿ÑÐ°Ð²ÐºÐ°»). Чиним только то, что после
+  // обратного перекодирования даёт корректный UTF-8 без замен, — нормальные имена не трогаем.
+  for (const u of db.prepare("SELECT id, original_name FROM uploads WHERE original_name GLOB '*[ÐÑÃÂ]*'").all()) {
+    const fixed = Buffer.from(u.original_name, 'latin1').toString('utf8');
+    if (!fixed.includes('\uFFFD') && fixed !== u.original_name && /[а-яё]/i.test(fixed)) {
+      db.prepare('UPDATE uploads SET original_name = ? WHERE id = ?').run(fixed, u.id);
+    }
+  }
   const resultsRebuilt = upgradeResults(db);
   const matchesRebuilt = upgradeMatches(db);
   upgradeMatchesStage(db); // этап матча + UNIQUE со stage (06.09.2026) — после партнёров по паре
