@@ -201,7 +201,8 @@ function resolveGroup(group, ctx) {
 /**
  * @param {object} input
  * @param {Array}  input.tournaments [{ id, name, endDate, category }]
- * @param {Array}  input.results     [{ playerId, playerName, tournamentId, place }]
+ * @param {Array}  input.results     [{ playerId, playerName, tournamentId, place, points? }]
+ *                                   points — готовые очки за результат (иначе — по таблице места)
  * @param {Array}  [input.matches]   [{ tournamentId, winnerPlayerId, loserPlayerId }]
  * @param {string} [input.asOf]      "YYYY-MM-DD", по умолчанию сегодня по UTC
  * @param {object} [input.config]
@@ -287,7 +288,12 @@ export function computeStandings(input = {}) {
 
     if (!inWindow.get(r.tournamentId)) continue; // вне окна — в зачёт не идёт
 
-    const points = pointsForPlace(r.place, config) * config.categoryCoef[t.category];
+    // Очки за результат: готовые (r.points — методика сайта считает их сама: группа,
+    // размер сетки, деление пары) или по таблице места × коэффициент категории.
+    if (r.points !== undefined && (typeof r.points !== 'number' || !Number.isFinite(r.points) || r.points < 0)) {
+      fail(`результат игрока ${r.playerId} в турнире ${r.tournamentId}: points должно быть числом >= 0, получено ${JSON.stringify(r.points)}`);
+    }
+    const points = r.points !== undefined ? r.points : pointsForPlace(r.place, config) * config.categoryCoef[t.category];
     if (!entriesByPlayer.has(r.playerId)) entriesByPlayer.set(r.playerId, []);
     entriesByPlayer.get(r.playerId).push({
       tournamentId: t.id,

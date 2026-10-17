@@ -180,7 +180,7 @@
     <% } else if (top5.length === 0) { %>
       <div class="panel notice notice--invite">
         <b>Таблица заполняется</b>
-        <span>Рейтинг считается по итогам турниров Федерации: шесть лучших результатов за последние 52 недели. Зарегистрируйтесь, чтобы попасть в таблицу после первого турнира.</span>
+        <span>Рейтинг считается по итогам турниров Федерации: десять лучших результатов за последние 52 недели. Зарегистрируйтесь, чтобы попасть в таблицу после первого турнира.</span>
         <a class="btn btn--secondary btn--small" href="/register">Регистрация игрока</a>
       </div>
     <% } else { %>
@@ -197,7 +197,7 @@
         if (!list.length) return null;
         return list.reduce((a, b) => (b.place < a.place ? b : a), list[0]);
       };
-      const placeRu = (n) => (n === 1 ? 'победа' : n === 2 ? 'финал' : n === 3 || n === 4 ? 'полуфинал' : `${n} место`);
+      const placeRu = (n) => (n === 1 ? 'победа' : n === 2 ? 'финал' : n === 3 ? '3 место' : n === 4 ? '4 место' : n <= 8 ? '5–8 место' : n <= 16 ? '9–16 место' : '17–32 место');
       %>
       <div class="top-tabs" role="tablist" aria-label="Топ рейтинга">
         <button class="tag top-tab is-active" type="button" data-top-tab="all">Все</button>
@@ -238,7 +238,7 @@
       <% }); %>
     <% } %>
 
-    <p class="rules-note">Рейтинг рассчитывается по регламенту ФТСО: учитываются <%= rules.countBest %> лучших турниров за последние 52 недели, коэффициент категории A × <%= rules.categoryCoef.A %>, B × <%= rules.categoryCoef.B %>, C × <%= rules.categoryCoef.C %>.</p>
+    <p class="rules-note">Топ — рейтинг взрослых, одиночный разряд. Рейтинги до 17 и до 13 лет и парные — на странице рейтинга. В зачёт идут <%= rules.countBest %> лучших результатов за 52 недели; очки зависят от размера сетки, возрастной группы и места — <a href="/rating/metodika">как считается рейтинг</a>.</p>
     <p class="table-foot"><a class="link-more" href="/rating">Полный рейтинг <span aria-hidden="true">→</span></a></p>
   </div>
 </section>

@@ -11,29 +11,23 @@
         <span class="tag"><%= statusText %></span>
         <span class="tag">актуальность: <%= standings.asOf %></span>
         <span class="tag">обновлён: <%= standings.computedAt %> UTC</span>
-        <% if (slice) { %><span class="tag">срез: <%= slice.label %></span><% } %>
       </div>
       <%
-      /* РАЗРЯД — РАВНОПРАВНЫЕ КЛАССИФИКАЦИИ (09.09.2026), как у РТТ: там одиночная
-         и парная; третья, микст, добавлена 11.09.2026 решением владельца — у РТТ
-         микста нет, у федерации есть; считается теми же правилами, вкладка видна,
-         пока список не пуст. Дальше — прежний комментарий: там одиночная
-         и парная считаются раздельно и лежат отдельными таблицами. У нас парная была
-         спрятана в фильтрах наравне с городом и выглядела второстепенной.
-         Прочие фильтры при переключении сохраняются — иначе срез сбрасывается. */
-      const keep = Object.entries(filters)
-        .filter(([k, v]) => k !== 'discipline' && v)
-        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-        .join('&');
-      const hrefFor = (d) => `/rating?discipline=${d}${keep ? '&' + keep : ''}`;
+      /* ШЕСТЬ СПИСКОВ (методика 17.10.2026): группа сетки × разряд. Поиск и пол при
+         переключении сохраняются. */
+      const keep = ['q', 'sex'].filter((k) => filters[k]).map((k) => `${k}=${encodeURIComponent(filters[k])}`).join('&');
+      const hrefFor = (gr, d) => `/rating?group=${gr}&discipline=${d}${keep ? '&' + keep : ''}`;
       %>
-      <nav class="tabs" aria-label="Разряд">
-        <a class="tabs__item<%= filters.discipline === 'single' ? ' is-active' : '' %>" href="<%= hrefFor('single') %>"<%- filters.discipline === 'single' ? ' aria-current="page"' : '' %>>Одиночный разряд</a>
-        <a class="tabs__item<%= filters.discipline === 'double' ? ' is-active' : '' %>" href="<%= hrefFor('double') %>"<%- filters.discipline === 'double' ? ' aria-current="page"' : '' %>>Парный разряд</a>
-        <% if (hasMixed) { %>
-        <a class="tabs__item<%= filters.discipline === 'mixed' ? ' is-active' : '' %>" href="<%= hrefFor('mixed') %>"<%- filters.discipline === 'mixed' ? ' aria-current="page"' : '' %>>Микст</a>
-        <% } %>
+      <nav class="tabs" aria-label="Рейтинговая группа">
+        <% groups.forEach(function (gr) { %>
+          <a class="tabs__item<%= filters.group === gr ? ' is-active' : '' %>" href="<%= hrefFor(gr, filters.discipline) %>"<%- filters.group === gr ? ' aria-current="page"' : '' %>><%= groupRu[gr] %></a>
+        <% }); %>
       </nav>
+      <nav class="tabs tabs--sub" aria-label="Разряд">
+        <a class="tabs__item<%= filters.discipline === 'single' ? ' is-active' : '' %>" href="<%= hrefFor(filters.group, 'single') %>"<%- filters.discipline === 'single' ? ' aria-current="page"' : '' %>>Одиночный разряд</a>
+        <a class="tabs__item<%= filters.discipline === 'pair' ? ' is-active' : '' %>" href="<%= hrefFor(filters.group, 'pair') %>"<%- filters.discipline === 'pair' ? ' aria-current="page"' : '' %>>Парный разряд</a>
+      </nav>
+      <p class="muted"><a class="link-more" href="#metodika">Как считается рейтинг ↓</a></p>
     <% } %>
   </div>
 </section>
@@ -54,28 +48,11 @@
           <label for="f-q">Поиск по фамилии</label>
           <input id="f-q" type="search" name="q" value="<%= filters.q %>" placeholder="например, Ковалёв" maxlength="120">
         </div>
-        <div class="field">
-          <label for="f-age">Возрастная группа</label>
-          <select id="f-age" name="age">
-            <option value="">все</option>
-            <% ageGroups.forEach(function (g) { %>
-              <option value="<%= g %>"<%= filters.age === g ? ' selected' : '' %>><%= g %></option>
-            <% }); %>
-          </select>
-        </div>
-        <div class="field">
-          <label for="f-slice">Возраст (срез)</label>
-          <select id="f-slice" name="slice">
-            <option value="">все возрасты</option>
-            <% ageSlices.forEach(function (s) { %>
-              <option value="<%= s.id %>"<%= filters.slice === s.id ? ' selected' : '' %>><%= s.label %></option>
-            <% }); %>
-          </select>
-        </div>
         <%
         /* Разряд выбирается вкладками выше; форма фильтров лишь несёт его дальше,
            иначе «Показать» сбрасывало бы парную классификацию на одиночную. */
         %>
+        <input type="hidden" name="group" value="<%= filters.group %>">
         <input type="hidden" name="discipline" value="<%= filters.discipline %>">
         <div class="field">
           <label for="f-sex">Пол</label>
@@ -87,7 +64,7 @@
           </select>
         </div>
         <button class="btn btn--primary" type="submit">Показать</button>
-        <a class="btn btn--secondary" href="/rating">Сбросить</a>
+        <a class="btn btn--secondary" href="/rating?group=<%= filters.group %>&discipline=<%= filters.discipline %>">Сбросить</a>
       </form>
 
       <p class="rating-summary muted">
@@ -99,7 +76,7 @@
       </p>
 
       <% if (players.length === 0) { %>
-        <div class="panel notice">По заданным фильтрам игроков не найдено.</div>
+        <div class="panel notice"><%= total ? 'По заданным фильтрам игроков не найдено.' : 'В этом рейтинге пока никого нет.' %></div>
       <% } else { %>
         <%
         /* ПЛАСТИНЫ ВМЕСТО ТАБЛИЦЫ (08.09.2026): та же конструкция, что в топе главной,
@@ -114,7 +91,7 @@
           if (!list.length) return null;
           return list.reduce((a, b) => (b.place < a.place ? b : a), list[0]);
         };
-        const placeRu = (n) => (n === 1 ? 'победа' : n === 2 ? 'финал' : n === 3 || n === 4 ? 'полуфинал' : `${n} место`);
+        const placeRu = (n) => (n === 1 ? 'победа' : n === 2 ? 'финал' : n === 3 ? '3 место' : n === 4 ? '4 место' : n <= 8 ? '5–8 место' : n <= 16 ? '9–16 место' : '17–32 место');
         %>
         <div class="rplates rplates--full">
           <div class="rplates__head" aria-hidden="true">
@@ -150,18 +127,19 @@
       <% } %>
 
       <p class="rules-note">
-        Учитываются <%= rules.countBest %> лучших турниров за последние 52 недели (окно <%= rules.windowDays %> дней),
-        коэффициент категории A × <%= rules.categoryCoef.A %>, B × <%= rules.categoryCoef.B %>, C × <%= rules.categoryCoef.C %>,
-        шкала очков по местам 100 · 70 · 45 · 25 · 10.
-        Рейтинг пересчитывается в начале каждого месяца. Возраст — в полных годах на сегодня.
-        Как в классификации РТТ: при выборе пола, возрастной группы или среза место считается внутри
-        этого списка (равные очки делят место), в скобках — место в общей таблице; поиск по фамилии места не меняет.
+        Список: <%= list.label %>. В зачёт идут <%= method.countBest %> лучших результатов за последние 52 недели;
+        рейтинг пересчитывается в начале каждого месяца. При выборе пола место считается внутри списка
+        (равные очки делят место), в скобках — место в списке без фильтра; поиск по фамилии места не меняет.
         <% if (!standings.hasPrevious) { %>
           Предыдущего снимка ещё нет, поэтому колонка «Изменение» пуста («—»).
         <% } %>
       </p>
     <% } %>
   </div>
+</section>
+
+<section class="section-pad section-pad--tight">
+  <div class="container"><div class="panel"><%- include('partials/rating-method') %></div></div>
 </section>
 </main>
 

@@ -492,7 +492,7 @@ export default function mountAdminContent(app, { db, config, limitWrites }) {
     guard(async (req, res) => {
       const out = await applyStarterDocuments(db, config, req.session.user.id);
       logAction(db, req.session.user.id, 'documents.starter', null, out);
-      flash(req, res, 'ok', `Стартовые документы: добавлено ${out.added}, уже было ${out.skipped} из ${out.total}.`, '/admin/library');
+      flash(req, res, 'ok', `Стартовые документы: добавлено ${out.added}, перевыпущено ${out.replaced}, уже было ${out.skipped} из ${out.total}.`, '/admin/library');
     }),
   );
   app.post(

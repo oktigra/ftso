@@ -51,6 +51,12 @@
           <option value="custom">свои границы</option>
         </select>
       </div>
+      <div class="field"><label for="t-rgroup">Рейтинг: группа сетки</label>
+        <select id="t-rgroup" name="rating_group">
+          <option value="auto">по возрасту (авто)</option>
+          <% Object.keys(ratingGroupRu).forEach(function (k) { %><option value="<%= k %>"><%= ratingGroupRu[k] %></option><% }); %>
+        </select>
+      </div>
       <div class="field" data-age-custom hidden><label for="t-agemin">Возраст: от / до (полных лет в год турнира)</label>
         <span class="inline-form"><input id="t-agemin" name="age_min" inputmode="numeric" maxlength="3" placeholder="от" size="4"> <input id="t-agemax" name="age_max" inputmode="numeric" maxlength="3" placeholder="до" size="4"></span>
       </div>
@@ -65,7 +71,7 @@
         <button class="btn btn--primary" type="submit" name="action" value="publish">Опубликовать</button>
       </div>
     </form>
-    <p class="muted">Категория A — чемпионаты и первенства области (коэффициент ×2), B — рейтинговые турниры Федерации (×1), C — любительские и клубные (×0,5).
+    <p class="muted">Категория турнира — для календаря и сроков приёма заявок. Очки рейтинга считаются по методике: категория каждой сетки — по её размеру (32 → A, 24 → B, 16 → C, 8 → D, размеры задаются на странице «Результаты»), группа — «Рейтинг: группа сетки» (<a href="/rating/metodika">как считается рейтинг</a>).
       Город, дата начала, тип и возраст — для фильтров календаря на сайте (ТЗ п. 4.3); статус
       «предстоящий / идёт / завершён» считается от дат сам.</p>
   </div>
@@ -109,7 +115,7 @@
                   <% Object.keys(sexRu).forEach(function (k) { %><option value="<%= k %>"<%= t.sex === k ? ' selected' : '' %>><%= sexRu[k] %></option><% }); %>
                 </select>
               </td>
-              <td><span class="ro"><%= t.age_group || (t.age_min === null && t.age_max === null ? '—' : '') %><%= (t.age_min !== null || t.age_max !== null) ? ' 🔒' : '' %></span>
+              <td><span class="ro"><%= t.age_group || (t.age_min === null && t.age_max === null ? '—' : '') %><%= (t.age_min !== null || t.age_max !== null) ? ' 🔒' : '' %><br><span class="muted" title="В какой список рейтинга идут места">рейтинг: <%= ratingGroupRu[t.rating_group] || '—' %></span></span>
                 <%
                   // Подпись «🔒» — ограничение реально проверяется при посеве и вводе результатов.
                   const preset = agePresets.find(function (p) { return p.min === t.age_min && p.max === t.age_max; });
@@ -119,6 +125,9 @@
                   <option value="none"<%= noLimit ? ' selected' : '' %>>без ограничения</option>
                   <% agePresets.forEach(function (p) { %><option value="<%= p.id %>"<%= preset && preset.id === p.id ? ' selected' : '' %>><%= p.label %></option><% }); %>
                   <option value="custom"<%= !noLimit && !preset ? ' selected' : '' %>>свои границы</option>
+                </select>
+                <select class="ed" form="edit-tournament-<%= t.id %>" name="rating_group" title="Рейтинг: группа сетки">
+                  <% Object.keys(ratingGroupRu).forEach(function (k) { %><option value="<%= k %>"<%= t.rating_group === k ? ' selected' : '' %>>рейтинг: <%= ratingGroupRu[k] %></option><% }); %>
                 </select>
                 <span class="ed" data-age-custom<%= (noLimit || preset) ? ' hidden' : '' %>>
                   <input class="ed" form="edit-tournament-<%= t.id %>" name="age_min" value="<%= t.age_min === null ? '' : t.age_min %>" maxlength="3" placeholder="от" size="4">

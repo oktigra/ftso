@@ -11,8 +11,11 @@ import { postInBackground } from '../lib/max-post.mjs';
 import { importTournament } from '../lib/tournament-import.mjs';
 import { assertAgeAllowed, AGE_LIMIT_PRESETS, ageRangeLabel } from '../lib/age.mjs';
 import { mergePlayers } from '../lib/player-merge.mjs';
+import { SPORT_RANKS, sportRankInput } from '../lib/sport-rank.mjs';
+import { RATING_GROUP_RU, DRAW_SIZES, categoryForSize, pointsFor } from '../lib/rating-method.mjs';
+import { planRanks, applyRanks } from '../lib/sport-rank-bulk.mjs';
 import { devNoticeMode, devNoticeOn } from '../app.mjs';
-import { ERASED_LABEL } from '../lib/rating-service.mjs';
+import { ERASED_LABEL, snapshotSize } from '../lib/rating-service.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
 import { logAction, recentActions } from '../lib/action-log.mjs';
@@ -186,7 +189,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         id: s.id,
         computedAt: s.computedAt,
         status: s.status,
-        players: s.data.players.length,
+        players: snapshotSize(s.data),
       })),
     });
   });
@@ -221,8 +224,32 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         nameParts: splitName(p.full_name),
       })),
       sexes: SEXES,
+      sportRanks: SPORT_RANKS,
     });
   });
+
+  // РАЗРЯДЫ ПО ПРИКАЗУ (17.10.2026): список ФИО → разряд карточкам, недостающие — новые карточки.
+  app.get('/admin/players/ranks', requireRole(...DATA_ROLES), (req, res) => {
+    res.render('admin/player-ranks', { title: 'Разряды по приказу — админка ФТСО', sportRanks: SPORT_RANKS, plan: null, form: {} });
+  });
+  app.post(
+    '/admin/players/ranks',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      let rank;
+      try { rank = sportRankInput(req.body); } catch (e) { throw new ValidationError(e.message); }
+      if (!rank.sport_rank) throw new ValidationError('Выберите разряд');
+      const plan = planRanks(db, req.body.names);
+      if (!plan.length) throw new ValidationError('Вставьте список ФИО — по одному на строку');
+      if (req.body.apply !== '1') {
+        return res.render('admin/player-ranks', { title: 'Разряды по приказу — админка ФТСО', sportRanks: SPORT_RANKS, plan, form: req.body });
+      }
+      const done = applyRanks(db, plan, rank);
+      logAction(db, actorId(req), 'player.ranks', null, { ...rank, ...done });
+      flash(req, res, 'ok', `Разряд внесён: обновлено ${done.updated}, новых карточек ${done.created}, пропущено ${done.skipped}.`, '/admin/players');
+    }),
+  );
 
   app.post(
     '/admin/players',
@@ -286,6 +313,14 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         )
         .run(data.full_name, data.city, data.sex, data.birth_date, data.rni, id);
       if (!info.changes) throw new ValidationError('Игрок не найден');
+      // Спортивный разряд — только если поле есть в форме (строка таблицы его несёт).
+      if (Object.prototype.hasOwnProperty.call(req.body, 'sport_rank')) {
+        let rank;
+        try { rank = sportRankInput(req.body); } catch (e) { throw new ValidationError(e.message); }
+        db.prepare('UPDATE players SET sport_rank = ?, sport_rank_order = ?, sport_rank_date = ?, sport_rank_until = ? WHERE id = ?')
+          .run(rank.sport_rank, rank.sport_rank_order, rank.sport_rank_date, rank.sport_rank_until, id);
+        Object.assign(data, rank);
+      }
       logAction(db, actorId(req), 'player.update', id, data);
       flash(req, res, 'ok', 'Игрок обновлён.', '/admin/players');
     }),
@@ -779,6 +814,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       formatRu: TOURNAMENT_FORMAT_RU,
       ages: TOURNAMENT_AGES,
       agePresets: AGE_LIMIT_PRESETS,
+      ratingGroupRu: RATING_GROUP_RU,
       sexRu: TOURNAMENT_SEX_RU,
       venues: db.prepare("SELECT name, city FROM courts ORDER BY name").all(),
     });
@@ -864,8 +900,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // без action (старые формы, тесты) — опубликован, как было до 06.09.2026.
       const published = req.body.action === 'draft' ? 0 : 1;
       const info = db
-        .prepare('INSERT INTO tournaments (name, end_date, category, city, start_date, kind, format, age_group, age_min, age_max, sex, venue, organizer, organizer_contact, fee, entry_deadline, is_published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.format, data.age_group, data.age_min, data.age_max, data.sex, data.venue, data.organizer, data.organizer_contact, data.fee, data.entry_deadline, published);
+        .prepare('INSERT INTO tournaments (name, end_date, category, city, start_date, kind, format, age_group, age_min, age_max, sex, venue, organizer, organizer_contact, fee, entry_deadline, is_published, rating_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.format, data.age_group, data.age_min, data.age_max, data.sex, data.venue, data.organizer, data.organizer_contact, data.fee, data.entry_deadline, published, data.rating_group);
       logAction(db, actorId(req), 'tournament.create', info.lastInsertRowid, data);
       if (published) postInBackground(db, config, actorId(req), 'tournament.publish', tournamentPost(db, req, Number(info.lastInsertRowid), '🎾 Турнир в календаре:'));
       flash(req, res, 'ok', published ? `Турнир «${data.name}» опубликован.` : `Черновик «${data.name}» сохранён — виден только в админке.`, '/admin/tournaments');
@@ -882,8 +918,8 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       // action: draft — сохранить черновиком, publish — сохранить и опубликовать, иначе — не менять статус.
       const pub = req.body.action === 'publish' ? 1 : req.body.action === 'draft' ? 0 : null;
       const info = db
-        .prepare('UPDATE tournaments SET name = ?, end_date = ?, category = ?, city = ?, start_date = ?, kind = ?, format = ?, age_group = ?, age_min = ?, age_max = ?, sex = ?, venue = ?, organizer = ?, organizer_contact = ?, fee = ?, entry_deadline = ?, is_published = COALESCE(?, is_published) WHERE id = ?')
-        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.format, data.age_group, data.age_min, data.age_max, data.sex, data.venue, data.organizer, data.organizer_contact, data.fee, data.entry_deadline, pub, id);
+        .prepare('UPDATE tournaments SET name = ?, end_date = ?, category = ?, city = ?, start_date = ?, kind = ?, format = ?, age_group = ?, age_min = ?, age_max = ?, sex = ?, venue = ?, organizer = ?, organizer_contact = ?, fee = ?, entry_deadline = ?, is_published = COALESCE(?, is_published), rating_group = ? WHERE id = ?')
+        .run(data.name, data.end_date, data.category, data.city, data.start_date, data.kind, data.format, data.age_group, data.age_min, data.age_max, data.sex, data.venue, data.organizer, data.organizer_contact, data.fee, data.entry_deadline, pub, data.rating_group, id);
       if (!info.changes) throw new ValidationError('Турнир не найден');
       logAction(db, actorId(req), 'tournament.update', id, data);
       flash(req, res, 'ok', 'Турнир обновлён.', '/admin/tournaments');
@@ -936,8 +972,67 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         )
         .all(id),
       maxParticipants: config.rating.maxParticipants,
+      drawSizes: drawSizeRows(id, tournament.rating_group),
+      drawSizeOptions: DRAW_SIZES.map((n) => ({ size: n, cat: categoryForSize(n) })),
+      ratingGroupRu: RATING_GROUP_RU,
     });
   };
+
+  /**
+   * РАЗМЕРЫ СЕТОК (методика 17.10.2026): по одной строке на каждую сетку турнира, где есть
+   * места — разряд × пол (микст — общий). Размер задаёт категорию и очки; без него
+   * результаты дают 0 очков. Показывает и очки за 1 место — проверить себя.
+   */
+  const SEX_KEY_RU = { M: 'юноши / мужчины', F: 'девушки / женщины', X: 'микст', '*': 'все' };
+  const DISC_RU_ADMIN = { single: 'одиночный', double: 'парный', mixed: 'микст' };
+  function drawSizeRows(tournamentId, group) {
+    const present = db
+      .prepare(
+        `SELECT r.discipline, CASE WHEN r.discipline = 'mixed' THEN 'X' ELSE COALESCE(p.sex, '*') END AS sex, COUNT(*) AS n
+           FROM results r JOIN players p ON p.id = r.player_id
+          WHERE r.tournament_id = ? GROUP BY 1, 2 ORDER BY 1, 2`,
+      )
+      .all(tournamentId);
+    const sizes = new Map(db.prepare('SELECT discipline, sex, size FROM tournament_draw_sizes WHERE tournament_id = ?').all(tournamentId).map((r) => [`${r.discipline}|${r.sex}`, r.size]));
+    return present.map((r) => {
+      const size = sizes.get(`${r.discipline}|${r.sex}`) || sizes.get(`${r.discipline}|*`) || null;
+      return {
+        discipline: r.discipline,
+        sex: r.sex,
+        label: `${DISC_RU_ADMIN[r.discipline]} · ${SEX_KEY_RU[r.sex] || r.sex}`,
+        results: r.n,
+        size,
+        category: size ? categoryForSize(size) : null,
+        winPoints: size ? pointsFor({ group: group || 'adult', drawSize: size, place: 1, pair: r.discipline !== 'single' }) : null,
+      };
+    });
+  }
+
+  app.post(
+    '/admin/tournaments/:id/draw-sizes',
+    requireRole(...DATA_ROLES),
+    limitWrites,
+    guard((req, res) => {
+      const tournamentId = intAtLeast(req.params.id, 'Турнир');
+      if (!db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(tournamentId)) throw new ValidationError('Турнир не найден');
+      const put = db.prepare('INSERT INTO tournament_draw_sizes (tournament_id, discipline, sex, size) VALUES (?, ?, ?, ?) ON CONFLICT (tournament_id, discipline, sex) DO UPDATE SET size = excluded.size');
+      const del = db.prepare('DELETE FROM tournament_draw_sizes WHERE tournament_id = ? AND discipline = ? AND sex = ?');
+      const saved = [];
+      db.transaction(() => {
+        for (const [k, v] of Object.entries(req.body)) {
+          const m = /^size__(single|double|mixed)__(M|F|X|\*)$/.exec(k);
+          if (!m) continue;
+          const size = Number(v);
+          if (!v) { del.run(tournamentId, m[1], m[2]); continue; }
+          if (!DRAW_SIZES.includes(size)) throw new ValidationError('Размер сетки: 32, 24, 16 или 8');
+          put.run(tournamentId, m[1], m[2], size);
+          saved.push(`${m[1]}/${m[2]}=${size}`);
+        }
+      })();
+      logAction(db, actorId(req), 'tournament.draw_sizes', tournamentId, { saved });
+      flash(req, res, 'ok', 'Размеры сеток сохранены. Рейтинг изменится после пересчёта.', `/admin/tournaments/${tournamentId}/results#draw-sizes`);
+    }),
+  );
   app.get('/admin/tournaments/:id/results', requireRole(...DATA_ROLES), (req, res, next) => renderResults(req, res, next));
 
   // КРУГОВЫЕ ГРУППЫ (сетка, слой 1): группа → участники → счёт в клетках → места.
@@ -1478,7 +1573,14 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         players: result.players,
       });
       const warn = result.warnings.length ? ` Предупреждения: ${result.warnings.join('; ')}` : '';
-      flash(req, res, 'ok', `Рейтинг пересчитан: ${result.players} игроков.${warn}`, safeRefererPath(req, '/admin'));
+      // Сетки без размера дают 0 очков — называем турниры, чтобы секретарь их дозаполнил.
+      const miss = result.missingSizes && result.missingSizes.length
+        ? ` Не задан размер сетки (места дают 0 очков): ${[...new Set(result.missingSizes.map((m) => {
+          const t = db.prepare('SELECT name FROM tournaments WHERE id = ?').get(m.tournamentId);
+          return `${t ? t.name : '#' + m.tournamentId} (${m.discipline})`;
+        }))].join('; ')} — «Результаты» → «Размеры сеток».`
+        : '';
+      flash(req, res, miss ? 'error' : 'ok', `Рейтинг пересчитан: ${result.players} строк в шести списках.${miss}${warn}`, safeRefererPath(req, '/admin'));
     }),
   );
 

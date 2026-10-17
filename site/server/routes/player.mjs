@@ -7,7 +7,8 @@
 //
 // Фотография — /player/:id/photo: то же изображение, что в кабинете, встроенно
 // и без кэша (см. sendUploadInline). Удалена в кабинете -> 404 здесь сразу.
-import { playerRatingHistory, playerProfile, statusLabel, DISCIPLINE_RU } from '../lib/rating-service.mjs';
+import { playerRatingHistory, playerProfile, statusLabel, DISCIPLINE_RU, LIST_KEYS, RATING_GROUP_RU, LIST_DISCIPLINE_RU } from '../lib/rating-service.mjs';
+import { sportRankView } from '../lib/sport-rank.mjs';
 import { uploadById, sendUploadInline } from '../lib/uploads.mjs';
 import { AGE_SLICES } from '../lib/age.mjs';
 import { SECTIONS } from '../lib/nav.mjs';
@@ -18,7 +19,9 @@ export default function mountPlayer(app, { db, config }) {
   app.get('/player/:id', (req, res, next) => {
     if (!/^\d+$/.test(req.params.id)) return next();
     const profile = playerProfile(db, Number(req.params.id));
-    const history = profile && !profile.anonymized ? playerRatingHistory(db, Number(req.params.id), 'single') : { points: [], best: null };
+    // История — по первому списку, где игрок есть (обычно одиночный своей группы).
+    const historyKey = profile && profile.rating ? LIST_KEYS.find((k) => profile.rating.lists[k]) : null;
+    const history = historyKey ? playerRatingHistory(db, Number(req.params.id), historyKey) : { points: [], best: null };
     // Тренер и игрок — разные записи с разными основаниями публикации; здесь только метка связи.
     const coach = profile && !profile.anonymized ? db.prepare('SELECT id, club, city FROM coaches WHERE player_id = ?').get(Number(req.params.id)) : null;
     if (!profile) return next(); // -> общий 404-обработчик
@@ -30,6 +33,10 @@ export default function mountPlayer(app, { db, config }) {
       coach,
       sexRu: SEX_RU,
       disciplineRu: DISCIPLINE_RU,
+      listKeys: LIST_KEYS,
+      listLabel: (k) => `${RATING_GROUP_RU[k.split('.')[0]]} · ${LIST_DISCIPLINE_RU[k.split('.')[1]].toLowerCase()}`,
+      historyLabel: historyKey ? `${RATING_GROUP_RU[historyKey.split('.')[0]]}, ${LIST_DISCIPLINE_RU[historyKey.split('.')[1]].toLowerCase()} разряд` : '',
+      sportRank: profile ? sportRankView(profile) : null,
       statusText: profile.rating ? statusLabel(profile.rating.status) : null,
       sliceLabels: new Map(AGE_SLICES.map((s) => [s.id, s.label])),
       section: SECTIONS.find((s) => s.path === '/rating'),

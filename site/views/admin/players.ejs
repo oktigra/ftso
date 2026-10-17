@@ -8,6 +8,7 @@
 
   <div class="panel">
     <h2>Добавить игрока</h2>
+    <p class="muted"><a class="link-more" href="/admin/players/ranks">Внести спортивные разряды по приказу списком →</a></p>
     <form method="post" action="/admin/players" class="inline-form">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <div class="field-row">
@@ -63,7 +64,7 @@
     %>
     <div class="table-scroll">
       <table class="admin-table admin-table--edit">
-        <thead><tr><th>ID</th><th>ФИО</th><th>Город</th><th>РНИ</th><th>Пол</th><th>Дата рождения</th><th>Фото</th><th>Представитель</th><th>Действия</th></tr></thead>
+        <thead><tr><th>ID</th><th>ФИО</th><th>Город</th><th>РНИ</th><th>Пол</th><th>Дата рождения</th><th>Спортивный разряд</th><th>Фото</th><th>Представитель</th><th>Действия</th></tr></thead>
         <tbody>
           <% players.forEach(function (p) { %>
             <tr data-player-row data-search="<%= (String(p.id) + ' ' + p.full_name + ' ' + (p.city || '') + ' ' + (p.rni || '')).toLowerCase().replace(/ё/g, 'е') %>">
@@ -101,6 +102,17 @@
                 <% } else if (!p.birth_date) { %>
                   <span class="muted consent-note">не указана</span>
                 <% } %>
+              </td>
+              <td>
+                <select form="edit-player-<%= p.id %>" name="sport_rank" aria-label="Спортивный разряд">
+                  <option value="">—</option>
+                  <% sportRanks.forEach(function (r) { %><option value="<%= r.id %>"<%= p.sport_rank === r.id ? ' selected' : '' %>><%= r.label %></option><% }); %>
+                </select>
+                <details class="rank-details"><summary class="muted">приказ, срок</summary>
+                  <input form="edit-player-<%= p.id %>" name="sport_rank_order" value="<%= p.sport_rank_order || '' %>" maxlength="200" placeholder="приказ, напр. от 31.08.2026 № 530-п" aria-label="Приказ">
+                  <label class="muted">дата приказа <input form="edit-player-<%= p.id %>" name="sport_rank_date" type="date" value="<%= p.sport_rank_date || '' %>"></label>
+                  <label class="muted">действует до <input form="edit-player-<%= p.id %>" name="sport_rank_until" type="date" value="<%= p.sport_rank_until || '' %>"></label>
+                </details>
               </td>
               <td>
                 <%

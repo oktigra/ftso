@@ -21,6 +21,9 @@
           <span class="tag"><%= sexRu[profile.sex] || profile.sex %></span>
           <span class="tag">возраст: <%= profile.ageLabel %></span>
         </div>
+        <% if (sportRank) { %>
+          <p class="sport-rank"><strong><%= sportRank.title %></strong><% if (sportRank.order) { %> · <%= sportRank.order %><% } %><% if (sportRank.untilText) { %> · <span class="<%= sportRank.expired ? 'sport-rank__expired' : 'muted' %>"><%= sportRank.untilText %></span><% } %></p>
+        <% } %>
       </div>
     </div>
   </div>
@@ -35,21 +38,19 @@
       <% } else { %>
         <div class="table-scroll">
           <table class="rating-table">
-            <caption class="visually-hidden">Место и очки игрока по разрядам</caption>
-            <thead><tr><th scope="col">Разряд</th><th scope="col">Место</th><th scope="col">Очки</th><th scope="col">Турниров в окне</th><th scope="col">Зачтено</th><th scope="col">Изменение</th></tr></thead>
+            <caption class="visually-hidden">Место и очки игрока по рейтингам</caption>
+            <thead><tr><th scope="col">Рейтинг</th><th scope="col">Место</th><th scope="col">Очки</th><th scope="col">Результатов в окне</th><th scope="col">Зачтено</th><th scope="col">Изменение</th></tr></thead>
             <tbody>
-              <% ['single', 'double'].forEach(function (d) { var r = profile.rating[d]; %>
+              <% const shown = listKeys.filter(function (k) { return profile.rating.lists[k]; }); %>
+              <% if (!shown.length) { %><tr><td colspan="6" class="muted">Пока нет в рейтинге.</td></tr><% } %>
+              <% shown.forEach(function (k) { var r = profile.rating.lists[k]; %>
                 <tr>
-                  <td><%= disciplineRu[d] %></td>
-                  <% if (r) { %>
-                    <td class="rank"><%= r.rank %></td>
-                    <td class="pts"><%= r.ratingPoints %></td>
-                    <td><%= r.totalInWindow %></td>
-                    <td><% if (Array.isArray(r.counted)) { %><%= r.counted.length %><% if (r.counted.length) { %> <span class="muted">(<%= r.counted.map(function (e) { return e.name + ' — ' + e.points; }).join('; ') %>)</span><% } %><% } else { %><%= r.counted %><% } %></td>
-                    <td class="chg chg--<%= r.change.kind %>"><%= r.change.label %></td>
-                  <% } else { %>
-                    <td colspan="5" class="muted">нет в рейтинге</td>
-                  <% } %>
+                  <td><%= listLabel(k) %></td>
+                  <td class="rank"><%= r.rank %></td>
+                  <td class="pts"><%= r.ratingPoints %></td>
+                  <td><%= r.totalInWindow %></td>
+                  <td><% if (Array.isArray(r.counted)) { %><%= r.counted.length %><% if (r.counted.length) { %> <span class="muted">(<%= r.counted.map(function (e) { return e.name + ' — ' + e.points; }).join('; ') %>)</span><% } %><% } else { %><%= r.counted %><% } %></td>
+                  <td class="chg chg--<%= r.change.kind %>"><%= r.change.label %></td>
                 </tr>
               <% }); %>
             </tbody>
@@ -69,7 +70,7 @@
           const y = (r) => padT + (r - 1) * (H - padT - padB) / (maxRank - 1);
           const path = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.rank).toFixed(1)}`).join(' ');
           %>
-          <h3 class="chart-title">Место в рейтинге по месяцам (одиночный разряд)</h3>
+          <h3 class="chart-title">Место в рейтинге по месяцам (<%= historyLabel %>)</h3>
           <svg class="rating-chart" viewBox="0 0 <%= W %> <%= H %>" role="img" aria-label="График места в рейтинге по месяцам">
             <line x1="<%= padL %>" y1="<%= padT %>" x2="<%= padL %>" y2="<%= H - padB %>" class="rc-axis"/>
             <line x1="<%= padL %>" y1="<%= H - padB %>" x2="<%= W - padR %>" y2="<%= H - padB %>" class="rc-axis"/>
@@ -95,7 +96,7 @@
             Возрастные срезы:
             <% profile.slices.forEach(function (id, i) { %><%= i ? ', ' : '' %><a href="/rating?slice=<%= id %>"><%= sliceLabels.get(id) %></a><% }); %>.
           <% } %>
-          <a class="link-more" href="/rating">К таблице рейтинга <span aria-hidden="true">→</span></a>
+          <a class="link-more" href="/rating">К таблице рейтинга <span aria-hidden="true">→</span></a> · <a class="link-more" href="/rating/metodika">Как считается рейтинг</a>
         </p>
       <% } %>
     </div>

@@ -330,6 +330,37 @@
 
 <% } %>
 <% if (!judgeMode) { %>
+  <div class="panel" id="draw-sizes">
+    <h2>Размеры сеток — для рейтинга</h2>
+    <p class="muted">Рейтинговая группа турнира: <strong><%= ratingGroupRu[tournament.rating_group] || '—' %></strong> (меняется в карточке турнира). Размер сетки — по регламенту/протоколу, не по числу заявившихся: 32 → A, 24 → B, 16 → C, 8 → D. Без размера места дают 0 очков. <a href="/rating/metodika">Как считается рейтинг</a>.</p>
+    <% if (!drawSizes.length) { %>
+      <p class="muted">Мест пока нет — строки появятся, когда будут результаты.</p>
+    <% } else { %>
+      <form method="post" action="/admin/tournaments/<%= tournament.id %>/draw-sizes">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <div class="table-scroll"><table class="admin-table">
+          <thead><tr><th>Сетка</th><th>Мест</th><th>Размер сетки</th><th>Категория</th><th>Очки за 1 место<br><span class="muted">(в паре — каждому)</span></th></tr></thead>
+          <tbody>
+            <% drawSizes.forEach(function (d) { %>
+              <tr>
+                <td><%= d.label %></td>
+                <td><%= d.results %></td>
+                <td><select name="size__<%= d.discipline %>__<%= d.sex %>" aria-label="Размер сетки: <%= d.label %>">
+                  <option value="">не задан</option>
+                  <% drawSizeOptions.forEach(function (o) { %><option value="<%= o.size %>"<%= d.size === o.size ? ' selected' : '' %>><%= o.size %> (<%= o.cat %>)</option><% }); %>
+                </select></td>
+                <td><%= d.category || '—' %></td>
+                <td><%= d.winPoints === null ? '—' : d.winPoints %></td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table></div>
+        <button class="btn btn--primary" type="submit">Сохранить размеры</button>
+      </form>
+    <% } %>
+  </div>
+<% } %>
+<% if (!judgeMode) { %>
   <div class="panel">
     <h2>Результаты (<%= results.length %>)</h2>
     <div class="table-scroll">

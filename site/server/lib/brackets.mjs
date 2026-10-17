@@ -273,7 +273,8 @@ export function placesWithGroups(db, tournamentId, bid) {
 // сеяных — по текущему снимку рейтинга того же разряда (место в таблице), без
 // рейтинга — после, по фамилии. Дальше секретарь правит вручную: «×» у слота,
 // «Посеять» на свободную позицию, «Поменять местами» две позиции.
-import { currentStandings } from './rating-service.mjs';
+import { currentStandings, tableFor, GROUP_SQL } from './rating-service.mjs';
+import { listKey, listDisciplineOf } from './rating-method.mjs';
 import { resolvePlayer } from './registrations.mjs';
 
 export function seedByRating(db, tournamentId, bid, rawList) {
@@ -295,7 +296,9 @@ export function seedByRating(db, tournamentId, bid, rawList) {
   assertAgeAllowed(db, tournamentId, [...seen], { ValidationError });
   const standings = currentStandings(db);
   const disc = disciplineOf(b);
-  const table = standings ? (disc === 'mixed' ? (standings.mixed || []) : disc === 'double' ? standings.doubles : standings.players) : [];
+  // Посев — по рейтингу той группы, в которую идёт турнир, и разряду сетки (микст — парный).
+  const group = (db.prepare(`SELECT ${GROUP_SQL} AS g FROM tournaments t WHERE t.id = ?`).get(tournamentId) || {}).g || 'adult';
+  const table = tableFor(standings, listKey(group, listDisciplineOf(disc)));
   const rank = new Map(table.map((p) => [p.playerId, p.rank]));
   const points = new Map(table.map((p) => [p.playerId, p.ratingPoints]));
   const allIds = [...seen];
