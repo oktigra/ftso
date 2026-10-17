@@ -45,6 +45,29 @@ export function drawSizeFor(sizes, tournamentId, discipline, playerSex) {
   return sizes.get(`${tournamentId}|${discipline}|${sexKey}`) || sizes.get(`${tournamentId}|${discipline}|*`) || null;
 }
 
+/**
+ * РАЗМЕР ПО ЧИСЛУ УЧАСТНИКОВ (решение Алекса 17.10.2026): если размер сетки по регламенту
+ * не задан (протокола нет), берётся наименьшая регламентная сетка, в которую входят
+ * участники этой сетки (пары — по числу пар): ≤ 8 → 8, ≤ 16 → 16, ≤ 24 → 24, иначе 32.
+ * Заданный размер всегда важнее; в админке подстановка помечена — её можно уточнить.
+ */
+export function inferredDrawSize(entrants) {
+  if (!entrants) return null;
+  return entrants <= 8 ? 8 : entrants <= 16 ? 16 : entrants <= 24 ? 24 : 32;
+}
+
+/** Число участников каждой сетки: «турнир|разряд|пол» → человек (одиночка) или пар. */
+function entrantCounts(db) {
+  const m = new Map();
+  for (const r of db.prepare(
+    `SELECT r.tournament_id AS tid, r.discipline AS d, CASE WHEN r.discipline = 'mixed' THEN 'X' ELSE COALESCE(p.sex, '*') END AS sx, COUNT(*) AS n
+       FROM results r JOIN players p ON p.id = r.player_id GROUP BY 1, 2, 3`,
+  ).all()) {
+    m.set(`${r.tid}|${r.d}|${r.sx}`, r.d === 'single' ? r.n : Math.ceil(r.n / 2));
+  }
+  return m;
+}
+
 // Группа турнира: своя колонка, а у записей без неё — из возрастного ограничения (как defaultRatingGroup).
 export const GROUP_SQL = "COALESCE(t.rating_group, CASE WHEN t.age_max IS NOT NULL AND t.age_max <= 12 THEN 'u13' WHEN t.age_max IS NOT NULL AND t.age_max <= 16 THEN 'u17' ELSE 'adult' END)";
 
@@ -53,9 +76,9 @@ const EVENT_SUFFIX = { single: '', double: ' — пары', mixed: ' — мик�
 /**
  * Вход движка для одного списка (группа × разряд). Событие зачёта — турнир для
  * одиночного и «турнир:разряд» для парного (пары и микст одного турнира — два зачёта).
- * Результат без размера сетки даёт 0 очков и попадает в missing — админка показывает.
+ * Сетка без заданного размера считается по числу участников и попадает в missing — админка показывает.
  */
-export function collectListInput(db, group, listDisc, sizes = drawSizeMap(db)) {
+export function collectListInput(db, group, listDisc, sizes = drawSizeMap(db), counts = entrantCounts(db)) {
   const discs = listDisc === 'single' ? ['single'] : ['double', 'mixed'];
   const rows = db
     .prepare(
@@ -76,9 +99,13 @@ export function collectListInput(db, group, listDisc, sizes = drawSizeMap(db)) {
     if (!events.has(eventId)) {
       events.set(eventId, { id: eventId, name: r.name + EVENT_SUFFIX[r.discipline], endDate: r.endDate, category: '-' });
     }
-    const size = drawSizeFor(sizes, r.tid, r.discipline, r.sex);
+    const sexKey = r.discipline === 'mixed' ? 'X' : r.sex || '*';
+    let size = drawSizeFor(sizes, r.tid, r.discipline, r.sex);
+    if (!size) {
+      size = inferredDrawSize(counts.get(`${r.tid}|${r.discipline}|${sexKey}`));
+      missing.push({ tournamentId: r.tid, discipline: r.discipline, sex: sexKey, inferred: size, playerId: r.playerId });
+    }
     const pts = pointsFor({ group, drawSize: size, place: r.place, pair: r.discipline !== 'single' });
-    if (pts === null) missing.push({ tournamentId: r.tid, discipline: r.discipline, sex: r.discipline === 'mixed' ? 'X' : r.sex || '*', playerId: r.playerId });
     results.push({ playerId: r.playerId, playerName: r.playerName, tournamentId: eventId, place: r.place, points: pts === null ? 0 : pts });
   }
   const kind = listDisc === 'single' ? 'single' : 'double';
@@ -134,11 +161,12 @@ function rowsWithMeta(standings, meta) {
 /**
  * Снимок = вывод движка по шести спискам + метаданные игроков, чтобы витрина не зависела
  * от JOIN. ДАТА РОЖДЕНИЯ В СНИМОК НЕ КЛАДЁТСЯ: возраст считается на выдаче, живьём.
- * missing — результаты без размера сетки (0 очков) — для предупреждения в админке.
+ * missingSizes — сетки без заданного размера (взят по числу участников) — для админки.
  */
 export function buildSnapshot(db, { asOf } = {}) {
   const meta = playerMeta(db);
   const sizes = drawSizeMap(db);
+  const counts = entrantCounts(db);
   const lists = {};
   const warnings = [];
   const missing = [];
@@ -147,7 +175,7 @@ export function buildSnapshot(db, { asOf } = {}) {
   for (const group of RATING_GROUPS) {
     for (const d of LIST_DISCIPLINES) {
       const key = listKey(group, d);
-      const input = collectListInput(db, group, d, sizes);
+      const input = collectListInput(db, group, d, sizes, counts);
       const st = computeStandings({ tournaments: input.tournaments, results: input.results, matches: input.matches, config: RATING_CONFIG, ...(asOf ? { asOf } : {}) });
       status = st.ratingStatus;
       at = st.asOf;

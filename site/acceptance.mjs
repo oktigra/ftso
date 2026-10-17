@@ -3323,7 +3323,7 @@ await check('микст идёт в парный рейтинг: оба резу
   return 'микст в парном до 17: 150 и 90+75=165, два зачёта, вкладки микста нет';
 });
 
-await check('методика 2026: очки = очки за победу (группа × категория по размеру сетки) × процент места, округление; без размера сетки — 0 и предупреждение', async () => {
+await check('методика 2026: очки = очки за победу (группа × категория по размеру сетки) × процент места, округление; без размера — по числу участников и предупреждение', async () => {
   const { pointsFor, pointsTable } = await import('./server/lib/rating-method.mjs');
   // Таблица, согласованная с федерацией 17.10.2026 (одиночный разряд).
   const t = pointsTable();
@@ -3341,8 +3341,8 @@ await check('методика 2026: очки = очки за победу (гр�
   const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Безразмерный Игрок', 'Смоленск', 'M')").run().lastInsertRowid);
   db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, 1, 'single')").run(tid, pid);
   const res = recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
-  assert(res.missingSizes.some((m) => m.tournamentId === tid && m.discipline === 'single'), 'пересчёт не сообщил о сетке без размера');
-  eq(currentStandings(db).lists['adult.single'].find((p) => p.playerId === pid).ratingPoints, 0, 'без размера — 0 очков');
+  assert(res.missingSizes.some((m) => m.tournamentId === tid && m.discipline === 'single' && m.inferred === 8), 'пересчёт не сообщил о сетке без размера');
+  eq(currentStandings(db).lists['adult.single'].find((p) => p.playerId === pid).ratingPoints, 250, 'без размера — по 1 участнику сетка 8 (D): 250');
   // Размер задаётся в админке — и очки появляются.
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const page = await http(`/admin/tournaments/${tid}/results`, { jar });
@@ -3354,7 +3354,7 @@ await check('методика 2026: очки = очки за победу (гр�
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
   db.prepare('DELETE FROM players WHERE id = ?').run(pid);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
-  return 'таблица очков совпала, пары пополам вверх, без размера — 0 и предупреждение, размер из админки → 800';
+  return 'таблица очков совпала, пары пополам вверх, без размера — по участникам (250) и предупреждение, размер из админки → 800';
 });
 
 await check('турнир: место проведения (из справочника кортов) и организатор с контактом — форма, карточка, одобрение заявки, импорт из текста', async () => {

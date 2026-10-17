@@ -15,7 +15,7 @@ import { SPORT_RANKS, sportRankInput } from '../lib/sport-rank.mjs';
 import { RATING_GROUP_RU, DRAW_SIZES, categoryForSize, pointsFor } from '../lib/rating-method.mjs';
 import { planRanks, applyRanks } from '../lib/sport-rank-bulk.mjs';
 import { devNoticeMode, devNoticeOn } from '../app.mjs';
-import { ERASED_LABEL, snapshotSize } from '../lib/rating-service.mjs';
+import { ERASED_LABEL, snapshotSize, inferredDrawSize } from '../lib/rating-service.mjs';
 import { safeRefererPath } from '../lib/safe-path.mjs';
 import { hashPassword, verifyPassword, temporaryPassword } from '../lib/password.mjs';
 import { logAction, recentActions } from '../lib/action-log.mjs';
@@ -995,13 +995,17 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       .all(tournamentId);
     const sizes = new Map(db.prepare('SELECT discipline, sex, size FROM tournament_draw_sizes WHERE tournament_id = ?').all(tournamentId).map((r) => [`${r.discipline}|${r.sex}`, r.size]));
     return present.map((r) => {
-      const size = sizes.get(`${r.discipline}|${r.sex}`) || sizes.get(`${r.discipline}|*`) || null;
+      const set = sizes.get(`${r.discipline}|${r.sex}`) || sizes.get(`${r.discipline}|*`) || null;
+      const entrants = r.discipline === 'single' ? r.n : Math.ceil(r.n / 2);
+      const size = set || inferredDrawSize(entrants);
       return {
         discipline: r.discipline,
         sex: r.sex,
         label: `${DISC_RU_ADMIN[r.discipline]} · ${SEX_KEY_RU[r.sex] || r.sex}`,
         results: r.n,
-        size,
+        size: set,
+        inferred: set ? null : size,
+        entrants,
         category: size ? categoryForSize(size) : null,
         winPoints: size ? pointsFor({ group: group || 'adult', drawSize: size, place: 1, pair: r.discipline !== 'single' }) : null,
       };
@@ -1575,12 +1579,12 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
       const warn = result.warnings.length ? ` Предупреждения: ${result.warnings.join('; ')}` : '';
       // Сетки без размера дают 0 очков — называем турниры, чтобы секретарь их дозаполнил.
       const miss = result.missingSizes && result.missingSizes.length
-        ? ` Не задан размер сетки (места дают 0 очков): ${[...new Set(result.missingSizes.map((m) => {
+        ? ` Размер сетки не задан — взят по числу участников: ${[...new Set(result.missingSizes.map((m) => {
           const t = db.prepare('SELECT name FROM tournaments WHERE id = ?').get(m.tournamentId);
-          return `${t ? t.name : '#' + m.tournamentId} (${m.discipline})`;
-        }))].join('; ')} — «Результаты» → «Размеры сеток».`
+          return `${t ? t.name : '#' + m.tournamentId} (${m.discipline}, ${m.inferred})`;
+        }))].join('; ')}. Уточнить — «Результаты» → «Размеры сеток».`
         : '';
-      flash(req, res, miss ? 'error' : 'ok', `Рейтинг пересчитан: ${result.players} строк в шести списках.${miss}${warn}`, safeRefererPath(req, '/admin'));
+      flash(req, res, 'ok', `Рейтинг пересчитан: ${result.players} строк в шести списках.${miss}${warn}`, safeRefererPath(req, '/admin'));
     }),
   );
 
