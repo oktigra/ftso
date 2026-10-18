@@ -3341,7 +3341,7 @@ await check('микст идёт в парный рейтинг: оба резу
   return 'микст в парном до 17: 150 и 90+75=165, два зачёта, вкладки микста нет';
 });
 
-await check('методика 2026: очки = очки за победу (группа × категория по размеру сетки) × процент места, округление; без размера — по числу участников и предупреждение', async () => {
+await check('методика 2026: очки = очки за победу (группа × категория по размеру сетки) × процент места, округление; без размера — из категории турнира и предупреждение', async () => {
   const { pointsFor, pointsTable } = await import('./server/lib/rating-method.mjs');
   // Таблица, согласованная с федерацией 17.10.2026 (одиночный разряд).
   const t = pointsTable();
@@ -3359,20 +3359,20 @@ await check('методика 2026: очки = очки за победу (гр�
   const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Безразмерный Игрок', 'Смоленск', 'M')").run().lastInsertRowid);
   db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, 1, 'single')").run(tid, pid);
   const res = recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
-  assert(res.missingSizes.some((m) => m.tournamentId === tid && m.discipline === 'single' && m.inferred === 8), 'пересчёт не сообщил о сетке без размера');
-  eq(currentStandings(db).lists['adult.single'].find((p) => p.playerId === pid).ratingPoints, 250, 'без размера — по 1 участнику сетка 8 (D): 250');
+  assert(res.missingSizes.some((m) => m.tournamentId === tid && m.discipline === 'single' && m.inferred === 24), 'пересчёт не сообщил о сетке без размера');
+  eq(currentStandings(db).lists['adult.single'].find((p) => p.playerId === pid).ratingPoints, 800, 'без размера — из категории турнира B: сетка 24, победа 800');
   // Размер задаётся в админке — и очки появляются.
   const { jar } = await login(ADMIN.user, ADMIN.pass);
   const page = await http(`/admin/tournaments/${tid}/results`, { jar });
   assert(/id="draw-sizes"/.test(page.text) && /name="size__single__M"/.test(page.text), 'на странице результатов нет размеров сеток');
-  eq((await http(`/admin/tournaments/${tid}/draw-sizes`, { method: 'POST', form: { _csrf: tokenFrom(page.text), size__single__M: '24' }, jar })).status, 302, 'сохранить размер');
+  eq((await http(`/admin/tournaments/${tid}/draw-sizes`, { method: 'POST', form: { _csrf: tokenFrom(page.text), size__single__M: '16' }, jar })).status, 302, 'сохранить размер');
   db.prepare('DELETE FROM write_attempts').run();
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
-  eq(currentStandings(db).lists['adult.single'].find((p) => p.playerId === pid).ratingPoints, 800, 'взрослые, сетка 24 (B), 1 место — 800');
+  eq(currentStandings(db).lists['adult.single'].find((p) => p.playerId === pid).ratingPoints, 500, 'заданный размер важнее категории: сетка 16 (C), 1 место — 500');
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
   db.prepare('DELETE FROM players WHERE id = ?').run(pid);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
-  return 'таблица очков совпала, пары пополам вверх, без размера — по участникам (250) и предупреждение, размер из админки → 800';
+  return 'таблица очков совпала, пары пополам вверх, без размера — из категории (B → 800) и предупреждение, заданный размер важнее (16 → 500)';
 });
 
 await check('турнир: место проведения (из справочника кортов) и организатор с контактом — форма, карточка, одобрение заявки, импорт из текста', async () => {
@@ -6973,16 +6973,17 @@ try {
     assert(new Set(samples).size === 1 && /-3\)$/.test(samples[0]), `на нижнем крае пластина не должна дрожать: ${[...new Set(samples)].join(' | ')}`);
     // Цвет наведения (просьба владельца 19.09): игрок под курсором и вся его справка уходят в цвет
     // выделения (тёмная — жёлтый), соседи остаются зелёными.
+    // Обезличенный игрок (ст. 21) — без ссылки, поэтому цвет имени проверяется у игроков со ссылкой.
     const p3 = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await p3.goto(inst.base + '/rating', { waitUntil: 'networkidle' });
     for (const [theme, expect] of [['dark', 'rgb(255, 209, 102)'], ['light', 'rgb(180, 83, 9)'], ['warm', 'rgb(194, 65, 12)']]) {
       await p3.evaluate((t) => document.documentElement.setAttribute('data-theme', t), theme);
-      const pl3 = p3.locator('.rplates--full .rplate').nth(1); await pl3.scrollIntoViewIfNeeded();
+      const pl3 = p3.locator('.rplates--full .rplate:not(.rplate--anonymized)').nth(1); await pl3.scrollIntoViewIfNeeded();
       const idle = await pl3.evaluate((x) => getComputedStyle(x.querySelector('.rplate__name a')).color);
       await pl3.hover();
       // Цвета едут через transition .2s — ждём, пока доедут, а не фиксированную паузу.
-      await p3.waitForFunction((exp) => { const x = document.querySelectorAll('.rplates--full .rplate')[1]; return getComputedStyle(x.querySelector('.rplate__name a')).color === exp && [...x.querySelectorAll('.rplate__chips span')].every((s) => getComputedStyle(s).color === exp); }, expect, { timeout: 2000 }).catch(() => {});
-      const c = await pl3.evaluate((x) => ({ name: getComputedStyle(x.querySelector('.rplate__name a')).color, chips: [...x.querySelectorAll('.rplate__chips span')].map((s) => getComputedStyle(s).color), other: getComputedStyle(x.parentElement.querySelectorAll('.rplate')[3].querySelector('.rplate__name a')).color }));
+      await p3.waitForFunction((exp) => { const x = document.querySelectorAll('.rplates--full .rplate:not(.rplate--anonymized)')[1]; return getComputedStyle(x.querySelector('.rplate__name a')).color === exp && [...x.querySelectorAll('.rplate__chips span')].every((s) => getComputedStyle(s).color === exp); }, expect, { timeout: 2000 }).catch(() => {});
+      const c = await pl3.evaluate((x) => ({ name: getComputedStyle(x.querySelector('.rplate__name a')).color, chips: [...x.querySelectorAll('.rplate__chips span')].map((s) => getComputedStyle(s).color), other: getComputedStyle(x.parentElement.querySelectorAll('.rplate:not(.rplate--anonymized)')[3].querySelector('.rplate__name a')).color }));
       assert(c.name === expect && idle !== expect, `${theme}: имя при наведении должно стать ${expect} (было ${idle}, стало ${c.name})`);
       assert(c.chips.length >= 2 && c.chips.every((v) => v === expect), `${theme}: вся справка игрока в цвете выделения`);
       assert(c.other !== expect, `${theme}: соседний игрок цвет менять не должен`);

@@ -5,8 +5,10 @@ import { computeStandings, DEFAULT_CONFIG } from '../../../rating/rating.mjs';
 import { ageOn, sliceAge, ageLabel, slicesFor } from './age.mjs';
 import {
   RATING_GROUPS, RATING_GROUP_RU, LIST_DISCIPLINES, LIST_DISCIPLINE_RU, LIST_KEYS, listKey,
-  pointsFor, COUNT_BEST, WINDOW_DAYS,
+  pointsFor, COUNT_BEST, WINDOW_DAYS, DRAW_SIZES, CATEGORY_BY_SIZE,
 } from './rating-method.mjs';
+
+const SIZE_BY_CATEGORY = Object.fromEntries(DRAW_SIZES.map((n) => [CATEGORY_BY_SIZE[n], n]));
 
 
 // МЕТОДИКА 2026 (17.10.2026, rating-method.mjs): шесть списков — рейтинговая группа сетки
@@ -46,26 +48,12 @@ export function drawSizeFor(sizes, tournamentId, discipline, playerSex) {
 }
 
 /**
- * РАЗМЕР ПО ЧИСЛУ УЧАСТНИКОВ (решение Алекса 17.10.2026): если размер сетки по регламенту
- * не задан (протокола нет), берётся наименьшая регламентная сетка, в которую входят
- * участники этой сетки (пары — по числу пар): ≤ 8 → 8, ≤ 16 → 16, ≤ 24 → 24, иначе 32.
- * Заданный размер всегда важнее; в админке подстановка помечена — её можно уточнить.
+ * РАЗМЕР ИЗ КАТЕГОРИИ ТУРНИРА (решение Алекса 18.10.2026): категория турнира и есть размер
+ * его сетки — A 32, B 24, C 16, D 8 (лишние места — «кресты»). Если размер сетки не задан
+ * отдельно (протокола нет), берётся из категории турнира. Заданный размер всегда важнее.
  */
-export function inferredDrawSize(entrants) {
-  if (!entrants) return null;
-  return entrants <= 8 ? 8 : entrants <= 16 ? 16 : entrants <= 24 ? 24 : 32;
-}
-
-/** Число участников каждой сетки: «турнир|разряд|пол» → человек (одиночка) или пар. */
-function entrantCounts(db) {
-  const m = new Map();
-  for (const r of db.prepare(
-    `SELECT r.tournament_id AS tid, r.discipline AS d, CASE WHEN r.discipline = 'mixed' THEN 'X' ELSE COALESCE(p.sex, '*') END AS sx, COUNT(*) AS n
-       FROM results r JOIN players p ON p.id = r.player_id GROUP BY 1, 2, 3`,
-  ).all()) {
-    m.set(`${r.tid}|${r.d}|${r.sx}`, r.d === 'single' ? r.n : Math.ceil(r.n / 2));
-  }
-  return m;
+export function drawSizeFromCategory(category) {
+  return SIZE_BY_CATEGORY[category] || null;
 }
 
 // Группа турнира: своя колонка, а у записей без неё — из возрастного ограничения (как defaultRatingGroup).
@@ -76,14 +64,14 @@ const EVENT_SUFFIX = { single: '', double: ' — пары', mixed: ' — мик�
 /**
  * Вход движка для одного списка (группа × разряд). Событие зачёта — турнир для
  * одиночного и «турнир:разряд» для парного (пары и микст одного турнира — два зачёта).
- * Сетка без заданного размера считается по числу участников и попадает в missing — админка показывает.
+ * Сетка без заданного размера берёт его из категории турнира и попадает в missing — админка показывает.
  */
-export function collectListInput(db, group, listDisc, sizes = drawSizeMap(db), counts = entrantCounts(db)) {
+export function collectListInput(db, group, listDisc, sizes = drawSizeMap(db)) {
   const discs = listDisc === 'single' ? ['single'] : ['double', 'mixed'];
   const rows = db
     .prepare(
       `SELECT r.player_id AS playerId, p.full_name AS playerName, p.sex AS sex,
-              r.tournament_id AS tid, r.place, r.discipline, t.name, t.end_date AS endDate
+              r.tournament_id AS tid, r.place, r.discipline, t.name, t.end_date AS endDate, t.category
          FROM results r JOIN players p ON p.id = r.player_id
          JOIN tournaments t ON t.id = r.tournament_id
         WHERE t.is_published = 1 AND ${GROUP_SQL} = ?
@@ -102,7 +90,7 @@ export function collectListInput(db, group, listDisc, sizes = drawSizeMap(db), c
     const sexKey = r.discipline === 'mixed' ? 'X' : r.sex || '*';
     let size = drawSizeFor(sizes, r.tid, r.discipline, r.sex);
     if (!size) {
-      size = inferredDrawSize(counts.get(`${r.tid}|${r.discipline}|${sexKey}`));
+      size = drawSizeFromCategory(r.category);
       missing.push({ tournamentId: r.tid, discipline: r.discipline, sex: sexKey, inferred: size, playerId: r.playerId });
     }
     const pts = pointsFor({ group, drawSize: size, place: r.place, pair: r.discipline !== 'single' });
@@ -161,12 +149,11 @@ function rowsWithMeta(standings, meta) {
 /**
  * Снимок = вывод движка по шести спискам + метаданные игроков, чтобы витрина не зависела
  * от JOIN. ДАТА РОЖДЕНИЯ В СНИМОК НЕ КЛАДЁТСЯ: возраст считается на выдаче, живьём.
- * missingSizes — сетки без заданного размера (взят по числу участников) — для админки.
+ * missingSizes — сетки без заданного размера (взят из категории турнира) — для админки.
  */
 export function buildSnapshot(db, { asOf } = {}) {
   const meta = playerMeta(db);
   const sizes = drawSizeMap(db);
-  const counts = entrantCounts(db);
   const lists = {};
   const warnings = [];
   const missing = [];
@@ -175,7 +162,7 @@ export function buildSnapshot(db, { asOf } = {}) {
   for (const group of RATING_GROUPS) {
     for (const d of LIST_DISCIPLINES) {
       const key = listKey(group, d);
-      const input = collectListInput(db, group, d, sizes, counts);
+      const input = collectListInput(db, group, d, sizes);
       const st = computeStandings({ tournaments: input.tournaments, results: input.results, matches: input.matches, config: RATING_CONFIG, ...(asOf ? { asOf } : {}) });
       status = st.ratingStatus;
       at = st.asOf;
