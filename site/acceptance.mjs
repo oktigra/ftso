@@ -6429,6 +6429,24 @@ await check('миграция чинит испорченные имена за�
   return 'кракозябры → «Справка о местоположении сервера…», «Café» не тронуто';
 });
 
+await check('главная: смена фото — обложки новостей (свежие первыми), затем галерея; первое сразу, остальные по очереди, раз в 3 с', async () => {
+  const mk = (name) => db.prepare("INSERT INTO uploads (stored_name, original_name, mime, kind, profile, size_bytes, sha256) VALUES (?, ?, 'image/jpeg', 'image', 'gallery', 1, 'x')").run(name + Date.now() + Math.random(), name).lastInsertRowid;
+  const nId = Number(db.prepare("INSERT INTO news (title, summary, body, is_published, published_at, category) VALUES ('Новость с обложкой', '', 'текст', 1, date('now'), 'federation')").run().lastInsertRowid);
+  const cover = mk('cover.jpg'); db.prepare('UPDATE news SET cover_upload_id = ? WHERE id = ?').run(cover, nId);
+  const g1 = Number(db.prepare("INSERT INTO gallery_items (title, upload_id) VALUES ('Фото корта', ?)").run(mk('g1.jpg')).lastInsertRowid);
+  const h = (await http('/')).text;
+  assert(/data-slides data-interval="3000"/.test(h), 'нет смены фото с интервалом 3 с');
+  const box = h.match(/<figure class="photo photo--slides"[\s\S]*?<\/figure>/)[0];
+  assert(box.indexOf(`/news/${nId}/cover?v=${cover}`) > -1 && box.indexOf(`/news/${nId}/cover`) < box.indexOf(`/gallery/${g1}/image`), 'обложка новости должна идти раньше фото галереи');
+  eq((box.match(/ src="/g) || []).length, 1, 'сразу грузится только первое фото, остальные — data-src');
+  assert(new RegExp(`href="/news/${nId}"`).test(box), 'слайд новости не ведёт на новость');
+  assert(/Новость с обложкой/.test(box), 'подписи нет');
+  const js = readFileSync(resolve(HERE, 'public/js/app.js'), 'utf8');
+  assert(/data-slides/.test(js) && /prefers-reduced-motion: reduce/.test(js), 'скрипт смены или учёт «уменьшить движение»');
+  db.prepare('DELETE FROM news WHERE id = ?').run(nId); db.prepare('DELETE FROM gallery_items WHERE id = ?').run(g1);
+  return 'обложка новости → галерея; первое фото сразу, остальные по одному; ссылка и подпись на месте';
+});
+
 await check('§8.2 на профиле нет даты рождения, почты и телефона; адрес — числовой id', async () => {
   const page = await http(`/player/${p19}`);
   const birth = db.prepare('SELECT birth_date FROM players WHERE id = ?').get(p19).birth_date;
