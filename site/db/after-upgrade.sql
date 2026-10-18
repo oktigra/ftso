@@ -42,3 +42,7 @@ WHEN (SELECT erasure_open FROM consents_gate WHERE id = 1) = 0
 BEGIN
   SELECT RAISE(ABORT, 'consents: запись журнала согласий не удаляется — только через withConsentErasure (ст. 21 и срок хранения)');
 END;
+
+-- РАЗМЕРЫ СЕТОК ОТДЕЛЬНО НЕ ХРАНЯТСЯ (решение Алекса 18.10.2026): размер всех сеток турнира —
+-- по его категории (A 32, B 24, C 16, D 8). Прежняя таблица размеров по сеткам не нужна.
+DROP TABLE IF EXISTS tournament_draw_sizes;

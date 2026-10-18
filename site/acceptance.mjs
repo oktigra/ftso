@@ -2361,7 +2361,6 @@ await check('парная сетка: слот — пара «А / Б», пос�
   const past = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, is_published) VALUES ('Парный зачёт прошлый', date('now','-30 days'), 'A', 1)").run().lastInsertRowid);
   const pr = db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, 'double')");
   pr.run(past, d1, 1); pr.run(past, d2, 1); pr.run(past, d3, 2); pr.run(past, d4, 2);
-  db.prepare("INSERT INTO tournament_draw_sizes (tournament_id, discipline, sex, size) VALUES (?, 'double', '*', 32)").run(past);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
   const st = currentStandings(db);
   const d = st.lists['adult.pair'].filter((p) => [d1, d2, d3, d4].includes(p.playerId));
@@ -3310,23 +3309,21 @@ await check('микст подписан на витрине турнира от
 await check('микст идёт в парный рейтинг: оба результата турнира (пары и микст) — два зачёта, очки пополам, вверх; отдельной вкладки нет', async () => {
   // Методика 17.10.2026: отдельного рейтинга по миксту нет, микст считается как парный;
   // если игрок на турнире сыграл и в парах, и в миксте, в зачёт идут оба результата.
-  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, city, is_published, rating_group) VALUES ('Микст-зачёт', date('now','-20 days'), 'B', 'Ярцево', 1, 'u17')").run().lastInsertRowid);
+  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, city, is_published, rating_group) VALUES ('Микст-зачёт', date('now','-20 days'), 'C', 'Ярцево', 1, 'u17')").run().lastInsertRowid);
   const ins = db.prepare('INSERT INTO players (full_name, city, sex, is_public) VALUES (?, ?, ?, 1)');
   const a = Number(ins.run('Микстова Первая', 'Ярцево', 'F').lastInsertRowid);
   const b = Number(ins.run('Микстов Второй', 'Ярцево', 'M').lastInsertRowid);
   const r = db.prepare('INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, ?, ?)');
   r.run(tid, a, 1, 'mixed'); r.run(tid, b, 2, 'mixed'); r.run(tid, b, 1, 'double');
-  const sz = db.prepare('INSERT INTO tournament_draw_sizes (tournament_id, discipline, sex, size) VALUES (?, ?, ?, ?)');
-  sz.run(tid, 'mixed', 'X', 16); sz.run(tid, 'double', 'M', 8);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
   const st = currentStandings(db);
   const pair = st.lists['u17.pair'];
   const pa = pair.find((p) => p.playerId === a);
   const pb = pair.find((p) => p.playerId === b);
-  // до 17, микст сетка 16 (C, 300): 1 место — 300 на пару → 150 каждому; 2 место — 180 → 90.
-  // До 17, пары сетка 8 (D, 150): 1 место — 150 → 75. У Второго два зачёта: 90 + 75 = 165.
+  // Турнир C — все сетки на 16 (до 17, C: 300). Микст: 1 место — 300 на пару → 150 каждому;
+  // 2 место — 180 → 90. Пары: 1 место — 300 → 150. У Второго два зачёта: 90 + 150 = 240.
   eq(pa && pa.ratingPoints, 150, 'Первая: победа в миксте C до 17 — 150');
-  eq(pb && pb.ratingPoints, 165, 'Второй: микст 90 + пары 75');
+  eq(pb && pb.ratingPoints, 240, 'Второй: микст 90 + пары 150');
   eq(pb.counted.length, 2, 'у Второго два зачёта с одного турнира');
   assert(!st.lists['u17.single'].some((p) => /Микстов/.test(p.playerName)), 'микстовый результат попал в одиночный');
   assert(!st.lists['adult.pair'].some((p) => /Микстов/.test(p.playerName)), 'результат до 17 попал во взрослый список');
@@ -3338,10 +3335,10 @@ await check('микст идёт в парный рейтинг: оба резу
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
   db.prepare('DELETE FROM players WHERE id IN (?, ?)').run(a, b);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
-  return 'микст в парном до 17: 150 и 90+75=165, два зачёта, вкладки микста нет';
+  return 'микст в парном до 17: 150 и 90+150=240, два зачёта, вкладки микста нет';
 });
 
-await check('методика 2026: очки = очки за победу (группа × категория по размеру сетки) × процент места, округление; без размера — из категории турнира и предупреждение', async () => {
+await check('методика 2026: очки = очки за победу (группа × категория турнира) × процент места, округление; размер сетки — только из категории', async () => {
   const { pointsFor, pointsTable } = await import('./server/lib/rating-method.mjs');
   // Таблица, согласованная с федерацией 17.10.2026 (одиночный разряд).
   const t = pointsTable();
@@ -3354,25 +3351,32 @@ await check('методика 2026: очки = очки за победу (гр�
   eq(pointsFor({ group: 'adult', drawSize: 32, place: 1, pair: true }), 500, 'пара: 1000 → по 500');
   eq(pointsFor({ group: 'adult', drawSize: 12, place: 1 }), null, 'сетки на 12 нет — очков нет');
   eq(pointsFor({ group: 'adult', drawSize: 32, place: 40 }), 0, 'дальше 32 места — 0');
-  // В расчёте: результат без размера сетки — 0 очков и строка в missingSizes.
-  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, is_published, rating_group) VALUES ('Без размера', date('now','-5 days'), 'B', 1, 'adult')").run().lastInsertRowid);
-  const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Безразмерный Игрок', 'Смоленск', 'M')").run().lastInsertRowid);
+  // Размер сетки — всегда по категории турнира (решение 18.10.2026): B → 24, победа 800.
+  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, is_published, rating_group) VALUES ('Сетка по категории', date('now','-5 days'), 'B', 1, 'adult')").run().lastInsertRowid);
+  const pid = Number(db.prepare("INSERT INTO players (full_name, city, sex) VALUES ('Категорийный Игрок', 'Смоленск', 'M')").run().lastInsertRowid);
   db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, 1, 'single')").run(tid, pid);
-  const res = recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
-  assert(res.missingSizes.some((m) => m.tournamentId === tid && m.discipline === 'single' && m.inferred === 24), 'пересчёт не сообщил о сетке без размера');
-  eq(currentStandings(db).lists['adult.single'].find((p) => p.playerId === pid).ratingPoints, 800, 'без размера — из категории турнира B: сетка 24, победа 800');
-  // Размер задаётся в админке — и очки появляются.
-  const { jar } = await login(ADMIN.user, ADMIN.pass);
-  const page = await http(`/admin/tournaments/${tid}/results`, { jar });
-  assert(/id="draw-sizes"/.test(page.text) && /name="size__single__M"/.test(page.text), 'на странице результатов нет размеров сеток');
-  eq((await http(`/admin/tournaments/${tid}/draw-sizes`, { method: 'POST', form: { _csrf: tokenFrom(page.text), size__single__M: '16' }, jar })).status, 302, 'сохранить размер');
-  db.prepare('DELETE FROM write_attempts').run();
-  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
-  eq(currentStandings(db).lists['adult.single'].find((p) => p.playerId === pid).ratingPoints, 500, 'заданный размер важнее категории: сетка 16 (C), 1 место — 500');
-  db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
-  db.prepare('DELETE FROM players WHERE id = ?').run(pid);
-  recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
-  return 'таблица очков совпала, пары пополам вверх, без размера — из категории (B → 800) и предупреждение, заданный размер важнее (16 → 500)';
+  try {
+    recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+    eq(currentStandings(db).lists['adult.single'].find((p) => p.playerId === pid).ratingPoints, 800, 'категория B: сетка 24, победа 800');
+    // В админке размер только показан — выбрать другой нельзя, отдельного сохранения нет.
+    const { jar } = await login(ADMIN.user, ADMIN.pass);
+    const page = await http(`/admin/tournaments/${tid}/results`, { jar });
+    const panel = page.text.slice(page.text.indexOf('id="draw-sizes"'), page.text.indexOf('</table>', page.text.indexOf('id="draw-sizes"')));
+    assert(panel.length > 20 && /<td>24<\/td>/.test(panel) && /<td>800<\/td>/.test(panel), 'на странице результатов нет сетки 24 с 800 очками');
+    assert(!/name="size__/.test(page.text), 'в админке остался выбор размера сетки');
+    eq((await http(`/admin/tournaments/${tid}/draw-sizes`, { method: 'POST', form: { _csrf: tokenFrom(page.text), size__single__M: '16' }, jar })).status, 404, 'сохранения размеров больше нет');
+    eq(db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'tournament_draw_sizes'").get().n, 0, 'таблица размеров удалена');
+    // Сменили категорию на C — сетка 16, победа 500.
+    db.prepare("UPDATE tournaments SET category = 'C' WHERE id = ?").run(tid);
+    recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+    eq(currentStandings(db).lists['adult.single'].find((p) => p.playerId === pid).ratingPoints, 500, 'категория C: сетка 16, победа 500');
+  } finally {
+    db.prepare('DELETE FROM write_attempts').run();
+    db.prepare('DELETE FROM tournaments WHERE id = ?').run(tid);
+    db.prepare('DELETE FROM players WHERE id = ?').run(pid);
+    recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
+  }
+  return 'таблица очков совпала, пары пополам вверх; размер сетки — по категории (B → 800, C → 500), выбора размера в админке нет';
 });
 
 await check('турнир: место проведения (из справочника кортов) и организатор с контактом — форма, карточка, одобрение заявки, импорт из текста', async () => {
@@ -6387,7 +6391,7 @@ await check('спортивный разряд: внесение по прика
   return 'проверка без записи; внесено: карточка с отчеством, новая (муж. по отчеству); однофамилец без имени пропущен; профиль показывает разряд и срок';
 });
 
-await check('импорт протокола: «Рейтинг: до 13» и «размер: 24» у сетки — группа турнира и размер сетки для очков', async () => {
+await check('импорт протокола: «Рейтинг: до 13» — группа турнира; «размер: 24» из протокола не учитывается, сетка — по категории турнира', async () => {
   const { importTournament } = await import('./server/lib/tournament-import.mjs');
   const out = importTournament(db, [
     'Турнир: Импорт методики до 13',
@@ -6402,17 +6406,16 @@ await check('импорт протокола: «Рейтинг: до 13» и «�
   ].join('\n'), {});
   const t = db.prepare('SELECT rating_group FROM tournaments WHERE id = ?').get(out.tournamentId);
   eq(t.rating_group, 'u13', 'группа турнира');
-  eq(db.prepare("SELECT size FROM tournament_draw_sizes WHERE tournament_id = ? AND discipline = 'single' AND sex = 'F'").get(out.tournamentId)?.size, 24, 'размер сетки');
   db.prepare('UPDATE tournaments SET is_published = 1 WHERE id = ?').run(out.tournamentId);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
   const list = currentStandings(db).lists['u13.single'];
   const pts = (n) => list.find((p) => p.playerName.startsWith(n))?.ratingPoints;
-  eq([pts('Импортова Аа'), pts('Импортова Вв'), pts('Импортова Бб'), pts('Импортова Гг')].join(','), '350,210,140,105', 'до 13, B: 350 / 210 / 140 (3) / 105 (4)');
+  eq([pts('Импортова Аа'), pts('Импортова Вв'), pts('Импортова Бб'), pts('Импортова Гг')].join(','), '500,300,200,150', 'до 13, категория A — сетка 32 (размер 24 из протокола не учтён): 500 / 300 / 200 (3) / 150 (4)');
   const ids = db.prepare("SELECT id FROM players WHERE full_name LIKE 'Импортова%'").all().map((r) => r.id);
   db.prepare('DELETE FROM tournaments WHERE id = ?').run(out.tournamentId);
   db.prepare(`DELETE FROM players WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
-  return 'группа до 13 и сетка 24 из текста; очки 350/210/140/105 с матчем за 3 место';
+  return 'группа до 13 из текста, сетка по категории A (32), а не «размер: 24»; очки 500/300/200/150 с матчем за 3 место';
 });
 
 await check('миграция чинит испорченные имена загрузок (UTF-8, прочитанный как latin1), нормальные не трогает', async () => {
@@ -6520,9 +6523,8 @@ await check('§8.4 список рейтинга — по группе СЕТК�
   assert(row, 'игрок (14 лет) во взрослом одиночном — турнир без возрастной группы идёт во взрослый список');
   eq(row.slices.join(','), 'y14,u15,u17,u19', 'возрастные срезы игрока по-прежнему считаются (профиль)');
   // 14-летний сыграл в сетке до 13 — очки идут в рейтинг до 13, а не туда, куда «положен» по возрасту.
-  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, is_published, rating_group) VALUES ('Сетка до 13 для проверки', date('now','-3 days'), 'B', 1, 'u13')").run().lastInsertRowid);
+  const tid = Number(db.prepare("INSERT INTO tournaments (name, end_date, category, is_published, rating_group) VALUES ('Сетка до 13 для проверки', date('now','-3 days'), 'D', 1, 'u13')").run().lastInsertRowid);
   db.prepare("INSERT INTO results (tournament_id, player_id, place, discipline) VALUES (?, ?, 2, 'single')").run(tid, p19);
-  db.prepare("INSERT INTO tournament_draw_sizes (tournament_id, discipline, sex, size) VALUES (?, 'single', '*', 8)").run(tid);
   recompute(db, { staleLockMinutes: 5, keepSnapshots: 24 });
   const u13 = currentStandings(db).lists['u13.single'].find((p) => p.playerId === p19);
   eq(u13 && u13.ratingPoints, 48, 'до 13, сетка 8 (D, 80), 2 место — 48');

@@ -184,17 +184,6 @@ CREATE TABLE IF NOT EXISTS bracket_slots (
   PRIMARY KEY (bracket_id, round, position)
 );
 
--- РАЗМЕР СЕТКИ ПО РЕГЛАМЕНТУ (методика рейтинга 17.10.2026): категория сетки — 32 → A, 24 → B,
--- 16 → C, 8 → D; не зависит от числа заявившихся. Своя у каждой сетки турнира: разряд + пол
--- (M юноши/мужчины, F девушки/женщины, X микст, * — для всех сеток разряда).
-CREATE TABLE IF NOT EXISTS tournament_draw_sizes (
-  tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
-  discipline    TEXT NOT NULL CHECK (discipline IN ('single','double','mixed')),
-  sex           TEXT NOT NULL CHECK (sex IN ('M','F','X','*')),
-  size          INTEGER NOT NULL CHECK (size IN (8,16,24,32)),
-  PRIMARY KEY (tournament_id, discipline, sex)
-);
-
 -- Снимки рейтинга. Копятся; retention — последние 24, чистятся при пересчёте.
 CREATE TABLE IF NOT EXISTS rating_cache (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
