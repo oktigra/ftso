@@ -19,8 +19,8 @@ const compact = typeof partnersCompact !== 'undefined' && partnersCompact;
   </svg>
   <div class="container partners__inner">
     <div class="partners__title"><%= partnersTitle %></div>
-    <div class="partners__row">
-      <% if (!partners.length) { %>
+    <% if (!partners.length) { %>
+      <div class="partners__row">
         <div class="partners__empty">
           <b><%= partnersCta %></b>
           <span>Логотипы встанут в полосу под первым экраном главной, а на остальных страницах — в компактный ряд в подвале.</span>
@@ -28,18 +28,30 @@ const compact = typeof partnersCompact !== 'undefined' && partnersCompact;
         <div class="partner partner--slot">СЛОТ</div>
         <div class="partner partner--slot">СЛОТ</div>
         <a class="btn btn--primary" href="/contacts#feedback">Стать партнёром</a>
-      <% } else { %>
-        <% partners.forEach(function (p) { %>
-          <% if (p.url) { %>
-            <a class="partner" href="<%= p.url %>" rel="noopener nofollow" target="_blank" title="<%= p.name %>" aria-label="Партнёр: <%= p.name %>">
-              <img src="/partners/<%= p.id %>/logo" alt="<%= p.name %>" loading="lazy">
-            </a>
-          <% } else { %>
-            <span class="partner" title="<%= p.name %>"><img src="/partners/<%= p.id %>/logo" alt="<%= p.name %>" loading="lazy"></span>
-          <% } %>
+      </div>
+    <% } else { %>
+      <%
+      /* КАРУСЕЛЬ (18.10.2026): лента плавно едет влево и бесконечно повторяется — для этого
+         набор выведен дважды (вторая копия скрыта от экранных дикторов и клавиатуры).
+         Наведение или фокус останавливают ленту; при «уменьшить движение» в системе
+         карусель не едет, ряд листается вбок, как раньше. Клик — сайт партнёра в новой вкладке. */
+      %>
+      <div class="partners__row partners__row--marquee">
+        <% [false, true].forEach(function (copy) { %>
+          <div class="partners__track<%= copy ? ' partners__track--copy' : '' %>"<%- copy ? ' aria-hidden="true"' : '' %>>
+            <% partners.forEach(function (p) { %>
+              <% if (p.url && copy) { %>
+                <a class="partner" href="<%= p.url %>" rel="noopener nofollow" target="_blank" tabindex="-1"><img src="/partners/<%= p.id %>/logo" alt="" loading="lazy"></a>
+              <% } else if (p.url) { %>
+                <a class="partner" href="<%= p.url %>" rel="noopener nofollow" target="_blank" title="<%= p.name %>" aria-label="Партнёр: <%= p.name %> (откроется в новой вкладке)"><img src="/partners/<%= p.id %>/logo" alt="<%= p.name %>" loading="lazy"></a>
+              <% } else { %>
+                <span class="partner" title="<%= p.name %>"><img src="/partners/<%= p.id %>/logo" alt="<%= copy ? '' : p.name %>" loading="lazy"></span>
+              <% } %>
+            <% }); %>
+            <a class="partner partner--cta" href="/contacts#feedback"<%- copy ? ' tabindex="-1"' : '' %>><%= partnersCta %></a>
+          </div>
         <% }); %>
-        <a class="partner partner--cta" href="/contacts#feedback"><%= partnersCta %></a>
-      <% } %>
-    </div>
+      </div>
+    <% } %>
   </div>
 </section>

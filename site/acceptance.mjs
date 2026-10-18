@@ -2201,6 +2201,22 @@ await check('стартовые партнёры: кнопка в админке
   // Без логотипа партнёр не показывается: на главной по-прежнему пустое состояние полосы.
   const home = await http('/');
   assert(/partner--slot/.test(home.text) && !/Министерство спорта/.test(home.text), 'партнёр без логотипа не должен попадать в полосу');
+  // Карусель (18.10.2026): с логотипом партнёр в ленте дважды (вторая копия — для бесконечной
+  // прокрутки, скрыта от дикторов и клавиатуры); ссылка — сайт партнёра в новой вкладке; «Стать партнёром» едет вместе.
+  {
+    const pid = db.prepare('SELECT id FROM partners ORDER BY id LIMIT 1').get().id;
+    const up = db.prepare("INSERT INTO uploads (stored_name, original_name, mime, kind, profile, size_bytes, sha256) VALUES (?, 'l.png', 'image/png', 'image', 'gallery', 1, 'x')").run('car-' + Date.now()).lastInsertRowid;
+    db.prepare("UPDATE partners SET logo_upload_id = ?, url = 'https://minsport.gov.ru/' WHERE id = ?").run(up, pid);
+    const h = (await http('/')).text;
+    assert(/class="partners__row partners__row--marquee"/.test(h), 'нет ленты карусели');
+    eq((h.match(/class="partners__track/g) || []).length, 2, 'две ленты (оригинал и копия)');
+    assert(/class="partners__track partners__track--copy" aria-hidden="true"/.test(h), 'копия ленты не скрыта от дикторов');
+    assert(/<a class="partner" href="https:\/\/minsport\.gov\.ru\/" rel="noopener nofollow" target="_blank" title=/.test(h), 'логотип не ведёт на сайт партнёра в новой вкладке');
+    eq((h.match(/class="partner partner--cta"/g) || []).length, 2, '«Стать партнёром» едет вместе с лентой');
+    const css = readFileSync(resolve(HERE, 'public/css/site.css'), 'utf8');
+    assert(/@keyframes partners-marquee/.test(css) && /prefers-reduced-motion: reduce\)\{\s*\.partners__row--marquee/.test(css), 'нет анимации или отключения при «уменьшить движение»');
+    db.prepare('UPDATE partners SET logo_upload_id = NULL WHERE id = ?').run(pid); db.prepare('DELETE FROM uploads WHERE id = ?').run(up);
+  }
   db.prepare('DELETE FROM partners').run();
   db.prepare('DELETE FROM write_attempts').run();
   return `${STARTER_PARTNERS.length} партнёров заводятся без логотипов, повтор не дублирует, в полосу не попадают до загрузки файла`;

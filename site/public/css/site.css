@@ -1169,6 +1169,20 @@ html[data-theme="dark"] .dev-notice{background:#16293d; color:#dce8f2;}
 .partners__empty span{font-size:.875rem; line-height:1.5; color:var(--muted);}
 .partner--slot{width:120px; height:60px; border:1px dashed var(--border); background:transparent; box-shadow:none; font-family:'Manrope',sans-serif; font-size:.7rem; font-weight:700; letter-spacing:.06em; color:var(--muted); opacity:.75;}
 .partner--slot:hover{transform:none; box-shadow:none; border-color:var(--border);}
+/* КАРУСЕЛЬ ПАРТНЁРОВ (18.10.2026): две одинаковые ленты едут влево на свою ширину —
+   стык не виден, лента бесконечна. Наведение/фокус — пауза; края мягко гаснут. */
+.partners__row--marquee{display:flex; gap:0; overflow:hidden; min-width:0; flex:1 1 auto; scroll-snap-type:none; padding:.3rem 0;
+  -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 3.5rem,#000 calc(100% - 3.5rem),transparent 100%);
+          mask-image:linear-gradient(90deg,transparent 0,#000 3.5rem,#000 calc(100% - 3.5rem),transparent 100%);}
+.partners__track{display:flex; flex:0 0 auto; gap:1rem; padding-right:1rem; align-items:center; animation:partners-marquee 45s linear infinite;}
+.partners__row--marquee:hover .partners__track, .partners__row--marquee:focus-within .partners__track{animation-play-state:paused;}
+.partners__track .partner{scroll-snap-align:none;}
+@keyframes partners-marquee{from{transform:translateX(0);} to{transform:translateX(-100%);}}
+@media (prefers-reduced-motion: reduce){
+  .partners__row--marquee{overflow-x:auto; -webkit-mask-image:none; mask-image:none;}
+  .partners__track{animation:none;}
+  .partners__track--copy{display:none;}
+}
 .partners--compact{background:transparent; border:0; padding:.6rem 0 0;}
 .partners--compact .partners__wm{display:none;}
 .partners--compact .partners__inner{padding:0; max-width:100%;}
