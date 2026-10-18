@@ -736,4 +736,44 @@
   document.querySelectorAll('[data-merge-cancel]').forEach(function (b) {
     b.addEventListener('click', function () { var d = b.closest('details'); if (d) d.removeAttribute('open'); });
   });
+
+  // СМЕНА ФОТО НА ГЛАВНОЙ (18.10.2026): каждые data-interval мс — следующее фото, плавно.
+  // Картинку следующего слайда подгружаем заранее (data-src → src) — по одной, не все сразу.
+  // Пауза: наведение, фокус, вкладка скрыта; «уменьшить движение» — смены нет.
+  Array.prototype.forEach.call(document.querySelectorAll('[data-slides]'), function (box) {
+    var slides = Array.prototype.slice.call(box.querySelectorAll('.photo__slide'));
+    if (slides.length < 2) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var interval = Math.max(1500, parseInt(box.getAttribute('data-interval'), 10) || 3000);
+    var cur = 0;
+    var paused = false;
+    var load = function (i) {
+      var img = slides[i] && slides[i].querySelector('img[data-src]');
+      if (img) { img.src = img.getAttribute('data-src'); img.removeAttribute('data-src'); }
+    };
+    load(1);
+    var show = function (next) {
+      slides[cur].classList.remove('is-active');
+      slides[cur].setAttribute('aria-hidden', 'true');
+      slides[cur].setAttribute('tabindex', '-1');
+      slides[next].classList.add('is-active');
+      slides[next].removeAttribute('aria-hidden');
+      slides[next].removeAttribute('tabindex');
+      cur = next;
+      load((cur + 1) % slides.length);
+    };
+    box.addEventListener('mouseenter', function () { paused = true; });
+    box.addEventListener('mouseleave', function () { paused = false; });
+    box.addEventListener('focusin', function () { paused = true; });
+    box.addEventListener('focusout', function () { paused = false; });
+    setInterval(function () {
+      if (paused || document.hidden) return;
+      var next = (cur + 1) % slides.length;
+      var img = slides[next].querySelector('img');
+      // Следующее фото ещё не догрузилось — ждём следующего такта, а не показываем пустое.
+      if (img && img.getAttribute('data-src')) { load(next); return; }
+      if (img && !img.complete) return;
+      show(next);
+    }, interval);
+  });
 })();

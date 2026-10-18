@@ -33,6 +33,27 @@ export function newsAttachments(db, newsId) {
     .all(newsId);
 }
 
+/**
+ * СМЕНА ФОТО НА ГЛАВНОЙ (18.10.2026): обложки опубликованных новостей (свежие первыми),
+ * а если их меньше лимита — фото из галереи. Адрес картинки несёт ?v=<номер загрузки>, чтобы
+ * замена фото сразу была видна. Новые обложки попадают в смену сами, без правок кода.
+ */
+export function heroSlides(db, limit = 10) {
+  const news = db
+    .prepare(
+      `SELECT id, title, cover_upload_id FROM news WHERE is_published = 1 AND cover_upload_id IS NOT NULL
+        ORDER BY COALESCE(published_at, date(created_at)) DESC, id DESC LIMIT ?`,
+    )
+    .all(limit)
+    .map((n) => ({ src: `/news/${n.id}/cover?v=${n.cover_upload_id}`, href: `/news/${n.id}`, caption: n.title }));
+  const rest = limit - news.length;
+  const gallery = rest > 0
+    ? db.prepare('SELECT id, title, upload_id FROM gallery_items ORDER BY id DESC LIMIT ?').all(rest)
+      .map((g) => ({ src: `/gallery/${g.id}/image?v=${g.upload_id}`, href: '/gallery', caption: g.title }))
+    : [];
+  return [...news, ...gallery];
+}
+
 export function publishedNews(db, limit = 50, q = '', category = '') {
   const cat = NEWS_CATEGORIES[category] ? category : '';
   const rows = db

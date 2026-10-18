@@ -7,7 +7,7 @@ import {
 } from '../lib/rating-service.mjs';
 import { OPERATOR, LEGAL_VERSION, LEGAL_VERSION_LABEL, PUBLIC_DOCUMENTS } from '../lib/legal.mjs';
 import { donateConfig, donateQrSvg, parseSum, gostPrefix } from '../lib/donate.mjs';
-import { moscowToday } from '../lib/content.mjs';
+import { moscowToday, heroSlides } from '../lib/content.mjs';
 import { feedbackInput, createFeedback } from '../lib/feedback.mjs';
 import { checkTicket, consumeTicket } from '../lib/form-guard.mjs';
 import { queueMail } from '../lib/mailer.mjs';
@@ -71,6 +71,7 @@ export default function mountPublic(app, { db, config, limitFeedback }) {
       tournaments: tournamentList(db).slice(0, 5),
       news: publishedNews(db, 3),
       heroUploadId: siteAsset(db, 'home-hero'),
+      heroSlides: heroSlides(db, 10),
       texts: {
         title: siteText(db, 'home-title'),
         lead: siteText(db, 'home-lead'),

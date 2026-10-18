@@ -35,8 +35,27 @@
          (правится в «Текстах»), а не из CSS: иначе она не переводится, не
          индексируется и не читается скринридером. */
       %>
+      <%
+      /* СМЕНА ФОТО (18.10.2026): фото с главной (если загружено в «Текстах»), затем обложки
+         новостей и фото галереи — каждые 3 секунды, плавно. Первое грузится сразу, остальные —
+         по одному заранее перед показом (data-src), поэтому страница не тяжелеет. Наведение —
+         пауза; при «уменьшить движение» смены нет. Скрипт — в app.js (CSP без inline). */
+      const slides = (heroUploadId ? [{ src: '/site/hero?v=' + heroUploadId, href: null, caption: texts.photoCaption || '' }] : []).concat(heroSlides || []);
+      %>
+      <% if (slides.length > 1) { %>
+      <figure class="photo photo--slides" data-slides data-interval="3000" aria-roledescription="карусель" aria-label="Фото Федерации">
+        <% slides.forEach(function (sl, i) { %>
+          <<%= sl.href ? 'a' : 'div' %> class="photo__slide<%= i === 0 ? ' is-active' : '' %>"<%- sl.href ? ' href="' + sl.href + '"' : '' %><%- i === 0 ? '' : ' aria-hidden="true" tabindex="-1"' %>>
+            <img class="photo__img" <%- i === 0 ? 'src' : 'data-src' %>="<%= sl.src %>" alt="<%= sl.caption %>" width="1200" height="900"<%- i === 0 ? '' : ' decoding="async"' %>>
+            <% if (sl.caption) { %><span class="photo__slide-caption"><%= sl.caption %></span><% } %>
+          </<%= sl.href ? 'a' : 'div' %>>
+        <% }); %>
+      </figure>
+      <% } else { %>
       <figure class="photo">
-        <% if (heroUploadId) { %>
+        <% if (slides.length === 1 && !heroUploadId) { %>
+          <img class="photo__img" src="<%= slides[0].src %>" alt="<%= slides[0].caption %>" width="1200" height="900">
+        <% } else if (heroUploadId) { %>
           <img class="photo__img" src="/site/hero?v=<%= heroUploadId %>" alt="" width="1200" height="900">
         <% } else { %>
           <div class="ph-stripes"></div>
@@ -46,6 +65,7 @@
           <figcaption class="photo__caption"><%= texts.photoCaption %></figcaption>
         <% } %>
       </figure>
+      <% } %>
       <div class="info-card fx-card"><%- include('partials/court-card') %>
         <% if (nextEvent) { %>
           <div class="ic-item"><small>Ближайший турнир</small><b><a href="/tournaments/<%= nextEvent.id %>"><%= nextEvent.date %></a></b></div>
