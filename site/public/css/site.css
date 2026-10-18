@@ -286,6 +286,12 @@ html[data-theme="warm"] .theme-menu__icon .i-warm{display:block;}
 /* Смена фото на главной (18.10.2026): слайды наложены друг на друга, активный проявляется. */
 .photo--slides .photo__slide{position:absolute; inset:0; opacity:0; transition:opacity .9s ease; color:inherit; text-decoration:none;}
 .photo--slides .photo__slide.is-active{opacity:1; z-index:1;}
+/* Фото целиком (18.10.2026): люди на снимках не должны терять головы — кадр вписывается
+   в рамку 4:3 без обрезки, свободные поля — цветом подложки; приближение при наведении
+   здесь выключено (оно тоже срезало края). */
+.photo--slides{background:var(--surface-2);}
+.photo--slides .photo__img{object-fit:contain; background:var(--surface-2);}
+.photo--slides:hover .photo__img{transform:none;}
 .photo__slide-caption{position:absolute; left:0; right:0; bottom:0; padding:2.4rem 1rem .9rem; background:linear-gradient(transparent, rgba(4,20,14,.78)); color:#fff; font-family:'Manrope',sans-serif; font-size:.92rem; font-weight:600; line-height:1.35;}
 @media (prefers-reduced-motion: reduce){ .photo--slides .photo__slide{transition:none;} }
 .photo .ph-label span{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.8rem; color:var(--muted); background:color-mix(in srgb,var(--surface) 80%, transparent); padding:.5rem .9rem; border-radius:999px; border:1px solid var(--border);}
