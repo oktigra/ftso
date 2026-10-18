@@ -32,25 +32,11 @@ export function tableFor(standings, key = 'adult.single') {
   return Array.isArray(list) ? list : [];
 }
 
-/** Размеры сеток турниров: «турнир|разряд|пол» → размер. */
-function drawSizeMap(db) {
-  const m = new Map();
-  for (const r of db.prepare('SELECT tournament_id, discipline, sex, size FROM tournament_draw_sizes').all()) {
-    m.set(`${r.tournament_id}|${r.discipline}|${r.sex}`, r.size);
-  }
-  return m;
-}
-
-/** Размер сетки результата: своя сетка по полу (микст — X), иначе общая для разряда (*). */
-export function drawSizeFor(sizes, tournamentId, discipline, playerSex) {
-  const sexKey = discipline === 'mixed' ? 'X' : playerSex || '*';
-  return sizes.get(`${tournamentId}|${discipline}|${sexKey}`) || sizes.get(`${tournamentId}|${discipline}|*`) || null;
-}
-
 /**
- * РАЗМЕР ИЗ КАТЕГОРИИ ТУРНИРА (решение Алекса 18.10.2026): категория турнира и есть размер
- * его сетки — A 32, B 24, C 16, D 8 (лишние места — «кресты»). Если размер сетки не задан
- * отдельно (протокола нет), берётся из категории турнира. Заданный размер всегда важнее.
+ * РАЗМЕР СЕТКИ = КАТЕГОРИЯ ТУРНИРА (решение Алекса 18.10.2026): сетки турнира всегда
+ * регламентного размера его категории — A 32, B 24, C 16, D 8; лишние места — «кресты».
+ * Размер из протокола не учитывается: протокол подгоняется под правило, а не наоборот.
+ * Сменить размер можно только сменой категории турнира.
  */
 export function drawSizeFromCategory(category) {
   return SIZE_BY_CATEGORY[category] || null;
@@ -64,9 +50,9 @@ const EVENT_SUFFIX = { single: '', double: ' — пары', mixed: ' — мик�
 /**
  * Вход движка для одного списка (группа × разряд). Событие зачёта — турнир для
  * одиночного и «турнир:разряд» для парного (пары и микст одного турнира — два зачёта).
- * Сетка без заданного размера берёт его из категории турнира и попадает в missing — админка показывает.
+ * Размер каждой сетки — по категории турнира.
  */
-export function collectListInput(db, group, listDisc, sizes = drawSizeMap(db)) {
+export function collectListInput(db, group, listDisc) {
   const discs = listDisc === 'single' ? ['single'] : ['double', 'mixed'];
   const rows = db
     .prepare(
@@ -81,19 +67,12 @@ export function collectListInput(db, group, listDisc, sizes = drawSizeMap(db)) {
     .all(group, ...discs);
   const events = new Map();
   const results = [];
-  const missing = [];
   for (const r of rows) {
     const eventId = listDisc === 'single' ? String(r.tid) : `${r.tid}:${r.discipline}`;
     if (!events.has(eventId)) {
       events.set(eventId, { id: eventId, name: r.name + EVENT_SUFFIX[r.discipline], endDate: r.endDate, category: '-' });
     }
-    const sexKey = r.discipline === 'mixed' ? 'X' : r.sex || '*';
-    let size = drawSizeFor(sizes, r.tid, r.discipline, r.sex);
-    if (!size) {
-      size = drawSizeFromCategory(r.category);
-      missing.push({ tournamentId: r.tid, discipline: r.discipline, sex: sexKey, inferred: size, playerId: r.playerId });
-    }
-    const pts = pointsFor({ group, drawSize: size, place: r.place, pair: r.discipline !== 'single' });
+    const pts = pointsFor({ group, drawSize: drawSizeFromCategory(r.category), place: r.place, pair: r.discipline !== 'single' });
     results.push({ playerId: r.playerId, playerName: r.playerName, tournamentId: eventId, place: r.place, points: pts === null ? 0 : pts });
   }
   const kind = listDisc === 'single' ? 'single' : 'double';
@@ -109,7 +88,7 @@ export function collectListInput(db, group, listDisc, sizes = drawSizeMap(db)) {
       return id && events.has(id) ? { tournamentId: id, winnerPlayerId: m.winnerPlayerId, loserPlayerId: m.loserPlayerId } : null;
     })
     .filter(Boolean);
-  return { tournaments: [...events.values()], results, matches, missing };
+  return { tournaments: [...events.values()], results, matches };
 }
 
 /**
@@ -149,30 +128,25 @@ function rowsWithMeta(standings, meta) {
 /**
  * Снимок = вывод движка по шести спискам + метаданные игроков, чтобы витрина не зависела
  * от JOIN. ДАТА РОЖДЕНИЯ В СНИМОК НЕ КЛАДЁТСЯ: возраст считается на выдаче, живьём.
- * missingSizes — сетки без заданного размера (взят из категории турнира) — для админки.
  */
 export function buildSnapshot(db, { asOf } = {}) {
   const meta = playerMeta(db);
-  const sizes = drawSizeMap(db);
   const lists = {};
   const warnings = [];
-  const missing = [];
   let status = RATING_CONFIG.ratingStatus;
   let at = asOf;
   for (const group of RATING_GROUPS) {
     for (const d of LIST_DISCIPLINES) {
       const key = listKey(group, d);
-      const input = collectListInput(db, group, d, sizes);
+      const input = collectListInput(db, group, d);
       const st = computeStandings({ tournaments: input.tournaments, results: input.results, matches: input.matches, config: RATING_CONFIG, ...(asOf ? { asOf } : {}) });
       status = st.ratingStatus;
       at = st.asOf;
       lists[key] = rowsWithMeta(st, meta);
       warnings.push(...st.warnings.map((w) => `${key}: ${w}`));
-      missing.push(...input.missing);
     }
   }
-  const uniq = new Map(missing.map((m) => [`${m.tournamentId}|${m.discipline}|${m.sex}`, m]));
-  return { method: 2, ratingStatus: status, asOf: at, warnings, missingSizes: [...uniq.values()].map(({ playerId, ...m }) => m), lists };
+  return { method: 2, ratingStatus: status, asOf: at, warnings, lists };
 }
 
 /** Сколько строк в снимке (все списки) — для админки. */
@@ -516,7 +490,7 @@ export function recompute(
   try {
     const snapshot = buildSnapshot(db, { asOf });
     const id = saveSnapshot(db, snapshot, keepSnapshots);
-    return { ok: true, snapshotId: id, players: snapshotSize(snapshot), warnings: snapshot.warnings, missingSizes: snapshot.missingSizes };
+    return { ok: true, snapshotId: id, players: snapshotSize(snapshot), warnings: snapshot.warnings };
   } finally {
     releaseLock(db);
   }

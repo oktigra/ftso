@@ -7,8 +7,8 @@
 //   Город: Смоленск | Категория: A | Судья: Н. Груздин
 //
 //   Рейтинг: до 13                                       ← группа рейтинга: взрослые | до 17 | до 13
-//   Сетка: Мужчины 50+ | пол: M | возраст: 50+ | размер: 16  ← олимпийка; слоты — по числу пар 1/8, 1/4, 1/2;
-//                                                         «размер:» — сетка по регламенту (32/24/16/8) для рейтинга
+//   Сетка: Мужчины 50+ | пол: M | возраст: 50+  ← олимпийка; слоты — по числу пар 1/8, 1/4, 1/2;
+//                                                размер сетки для рейтинга — по категории турнира
 //   1/4: Антонов — X → Антонов                            ← «X» = свободен (bye)
 //   1/4: Гапеев — Степаньков 6:1/6:2 → Степаньков          ← счёт сетами через «/» или пробел
 //   Финал: Антонов — Шульц 6:0/6:2 → Антонов
@@ -85,10 +85,7 @@ export function parseTournamentText(text) {
       const discipline = /микст|смешан/.test(discWord) || (!discWord && mixedByName) ? 'mixed'
         : /пар/.test(discWord) || (!discWord && pairByName) ? 'double'
         : /одиноч/.test(discWord) ? 'single' : null;
-      // РАЗМЕР СЕТКИ ПО РЕГЛАМЕНТУ (17.10.2026): «размер: 24» — категория сетки в рейтинге.
-      const drawSize = o['размер'] ? Number(o['размер']) : null;
-      if (drawSize !== null && ![8, 16, 24, 32].includes(drawSize)) throw new ValidationError(`Размер сетки — 32, 24, 16 или 8 («${line}»)`);
-      cur = { type: kindWord === 'сетка' ? 'bracket' : kindWord === 'группа' ? 'group' : 'pairs', title, sex: (o['пол'] || '').toUpperCase() || null, age: o['возраст'] || null, discipline, drawSize, matches: [], places: [] };
+      cur = { type: kindWord === 'сетка' ? 'bracket' : kindWord === 'группа' ? 'group' : 'pairs', title, sex: (o['пол'] || '').toUpperCase() || null, age: o['возраст'] || null, discipline, matches: [], places: [] };
       t.sections.push(cur); continue;
     }
     if (!cur) throw new ValidationError(`Строка вне раздела: «${line}» — сначала «Сетка:», «Группа:» или «Пары:»`);
@@ -252,7 +249,6 @@ export function importTournament(db, text, { userId = null, tournamentId = null,
     const tid = target ? target.id : Number(db.prepare('INSERT INTO tournaments (name, start_date, end_date, category, city, kind, venue, organizer, organizer_contact, is_published, rating_group) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)')
       .run(t.name, t.start_date, t.end_date, t.category, t.city || null, /первенств|чемпионат/i.test(t.name) ? 'championship' : 'other', t.venue || null, t.organizer || null, t.judge ? `Главный судья: ${t.judge}` : (t.organizer_contact || null), t.rating_group || 'adult').lastInsertRowid);
     if (target && t.rating_group) db.prepare('UPDATE tournaments SET rating_group = ? WHERE id = ?').run(t.rating_group, tid);
-    const putSize = db.prepare('INSERT INTO tournament_draw_sizes (tournament_id, discipline, sex, size) VALUES (?, ?, ?, ?) ON CONFLICT (tournament_id, discipline, sex) DO UPDATE SET size = excluded.size');
     const slotAt = (bid, r, pos) => db.prepare('SELECT player_id, partner_id FROM bracket_slots WHERE bracket_id = ? AND round = ? AND position = ?').get(bid, r, pos) || null;
     const nameOf = (id) => db.prepare('SELECT full_name FROM players WHERE id = ?').get(id)?.full_name || `#${id}`;
     const slotLabel = (sl) => (sl ? nameOf(sl.player_id) + (sl.partner_id ? ` / ${nameOf(sl.partner_id)}` : '') : '—');
@@ -267,10 +263,6 @@ export function importTournament(db, text, { userId = null, tournamentId = null,
       const disc = s.discipline || (s.type === 'pairs' ? 'double' : 'single');
       const kind = disc === 'single' ? 'single' : 'double';
       sec.discipline = disc;
-      if (s.drawSize) {
-        putSize.run(tid, disc, disc === 'mixed' ? 'X' : s.sex === 'F' ? 'F' : s.sex === 'M' ? 'M' : '*', s.drawSize);
-        sec.drawSize = s.drawSize;
-      }
 
       if (s.type === 'group') {
         let g = db.prepare('SELECT id, name, kind, discipline FROM tournament_groups WHERE tournament_id = ? AND kind = ?').all(tid, kind)

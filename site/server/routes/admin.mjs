@@ -12,7 +12,7 @@ import { importTournament } from '../lib/tournament-import.mjs';
 import { assertAgeAllowed, AGE_LIMIT_PRESETS, ageRangeLabel } from '../lib/age.mjs';
 import { mergePlayers } from '../lib/player-merge.mjs';
 import { SPORT_RANKS, sportRankInput } from '../lib/sport-rank.mjs';
-import { RATING_GROUP_RU, DRAW_SIZES, categoryForSize, pointsFor } from '../lib/rating-method.mjs';
+import { RATING_GROUP_RU, pointsFor } from '../lib/rating-method.mjs';
 import { planRanks, applyRanks } from '../lib/sport-rank-bulk.mjs';
 import { devNoticeMode, devNoticeOn } from '../app.mjs';
 import { ERASED_LABEL, snapshotSize, drawSizeFromCategory } from '../lib/rating-service.mjs';
@@ -975,68 +975,35 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         .all(id),
       maxParticipants: config.rating.maxParticipants,
       drawSizes: drawSizeRows(id, tournament.rating_group, tournament.category),
-      drawSizeOptions: DRAW_SIZES.map((n) => ({ size: n, cat: categoryForSize(n) })),
       ratingGroupRu: RATING_GROUP_RU,
     });
   };
 
   /**
-   * РАЗМЕРЫ СЕТОК (методика 17.10.2026): по одной строке на каждую сетку турнира, где есть
-   * места — разряд × пол (микст — общий). Размер задаёт категорию и очки; без него
-   * результаты дают 0 очков. Показывает и очки за 1 место — проверить себя.
+   * СЕТКИ ТУРНИРА ДЛЯ РЕЙТИНГА: по строке на каждую сетку, где есть места — разряд × пол
+   * (микст — общий). Размер у всех один — по категории турнира (решение Алекса 18.10.2026),
+   * поэтому таблица только показывает его и очки за 1 место — проверить себя.
    */
   const SEX_KEY_RU = { M: 'юноши / мужчины', F: 'девушки / женщины', X: 'микст', '*': 'все' };
   const DISC_RU_ADMIN = { single: 'одиночный', double: 'парный', mixed: 'микст' };
-  function drawSizeRows(tournamentId, group, tournamentCategory) {
-    const present = db
+  function drawSizeRows(tournamentId, group, category) {
+    const size = drawSizeFromCategory(category);
+    return db
       .prepare(
         `SELECT r.discipline, CASE WHEN r.discipline = 'mixed' THEN 'X' ELSE COALESCE(p.sex, '*') END AS sex, COUNT(*) AS n
            FROM results r JOIN players p ON p.id = r.player_id
           WHERE r.tournament_id = ? GROUP BY 1, 2 ORDER BY 1, 2`,
       )
-      .all(tournamentId);
-    const sizes = new Map(db.prepare('SELECT discipline, sex, size FROM tournament_draw_sizes WHERE tournament_id = ?').all(tournamentId).map((r) => [`${r.discipline}|${r.sex}`, r.size]));
-    return present.map((r) => {
-      const set = sizes.get(`${r.discipline}|${r.sex}`) || sizes.get(`${r.discipline}|*`) || null;
-      const size = set || drawSizeFromCategory(tournamentCategory);
-      return {
-        discipline: r.discipline,
-        sex: r.sex,
+      .all(tournamentId)
+      .map((r) => ({
         label: `${DISC_RU_ADMIN[r.discipline]} · ${SEX_KEY_RU[r.sex] || r.sex}`,
         results: r.n,
-        size: set,
-        inferred: set ? null : size,
-        category: size ? categoryForSize(size) : null,
-        winPoints: size ? pointsFor({ group: group || 'adult', drawSize: size, place: 1, pair: r.discipline !== 'single' }) : null,
-      };
-    });
+        size,
+        category,
+        winPoints: pointsFor({ group: group || 'adult', drawSize: size, place: 1, pair: r.discipline !== 'single' }),
+      }));
   }
 
-  app.post(
-    '/admin/tournaments/:id/draw-sizes',
-    requireRole(...DATA_ROLES),
-    limitWrites,
-    guard((req, res) => {
-      const tournamentId = intAtLeast(req.params.id, 'Турнир');
-      if (!db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(tournamentId)) throw new ValidationError('Турнир не найден');
-      const put = db.prepare('INSERT INTO tournament_draw_sizes (tournament_id, discipline, sex, size) VALUES (?, ?, ?, ?) ON CONFLICT (tournament_id, discipline, sex) DO UPDATE SET size = excluded.size');
-      const del = db.prepare('DELETE FROM tournament_draw_sizes WHERE tournament_id = ? AND discipline = ? AND sex = ?');
-      const saved = [];
-      db.transaction(() => {
-        for (const [k, v] of Object.entries(req.body)) {
-          const m = /^size__(single|double|mixed)__(M|F|X|\*)$/.exec(k);
-          if (!m) continue;
-          const size = Number(v);
-          if (!v) { del.run(tournamentId, m[1], m[2]); continue; }
-          if (!DRAW_SIZES.includes(size)) throw new ValidationError('Размер сетки: 32, 24, 16 или 8');
-          put.run(tournamentId, m[1], m[2], size);
-          saved.push(`${m[1]}/${m[2]}=${size}`);
-        }
-      })();
-      logAction(db, actorId(req), 'tournament.draw_sizes', tournamentId, { saved });
-      flash(req, res, 'ok', 'Размеры сеток сохранены. Рейтинг изменится после пересчёта.', `/admin/tournaments/${tournamentId}/results#draw-sizes`);
-    }),
-  );
   app.get('/admin/tournaments/:id/results', requireRole(...DATA_ROLES), (req, res, next) => renderResults(req, res, next));
 
   // КРУГОВЫЕ ГРУППЫ (сетка, слой 1): группа → участники → счёт в клетках → места.
@@ -1577,14 +1544,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         players: result.players,
       });
       const warn = result.warnings.length ? ` Предупреждения: ${result.warnings.join('; ')}` : '';
-      // Сетки без размера дают 0 очков — называем турниры, чтобы секретарь их дозаполнил.
-      const miss = result.missingSizes && result.missingSizes.length
-        ? ` Размер сетки не задан — взят из категории турнира: ${[...new Set(result.missingSizes.map((m) => {
-          const t = db.prepare('SELECT name FROM tournaments WHERE id = ?').get(m.tournamentId);
-          return `${t ? t.name : '#' + m.tournamentId} (${m.discipline}, ${m.inferred})`;
-        }))].join('; ')}. Уточнить — «Результаты» → «Размеры сеток».`
-        : '';
-      flash(req, res, 'ok', `Рейтинг пересчитан: ${result.players} строк в шести списках.${miss}${warn}`, safeRefererPath(req, '/admin'));
+      flash(req, res, 'ok', `Рейтинг пересчитан: ${result.players} строк в шести списках.${warn}`, safeRefererPath(req, '/admin'));
     }),
   );
 

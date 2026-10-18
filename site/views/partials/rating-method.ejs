@@ -13,15 +13,15 @@ const g = method.groups;
   </div>
 
   <div class="method__block">
-    <h3>2. Категория сетки — по её размеру</h3>
-    <p>Размер сетки задаётся регламентом турнира и не зависит от того, сколько игроков заявилось.</p>
+    <h3>2. Категория турнира — размер его сеток</h3>
+    <p>Все сетки турнира — одного размера, его задаёт категория турнира. Размер не зависит от того, сколько игроков заявилось: свободные места в сетке — «кресты».</p>
     <div class="method__scroll">
       <table class="rating-table method__table">
         <thead><tr><th scope="col">Размер сетки</th><% method.categories.forEach(function (c) { %><th scope="col"><%= c.size %></th><% }); %></tr></thead>
         <tbody><tr><th scope="row">Категория</th><% method.categories.forEach(function (c) { %><td><strong><%= c.cat %></strong></td><% }); %></tr></tbody>
       </table>
     </div>
-    <p class="muted">У каждой сетки турнира своя категория: например, на одном первенстве одиночный разряд может быть категории B (сетка на 24), а парный — C (сетка на 16).</p>
+    <p class="muted">Например, на турнире категории B все сетки — одиночные, парные и микст — на 24 участника.</p>
   </div>
 
   <div class="method__block">

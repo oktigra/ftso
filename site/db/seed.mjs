@@ -74,19 +74,16 @@ for (const id of P) {
   });
 }
 
+// Размер сетки — по категории турнира: A — 32 (1000 за победу), C — 16 (500).
 const TOURNAMENTS = [
   ['Кубок Смоленска', daysAgo(300), 'A'],
-  ['Открытое первенство Вязьмы', daysAgo(240), 'B'],
-  ['Осенний турнир Рославля', daysAgo(180), 'B'],
+  ['Открытое первенство Вязьмы', daysAgo(240), 'C'],
+  ['Осенний турнир Рославля', daysAgo(180), 'C'],
   ['Гран-при «Днепр»', daysAgo(120), 'A'],
-  ['Кубок Сафоново', daysAgo(60), 'B'],
+  ['Кубок Сафоново', daysAgo(60), 'C'],
 ];
 const insTournament = db.prepare('INSERT INTO tournaments (name, end_date, category) VALUES (?, ?, ?)');
 const T = TOURNAMENTS.map((t) => Number(insTournament.run(...t).lastInsertRowid));
-// Размер сетки по регламенту (методика 17.10.2026): без него места дают 0 очков.
-// Демо: A — сетка на 32 (1000 за победу), B — на 16 (500): соотношение как у прежней шкалы ×2 / ×1.
-const insSize = db.prepare("INSERT INTO tournament_draw_sizes (tournament_id, discipline, sex, size) VALUES (?, 'single', '*', ?)");
-TOURNAMENTS.forEach((t, i) => insSize.run(T[i], t[2] === 'A' ? 32 : 16));
 
 const insResult = db.prepare('INSERT INTO results (tournament_id, player_id, place) VALUES (?, ?, ?)');
 const insMatch = db.prepare(
