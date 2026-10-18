@@ -255,6 +255,21 @@ export function uploadById(db, id) {
   return db.prepare('SELECT * FROM uploads WHERE id = ?').get(id);
 }
 
+/**
+ * Используется ли загрузка хоть где-то: проверяются ВСЕ столбцы базы, ссылающиеся внешним
+ * ключом на uploads (документы, новости, галерея, партнёры, баннер, фото игроков…), — новая
+ * таблица со ссылкой на файл учтётся сама.
+ */
+export function uploadInUse(db, id) {
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").all().map((r) => r.name);
+  for (const t of tables) {
+    for (const fk of db.prepare(`PRAGMA foreign_key_list("${t}")`).all()) {
+      if (fk.table === 'uploads' && db.prepare(`SELECT 1 FROM "${t}" WHERE "${fk.from}" = ? LIMIT 1`).get(id)) return true;
+    }
+  }
+  return false;
+}
+
 /** Удаление файла вместе с записью: осиротевший файл на диске — тоже утечка. */
 export function deleteUpload(db, id, dir) {
   const row = uploadById(db, id);

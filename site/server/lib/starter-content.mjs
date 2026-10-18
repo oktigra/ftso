@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import PDFDocument from 'pdfkit';
-import { storeUpload } from './uploads.mjs';
+import { storeUpload, deleteUpload, uploadInUse } from './uploads.mjs';
 
 const FONT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../assets/fonts');
 const FONT = readFileSync(resolve(FONT_DIR, 'DejaVuSans.ttf'));
@@ -93,8 +93,8 @@ export const STARTER_DOCUMENTS = [
 export const STARTER_NEWS = [
   { title: 'Открыт официальный сайт Федерации тенниса Смоленской области', category: 'federation', summary: 'Календарь турниров, региональный рейтинг, личный кабинет игрока, корты и клубы области — на одном сайте.',
     body: 'Федерация тенниса Смоленской области запустила официальный сайт ftso67.ru. Здесь публикуются календарь турниров с фильтрами по датам, городам и возрасту, региональный рейтинг игроков по утверждённой методике, сетки и результаты соревнований, справочники кортов, клубов и тренеров, документы Федерации.\n\nИгроки регистрируются на сайте и получают личный кабинет с историей результатов; за детей заявку подаёт законный представитель. Организаторы турниров подают заявку на включение в календарь прямо на сайте.\n\nПо вопросам — секретарь Федерации: info@ftso67.ru, 8-995-104-32-62, форма обратной связи внизу любой страницы.' },
-  { title: 'Как попасть в региональный рейтинг', category: 'education', summary: 'Регистрация на сайте, участие в турнирах календаря — и очки начисляются автоматически.',
-    body: 'Региональный рейтинг Федерации считается по утверждённой методике: очки за место зависят от размера сетки (32 — категория A, 24 — B, 16 — C, 8 — D), возрастной группы сетки (взрослые, до 17, до 13) и занятого места; в паре очки делятся пополам. В зачёт идут 10 лучших результатов за последние 52 недели, рейтинг обновляется раз в месяц.\n\nЧтобы попасть в рейтинг, достаточно зарегистрироваться на сайте (кнопка «Регистрация») и сыграть турнир из календаря Федерации. Результаты публикуются по факту участия в соревнованиях. Полный текст методики — в разделе «Документы».' },
+  { title: 'Как попасть в региональный рейтинг', category: 'education', summary: 'Сыграйте турнир из календаря Федерации — очки в рейтинг начисляются автоматически.',
+    body: 'Региональный рейтинг Федерации считается по методике, утверждённой 17.10.2026. Очки за место зависят от категории турнира, возрастной группы сетки (взрослые, до 17, до 13) и занятого места.\n\nКатегория турнира — это размер всех его сеток: A — 32, B — 24, C — 16, D — 8. За победу взрослые получают 1000 / 800 / 500 / 250 очков (A / B / C / D), до 17 лет — 800 / 600 / 300 / 150, до 13 лет — 500 / 350 / 150 / 80. За остальные места — процент от очков за победу: 2 место — 60 %, 3 — 40 %, 4 — 30 %, 5–8 — 20 %, 9–16 — 10 %, 17–32 — 5 %. В паре и миксте очки делятся пополам между партнёрами.\n\nРейтинги ведутся отдельно для взрослых, до 17 и до 13 лет — в каждой группе одиночный и парный (микст идёт в парный). В зачёт идут 10 лучших результатов за последние 52 недели, рейтинг обновляется раз в месяц.\n\nЧтобы попасть в рейтинг, достаточно сыграть турнир из календаря Федерации — результаты публикуются по факту участия в соревнованиях. Регистрация на сайте (кнопка «Регистрация») даёт личный кабинет: история результатов и заявки на турниры. Подробно — на странице «Как считается рейтинг» (ftso67.ru/rating/metodika) и в разделе «Документы».' },
   { title: 'Федерация формирует реестры тренеров и судей Смоленской области', category: 'federation', summary: 'Тренеры и судьи — пришлите сведения о себе, и вас увидят игроки и организаторы.',
     body: 'Федерация тенниса Смоленской области формирует на сайте реестры тренеров и судей — для игроков, родителей и организаторов турниров.\n\nЕсли вы тренер или судья и хотите попасть в реестр, направьте на info@ftso67.ru с пометкой «Тренеры» или «Судьи»: ФИО, город, место работы (клуб, школа, частная практика), квалификацию или категорию, с кем работаете, контакт для связи. Публикация — только с вашего согласия; фото — по желанию.\n\nРеестры пополняются по мере поступления сведений и публикуются в разделах «Тренеры» и «Судьи».' },
   { title: 'Календарь турниров сезона: заявки от организаторов открыты', category: 'tournament', summary: 'Клубы и организаторы могут заявить турнир в календарь Федерации через сайт.',
@@ -128,12 +128,14 @@ export function applyStarterPartners(db) {
 
 export async function applyStarterDocuments(db, config, userId) {  let added = 0; let skipped = 0; let replaced = 0;
   for (const d of STARTER_DOCUMENTS) {
-    const existing = db.prepare('SELECT id FROM federation_documents WHERE title = ?').get(d.title);
+    const existing = db.prepare('SELECT id, upload_id FROM federation_documents WHERE title = ?').get(d.title);
     if (existing && !d.replaceExisting) { skipped++; continue; }
     const buffer = await simplePdf(d.title, d.subtitle, d.blocks);
     if (existing) {
       const fresh = await storeUpload(db, { buffer, filename: d.file, profile: 'documents', dir: config.upload.dir, uploadedBy: userId, meta: { starter: true } });
       db.prepare('UPDATE federation_documents SET upload_id = ? WHERE id = ?').run(fresh.id, existing.id);
+      // Прежняя редакция больше нигде не нужна — файл и запись удаляются, старьё не копится.
+      if (!uploadInUse(db, existing.upload_id)) deleteUpload(db, existing.upload_id, config.upload.dir);
       replaced++;
       continue;
     }
@@ -141,7 +143,13 @@ export async function applyStarterDocuments(db, config, userId) {  let added = 0
     db.prepare('INSERT INTO federation_documents (title, category, upload_id) VALUES (?, ?, ?)').run(d.title, d.category, upload.id);
     added++;
   }
-  return { added, skipped, replaced, total: STARTER_DOCUMENTS.length };
+  // Редакции, оставшиеся от перевыпусков до 18.10.2026 (тогда старый файл не удалялся):
+  // сайтовые PDF, к которым уже ничего не привязано.
+  let removed = 0;
+  for (const u of db.prepare("SELECT id FROM uploads WHERE profile = 'documents' AND meta = ?").all(JSON.stringify({ starter: true }))) {
+    if (!uploadInUse(db, u.id) && deleteUpload(db, u.id, config.upload.dir)) removed++;
+  }
+  return { added, skipped, replaced, removed, total: STARTER_DOCUMENTS.length };
 }
 
 export function applyStarterNews(db, userId) {
