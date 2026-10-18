@@ -15,7 +15,7 @@ import { createRequest, byToken, docsGate } from '../lib/tournament-requests.mjs
 import { tournamentFiles } from '../lib/content.mjs';
 import { queueMail, flushOutbox, mailTournamentSubmitted } from '../lib/mailer.mjs';
 import { LEGAL_VERSION_LABEL, OPERATOR } from '../lib/legal.mjs';
-import { CATEGORIES } from '../lib/validate.mjs';
+import { CATEGORIES, CATEGORY_RU } from '../lib/validate.mjs';
 
 const STATUS_RU = { pending: 'на рассмотрении', approved: 'согласована', rejected: 'отклонена' };
 const PROFILE = 'tournament-doc';
@@ -32,6 +32,7 @@ export default function mountTournamentRequest(app, { db, config, limitTournamen
       errors,
       values: req.session.tournamentDraft || {},
       categories: CATEGORIES,
+      categoryRu: CATEGORY_RU,
       agePresets: AGE_LIMIT_PRESETS,
       maxFiles,
       maxFileMb: Math.round(maxFileBytes / 1024 / 1024),

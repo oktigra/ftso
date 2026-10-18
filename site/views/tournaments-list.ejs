@@ -26,7 +26,7 @@
         <a class="tabs__item<%= view === 'grid' ? ' is-active' : '' %>" href="<%= qs({ view: 'grid' }) %>"<%- view === 'grid' ? ' aria-current="page"' : '' %>>Сетка месяца</a>
       </nav>
     </div>
-    <p class="muted">Календарь соревнований Федерации. Категория задаёт рейтинговый коэффициент.</p>
+    <p class="muted">Календарь соревнований Федерации. Категория — по размеру сетки: A — 32, B — 24, C — 16, D — 8 участников; очки рейтинга — <a href="/rating/metodika">по методике</a>.</p>
   </div>
 </section>
 <section class="section-pad section-pad--tight">
@@ -123,7 +123,7 @@
           // день занимает колонку на все строки, полосы турниров лежат поверх на своих
           // дорожках. Телефон: полосы спрятаны, в клетке число турниров, нажатие открывает
           // список дня под сеткой. Одни и те же данные кормят и то, и другое.
-          const catRu = { A: 'кат. A', B: 'кат. B', C: 'кат. C' };
+          const catRu = { A: 'кат. A', B: 'кат. B', C: 'кат. C', D: 'кат. D' };
           const fmtD = (iso) => iso ? iso.slice(8, 10).replace(/^0/, '') + '.' + iso.slice(5, 7) : '';
           const tournamentStatusOf = (t) => (t.held_status === 'not_held' ? 'not_held' : t.end_date < grid.today ? 'finished' : ((t.start_date || t.end_date) <= grid.today ? 'ongoing' : 'upcoming'));
           const barTitle = (b) => [b.name, b.from === b.to ? fmtD(b.to) : fmtD(b.from) + '–' + fmtD(b.to), b.city, catRu[b.category] || ('кат. ' + b.category), b.live ? 'идёт сейчас' : b.done ? 'завершён' : b.entryOpen ? 'приём заявок открыт' : ''].filter(Boolean).join(' · ');
@@ -132,6 +132,7 @@
           <li><i class="cal__swatch cal__swatch--A"></i>кат. A</li>
           <li><i class="cal__swatch cal__swatch--B"></i>кат. B</li>
           <li><i class="cal__swatch cal__swatch--C"></i>кат. C</li>
+          <li><i class="cal__swatch cal__swatch--D"></i>кат. D</li>
           <li><i class="cal__swatch cal__swatch--done"></i>завершён</li>
           <li><i class="cal__swatch cal__swatch--live"></i>идёт сейчас</li>
           <li><i class="cal__swatch cal__swatch--reg"></i>приём заявок</li>

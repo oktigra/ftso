@@ -135,11 +135,15 @@ function upgradeMatches(db) {
   return true;
 }
 
-/** Пересборка таблицы с CHECK (category IN ('A','B')) → ('A','B','C'); данные и колонки — как были. */
+/**
+ * Пересборка таблицы, если в CHECK категории не полный список: ('A','B') или ('A','B','C')
+ * → ('A','B','C','D') (категория D — сетка на 8, методика 17.10.2026). Данные и колонки — как были.
+ */
 function relaxCategoryCheck(db, table) {
   const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);
-  if (!row || !row.sql.includes("category IN ('A','B'))")) return false;
-  const newSql = row.sql.replace(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?\w+"?/, `CREATE TABLE ${table}_new`).replace("category IN ('A','B'))", "category IN ('A','B','C'))");
+  const m = row && /category IN \(([^)]*)\)/.exec(row.sql);
+  if (!m || m[1].includes("'D'")) return false;
+  const newSql = row.sql.replace(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?"?\w+"?/, `CREATE TABLE ${table}_new`).replace(m[0], "category IN ('A','B','C','D')");
   const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => `"${c.name}"`).join(', ');
   const indexes = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL").all(table).map((r) => r.sql);
   db.pragma('foreign_keys = OFF');

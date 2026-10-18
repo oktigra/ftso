@@ -18,7 +18,10 @@ import { AGE_LIMIT_PRESETS, ageRangeLabel } from './age.mjs';
 
 export const AGE_GROUPS = ['до 19', '19-34', '35-44', '45-54', '55+'];
 export const SEXES = ['M', 'F'];
-export const CATEGORIES = ['A', 'B', 'C']; // C — прочие/любительские турниры (06.09.2026), коэффициент в rating/rating.mjs
+// Категория турнира (методика 17.10.2026): по размеру сетки по регламенту — 32 → A, 24 → B,
+// 16 → C, 8 → D (очки рейтинга считаются по размеру каждой сетки, см. rating-method.mjs).
+export const CATEGORIES = ['A', 'B', 'C', 'D'];
+export const CATEGORY_RU = { A: 'A — сетка на 32', B: 'B — сетка на 24', C: 'C — сетка на 16', D: 'D — сетка на 8' };
 // Типы турниров по ТЗ п. 4.3: командные встречи, первенства, иные турниры.
 export const TOURNAMENT_KINDS = ['team', 'championship', 'other'];
 // СИСТЕМА ПРОВЕДЕНИЯ («формат», задача 2 START15; значения — из Приложения №1 к правилам

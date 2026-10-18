@@ -1621,7 +1621,7 @@ await check('турниры (ТЗ 4.3): поля город/начало/тип/
   eq(names((await http('/tournaments?category=&category=')).text).length, 3, 'пустые значения категории должны означать «все»');
   // Флажки, а не одиночный список: иначе выбрать две категории нечем.
   const catForm = (await http('/tournaments')).text;
-  eq((catForm.match(/name="category" value="/g) || []).length, 3, 'в фильтре не три флажка категорий');
+  eq((catForm.match(/name="category" value="/g) || []).length, 4, 'в фильтре не четыре флажка категорий (A, B, C, D)');
   assert(!/<select id="tf-category"/.test(catForm), 'категория осталась одиночным списком');
   eq(names((await http('/tournaments?age=' + encodeURIComponent('взрослые'))).text).length, 2, 'фильтр возраст');
   eq(names((await http('/tournaments?kind=team')).text).join(','), 'Фильтр Прошлый', 'фильтр тип');
@@ -6447,6 +6447,26 @@ await check('главная: смена фото — обложки новост
   return 'обложка новости → галерея; первое фото сразу, остальные по одному; ссылка и подпись на месте';
 });
 
+await check('категория D (сетка на 8): в форме заявки, в админке, в календаре; подписи категорий — размерами сеток', async () => {
+  const req = await http('/tournament-request');
+  assert(/<option value="D"[^>]*>D — сетка на 8<\/option>/.test(req.text), 'в заявке на турнир нет категории D');
+  assert(/32 участника — A, 24 — B, 16 — C, 8 — D/.test(req.text), 'подсказка о категориях по размеру сетки');
+  const { jar } = await login(ADMIN.user, ADMIN.pass);
+  const _csrf = tokenFrom((await http('/admin/tournaments', { jar })).text);
+  eq((await http('/admin/tournaments', { method: 'POST', form: { _csrf, name: 'Турнир категории D', end_date: '2026-11-20', category: 'D', kind: 'other', action: 'publish' }, jar })).status, 302, 'турнир категории D');
+  const t = db.prepare("SELECT id, category FROM tournaments WHERE name = 'Турнир категории D'").get();
+  try {
+    eq(t && t.category, 'D', 'категория D сохранилась в базе');
+    const cal = (await http('/tournaments?view=grid')).text;
+    assert(/cal__swatch--D/.test(cal), 'в легенде «Сетки месяца» нет категории D');
+    assert(/<input type="checkbox" name="category" value="D"/.test((await http('/tournaments?view=list')).text), 'в фильтре календаря нет категории D');
+  } finally {
+    if (t) db.prepare('DELETE FROM tournaments WHERE id = ?').run(t.id);
+    db.prepare('DELETE FROM write_attempts').run();
+  }
+  return 'D — в заявке и админке, сохраняется в базе, есть в легенде календаря';
+});
+
 await check('§8.2 на профиле нет даты рождения, почты и телефона; адрес — числовой id', async () => {
   const page = await http(`/player/${p19}`);
   const birth = db.prepare('SELECT birth_date FROM players WHERE id = ?').get(p19).birth_date;
@@ -6902,6 +6922,8 @@ try {
     if (temp) db.prepare("INSERT INTO tournaments (name, end_date, category, is_published) VALUES ('Ящик Наведения', date('now','+5 days'), 'B', 1)").run();
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     await page.goto(inst.base + '/tournaments', { waitUntil: 'networkidle' });
+    // Полоска cookie и плашка разработки не должны перекрывать ящик под курсором.
+    await page.evaluate(() => { document.querySelector('[data-cookie-bar]')?.remove(); document.querySelector('.dev-notice')?.remove(); });
     const read = () => page.evaluate(() => {
       const b = document.querySelector('.tdrawer__box');
       const f = document.querySelectorAll('.tdrawer__folder')[2];
@@ -7219,7 +7241,7 @@ try {
   assert(d.done && d.reg, 'завершённый серый, приём заявок отмечен');
   assert(d.court && d.todayMarked, 'под сегодняшним днём нужна разметка корта на заднем плане');
   eq(d.count, '2', 'счётчик сегодняшнего дня считается из тех же данных, что и полосы');
-  eq(d.overflow, 0, 'названия не должны вылезать из полос'); eq(d.legend, 6, 'легенда'); assert(!d.sideways, 'десктоп не уезжает вбок');
+  eq(d.overflow, 0, 'названия не должны вылезать из полос'); eq(d.legend, 7, 'легенда (кат. A–D + завершён, идёт, приём)'); assert(!d.sideways, 'десктоп не уезжает вбок');
   // Стык недель (скрин владельца 18.09): у куска, продолжающегося на соседней неделе, остаются отступ и
   // скругление, продолжение показано стрелкой; в названии нет автопереносов по слогам.
   const edge = await desk.evaluate((m) => [...document.querySelectorAll(m)].filter((x) => /is-cont/.test(x.className)).map((x) => { const cs = getComputedStyle(x); return { m: cs.marginLeft === cs.marginRight && parseFloat(cs.marginLeft) > 0, r: parseFloat(cs.borderTopLeftRadius) > 0 && parseFloat(cs.borderTopRightRadius) > 0, arrow: /[‹›]/.test(getComputedStyle(x, x.className.includes('cont-r') ? '::after' : '::before').content), hyphen: /\S-\n|\u00AD/.test(x.innerText) }; }), mine('.cal__bar'));

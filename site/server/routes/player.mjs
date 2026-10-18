@@ -10,7 +10,6 @@
 import { playerRatingHistory, playerProfile, statusLabel, DISCIPLINE_RU, LIST_KEYS, RATING_GROUP_RU, LIST_DISCIPLINE_RU } from '../lib/rating-service.mjs';
 import { sportRankView } from '../lib/sport-rank.mjs';
 import { uploadById, sendUploadInline } from '../lib/uploads.mjs';
-import { AGE_SLICES } from '../lib/age.mjs';
 import { SECTIONS } from '../lib/nav.mjs';
 
 const SEX_RU = { M: 'муж.', F: 'жен.' };
@@ -38,7 +37,6 @@ export default function mountPlayer(app, { db, config }) {
       historyLabel: historyKey ? `${RATING_GROUP_RU[historyKey.split('.')[0]]}, ${LIST_DISCIPLINE_RU[historyKey.split('.')[1]].toLowerCase()} разряд` : '',
       sportRank: profile ? sportRankView(profile) : null,
       statusText: profile.rating ? statusLabel(profile.rating.status) : null,
-      sliceLabels: new Map(AGE_SLICES.map((s) => [s.id, s.label])),
       section: SECTIONS.find((s) => s.path === '/rating'),
     });
   });

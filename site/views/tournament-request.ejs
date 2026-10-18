@@ -61,10 +61,10 @@
           <select id="t-category" name="category" required aria-describedby="t-cat-hint">
             <option value="">— выберите —</option>
             <% categories.forEach(function (c) { %>
-              <option value="<%= c %>"<%= values.category === c ? ' selected' : '' %>><%= c %></option>
+              <option value="<%= c %>"<%= values.category === c ? ' selected' : '' %>><%= categoryRu[c] || c %></option>
             <% }); %>
           </select>
-          <p class="field-hint" id="t-cat-hint">Категория задаёт рейтинговый коэффициент. Итоговую категорию подтверждает Федерация.</p>
+          <p class="field-hint" id="t-cat-hint">Категория — по размеру основной сетки по регламенту: 32 участника — A, 24 — B, 16 — C, 8 — D. От размера сетки зависят очки рейтинга (<a href="/rating/metodika">как считается рейтинг</a>). Итоговую категорию подтверждает Федерация.</p>
         </div>
 
         <div class="field">

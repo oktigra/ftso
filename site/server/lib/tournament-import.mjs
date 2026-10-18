@@ -145,7 +145,7 @@ export function importTournament(db, text, { userId = null, tournamentId = null,
   } else {
     if (!t.name) throw new ValidationError('Нет строки «Турнир: название»');
     if (!t.end_date) throw new ValidationError('Нет строки «Даты: ГГГГ-ММ-ДД»');
-    if (!['A', 'B', 'C'].includes(t.category)) throw new ValidationError('Категория — A, B или C');
+    if (!['A', 'B', 'C', 'D'].includes(t.category)) throw new ValidationError('Категория — A, B, C или D');
   }
   const city = (target ? target.city : t.city) || t.city || 'Смоленская область';
   const playedOn = t.end_date || (target ? target.end_date : null);
