@@ -2810,6 +2810,16 @@ await check('стартовое наполнение: 4 документа PDF (
   eq(db.prepare('SELECT COUNT(*) AS n FROM federation_documents').get().n, before + 4, 'добавлено 4 документа');
   eq((await http('/admin/library/starter', { method: 'POST', form: { _csrf }, jar })).status, 302, 'повтор');
   eq(db.prepare('SELECT COUNT(*) AS n FROM federation_documents').get().n, before + 4, 'повтор дублирует');
+  // Перевыпуск не копит старые редакции: сайтовых PDF ровно столько, сколько документов.
+  const starterFiles = () => db.prepare("SELECT COUNT(*) AS n FROM uploads WHERE profile = 'documents' AND meta = '{\"starter\":true}'").get().n;
+  eq(starterFiles(), 4, 'после перевыпуска остались старые редакции PDF');
+  // Редакция, оставшаяся от прежних перевыпусков (ни к чему не привязана), — удаляется следующим нажатием.
+  const { storeUpload } = await import('./server/lib/uploads.mjs');
+  const stale = await storeUpload(db, { buffer: Buffer.from('%PDF-1.4\n%%EOF\n'), filename: 'old.pdf', profile: 'documents', dir: process.env.UPLOAD_DIR, meta: { starter: true } });
+  eq(starterFiles(), 5, 'заготовка старой редакции');
+  eq((await http('/admin/library/starter', { method: 'POST', form: { _csrf }, jar })).status, 302, 'третье нажатие');
+  eq(starterFiles(), 4, 'старая редакция не удалена');
+  assert(!db.prepare('SELECT 1 FROM uploads WHERE id = ?').get(stale.id), 'запись старой редакции осталась');
   const docs = (await http('/documents')).text;
   assert(/Методика расчёта регионального рейтинга/.test(docs) && /Бланки/.test(docs), 'документов нет на витрине');
   const up = db.prepare("SELECT u.id FROM federation_documents d JOIN uploads u ON u.id = d.upload_id WHERE d.title LIKE 'Методика%'").get().id;
