@@ -28,6 +28,7 @@ import {
   oneOf,
   SEXES,
   CATEGORIES,
+  CATEGORY_RU,
   TOURNAMENT_KIND_RU,
   TOURNAMENT_FORMAT_RU,
   TOURNAMENT_AGES,
@@ -810,6 +811,7 @@ export default function mountAdmin(app, { db, config, limitWrites }) {
         )
         .all(),
       categories: CATEGORIES,
+      categoryRu: CATEGORY_RU,
       kindRu: TOURNAMENT_KIND_RU,
       formatRu: TOURNAMENT_FORMAT_RU,
       ages: TOURNAMENT_AGES,

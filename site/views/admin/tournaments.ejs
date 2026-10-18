@@ -21,7 +21,7 @@
       <div class="field"><label for="t-date">Завершение</label><input id="t-date" name="end_date" type="date" required></div>
       <div class="field"><label for="t-cat">Категория</label>
         <select id="t-cat" name="category" required>
-          <% categories.forEach(function (c) { %><option value="<%= c %>"><%= c %></option><% }); %>
+          <% categories.forEach(function (c) { %><option value="<%= c %>"><%= categoryRu[c] || c %></option><% }); %>
         </select>
       </div>
       <div class="field"><label for="t-city">Город</label><input id="t-city" name="city" maxlength="80"></div>

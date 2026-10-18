@@ -92,10 +92,6 @@
         <% } %>
         <p class="rating-summary muted">
           <%= statusText %> · актуальность <%= ruDate(profile.rating.asOf) %> · обновлён <%= ruDate(profile.rating.computedAt) %> UTC.
-          <% if (profile.slices.length) { %>
-            Возрастные срезы:
-            <% profile.slices.forEach(function (id, i) { %><%= i ? ', ' : '' %><a href="/rating?slice=<%= id %>"><%= sliceLabels.get(id) %></a><% }); %>.
-          <% } %>
           <a class="link-more" href="/rating">К таблице рейтинга <span aria-hidden="true">→</span></a> · <a class="link-more" href="/rating/metodika">Как считается рейтинг</a>
         </p>
       <% } %>
