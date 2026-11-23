@@ -714,7 +714,26 @@ html[data-theme="warm"]{
 .footer-col a:hover{color:var(--primary);}
 .footer-col address{font-style:normal; color:var(--muted); font-size:.95rem; line-height:1.7;}
 .footer-bottom{margin-top:clamp(2rem,5vw,3rem); padding-top:1.5rem; border-top:1px solid var(--border); display:flex; flex-wrap:wrap; gap:1rem 1.5rem; align-items:center; justify-content:space-between; color:var(--muted); font-size:.9rem;}
-.footer-dev a{color:var(--muted); text-decoration:underline; text-underline-offset:3px; transition:color .2s;} .footer-dev a:hover{color:var(--primary);}
+/* Подпись разработчика — плашка как в подвале fossapadel.ru: щит с галочкой, оранжевая рамка,
+   ссылка и кнопка-«таблетка». В тёмной теме цвета точь-в-точь как там (тёмный фон); в светлой
+   и тёплой текст и ссылка темнее, иначе светло-персиковый текст на светлом фоне не читается. */
+.footer-dev{flex:1 0 100%; display:flex; justify-content:center;}
+.dev-badge{
+  --dev-text:var(--text); --dev-link:#c2410c; --dev-bg:rgba(220,88,40,.08); --dev-border:#ffa36b;
+  --dev-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23C2410C' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z'/%3E%3Cpath d='M8.5 12l2.5 2.5 4.5-5'/%3E%3C/svg%3E");
+  max-width:380px; margin:0; padding:12px 16px 14px; text-align:center; font-size:12.5px; line-height:1.5;
+  color:var(--dev-text); background:var(--dev-bg); border:1.5px solid var(--dev-border); border-radius:14px;
+}
+html[data-theme="dark"] .dev-badge{
+  --dev-text:#ffe2cf; --dev-link:#ffa36b; --dev-bg:rgba(220,88,40,.14);
+  --dev-icon:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FFA36B' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z'/%3E%3Cpath d='M8.5 12l2.5 2.5 4.5-5'/%3E%3C/svg%3E");
+}
+.dev-badge::before{content:""; display:block; width:22px; height:22px; margin:0 auto 6px; background:var(--dev-icon) center / contain no-repeat;}
+.dev-badge a{color:var(--dev-link); font-weight:800; text-decoration:underline; text-decoration-color:var(--dev-link); text-underline-offset:2px;}
+.dev-badge a:hover{text-decoration-thickness:2px;}
+.dev-badge a.dev-badge__btn{display:inline-block; margin-top:10px; padding:7px 16px; border-radius:999px; background:#c2410c; color:#fff; font-size:13px; text-decoration:none; transition:background-color .2s;}
+.dev-badge a.dev-badge__btn:hover{background:#9a3412;}
+.dev-badge a:focus-visible{outline:2px solid var(--dev-link); outline-offset:3px;}
 .footer-legal{display:flex; gap:1.5rem; flex-wrap:wrap;}
 /* QR пожертвования в подвале: белая подложка обязательна — сканеры банков читают тёмный код на светлом. */
 .footer-donate{display:flex; align-items:center; gap:1.25rem; margin-top:clamp(2rem,5vw,3rem); padding:1.1rem 1.25rem; border:1px solid var(--border); border-radius:1rem; background:var(--surface-2);}
