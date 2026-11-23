@@ -106,11 +106,6 @@
     <div class="footer-bottom">
       <span>© <%= year %> РФСОО «Федерация тенниса Смоленской области»</span>
       <%
-      /* Подпись разработчика (просьба владельца 19.09.2026): ссылка на его продукт.
-         rel="noopener" — внешняя ссылка в новой вкладке без доступа к нашему окну. */
-      %>
-      <span class="footer-dev">Разработка сайта — <a href="https://webguardreport.ru/" target="_blank" rel="noopener">ИП Коротков О.А.</a></span>
-      <%
       /* 152-ФЗ: эти две ссылки В объёме и ведут на РЕАЛЬНЫЕ страницы, не на «#». */
       %>
       <div class="footer-legal">
@@ -120,6 +115,16 @@
         <% if (typeof metrikaId !== 'undefined' && metrikaId) { %>
           <a href="/privacy#cookies" data-cookie-settings>Настройки cookie</a>
         <% } %>
+      </div>
+      <%
+      /* Подпись разработчика (просьба владельца 19.09.2026, оформление — 23.11.2026):
+         тот же текст и та же плашка, что в подвале fossapadel.ru (того же разработчика).
+         rel="noopener" — внешние ссылки в новой вкладке без доступа к нашему окну. */
+      %>
+      <div class="footer-dev">
+        <p class="dev-badge">Сайт создан и проверен на цифровое здоровье и комплаенс — ИП Коротков О.А.,
+          <a href="https://webguardreport.ru" target="_blank" rel="noopener">webguardreport.ru</a><br>
+          <a class="dev-badge__btn" href="https://webguardreport.ru" target="_blank" rel="noopener">Проверьте и вы свой</a></p>
       </div>
     </div>
   </div>

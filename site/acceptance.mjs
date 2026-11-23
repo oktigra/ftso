@@ -4547,12 +4547,18 @@ await check('зона файлов: накопление до трёх, кноп
   return 'одна накопительная зона: два выбора + перетаскивание = три файла, четвёртый и дубль отбиты, «Удалить» убирает свой; три файла доезжают до турнира со страницы статуса; телефон без слов о перетаскивании; в админке все поля обёрнуты; редакция только на /privacy';
 });
 
-await check('подвал: подпись разработчика со ссылкой на его сайт, в новой вкладке и с noopener', async () => {
-  // Просьба владельца 19.09.2026.
-  const home = await http('/');
-  assert(/Разработка сайта — <a href="https:\/\/webguardreport\.ru\/" target="_blank" rel="noopener">ИП Коротков О\.А\.<\/a>/.test(home.text), 'в подвале нет подписи разработчика со ссылкой');
-  const adm = await http('/admin', { headers: { cookie: '' } });
-  return 'подвал: «Разработка сайта — ИП Коротков О.А.» → https://webguardreport.ru/, target=_blank, rel=noopener';
+await check('подвал: подпись разработчика как на fossapadel.ru — текст, ссылка и кнопка на его сайт, в новой вкладке и с noopener', async () => {
+  // Просьба владельца 19.09.2026; текст и оформление как в подвале fossapadel.ru — 23.11.2026.
+  for (const path of ['/', '/contacts']) {
+    const page = await http(path);
+    const badge = (page.text.match(/<p class="dev-badge">[\s\S]*?<\/p>/) || [''])[0];
+    assert(badge, `${path}: в подвале нет плашки разработчика`);
+    assert(/Сайт создан и проверен на цифровое здоровье и комплаенс — ИП Коротков О\.А\.,/.test(badge), `${path}: текст подписи не тот`);
+    assert(/<a href="https:\/\/webguardreport\.ru" target="_blank" rel="noopener">webguardreport\.ru<\/a>/.test(badge), `${path}: нет ссылки webguardreport.ru`);
+    assert(/<a class="dev-badge__btn" href="https:\/\/webguardreport\.ru" target="_blank" rel="noopener">Проверьте и вы свой<\/a>/.test(badge), `${path}: нет кнопки «Проверьте и вы свой»`);
+    assert(!/Разработка сайта —/.test(page.text), `${path}: осталась старая подпись`);
+  }
+  return 'подвал: «Сайт создан и проверен на цифровое здоровье и комплаенс — ИП Коротков О.А., webguardreport.ru» + кнопка «Проверьте и вы свой», обе → https://webguardreport.ru, target=_blank, rel=noopener';
 });
 
 await check('пожертвования и членский взнос: QR по ГОСТ Р 56042-2014 читается сторонним декодером, взнос собирается в браузере, без реквизитов страницы и ссылки нет', async () => {
